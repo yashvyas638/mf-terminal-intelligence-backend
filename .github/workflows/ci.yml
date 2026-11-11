@@ -12,8 +12,8 @@ jobs:
   test-sqlite:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12.16"
           cache: pip
@@ -55,8 +55,8 @@ jobs:
       ENVIRONMENT: production
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mf_terminal_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12.16"
           cache: pip
