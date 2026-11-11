@@ -345,3 +345,5 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Replaced obsolete START_HERE setup instructions with the current branch/release process; no deployment actions are authorised during development.
 - Regression tests were added for duplicate imports, conflicting duplicate NAVs, oversized/invalid source payloads and production startup secret validation. CI on the latest branch head must pass before these changes are considered verified.
 - Current work remains on `audit/production-foundation`; no main merge, Supabase production migration or Render deploy was performed.
+
+- Added a configurable maximum NAV effective-date age (`MAX_NAV_STALENESS_DAYS`, default 7) to the ingestion gate. Stale source files are rejected before snapshot or NAV writes; Render blueprint config declares the default. A stale-feed regression test was added.
