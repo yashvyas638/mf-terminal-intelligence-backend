@@ -127,3 +127,17 @@ class PortfolioTransactionAudit(Base):
     event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     details_json: Mapped[str] = mapped_column(Text, nullable=False)
     __table_args__ = (Index("ix_txn_audit_transaction_event", "transaction_id", "event_at"),)
+
+class PortfolioImportBatch(Base):
+    """Idempotency ledger for CSV statement imports; stores hashes, never raw statements."""
+
+    __tablename__ = "portfolio_import_batches"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    statement_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    imported_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "statement_sha256", name="uq_portfolio_import_hash"),
+        Index("ix_portfolio_imported_at", "portfolio_id", "imported_at"),
+    )
