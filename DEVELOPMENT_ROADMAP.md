@@ -352,3 +352,5 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Added database CHECK constraints for positive NAV, valid BUY/SELL transaction type, positive units/NAV/amount, nonnegative charges and positive import row count. Migration 0006 preflights existing rows and aborts rather than silently modifying invalid historical data.
 
 - Added migration `0007_append_only_audit`: database triggers now reject UPDATE/DELETE against portfolio transaction audit events and NAV correction revision history on both SQLite and PostgreSQL. Regression tests verify both records remain immutable.
+
+- Portfolio statement import now follows a two-step workflow: signed 10-minute preview token, row-level validation and buy/sell cash summary, then explicit atomic confirmation. The token is bound to portfolio ID, normalized transaction fingerprint and row count; stale, altered, missing or cross-portfolio tokens are rejected. The dashboard now exposes separate Preview and Confirm actions. Raw CSV remains transient and is not stored.
