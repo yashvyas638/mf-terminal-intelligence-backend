@@ -361,3 +361,7 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Added [Final Release Runbook](docs/FINAL_RELEASE_RUNBOOK.md) covering backup/restore, Render DB-role verification, secret rotation, migration order, production smoke tests and rollback.
 
 - NAV status now reports retrieval freshness and effective NAV-date freshness separately. Portfolio valuation surfaces per-scheme NAV age, stale/missing scheme codes and oldest/newest effective dates; XIRR is withheld when NAV inputs are stale, and rebalance previews reject stale NAVs.
+
+- Dashboard baseline now has real view switching for Overview, Fund Explorer, Compare placeholder, Portfolio Lab and Data Health. Portfolio Lab supports create/list/select, valuation, row-level CSV preview and explicit confirmation. Compare is clearly marked P1/planned rather than implying an implemented comparison engine.
+- NAV refresh now streams the official response in bounded 64 KiB chunks and closes the HTTP response on both success and failure, rather than loading an unbounded body before applying the 30 MB cap.
+- Portfolio import confirmation fingerprint preserves same-day row order (order can affect ledger validity) while normalizing column order and numeric formatting. Preview displays canonical scheme names and CSV line numbers.
