@@ -338,6 +338,12 @@ def test_transaction_can_be_voided_once_with_audited_reason(monkeypatch):
             "amount": "200",
         },
     ).json()
+    invalid_void = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/{transaction['id']}/void",
+        headers=headers,
+        json={"reason": "   "},
+    )
+    assert invalid_void.status_code == 422
     voided = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions/{transaction['id']}/void",
         headers=headers,
