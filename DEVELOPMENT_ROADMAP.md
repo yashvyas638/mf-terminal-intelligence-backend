@@ -359,3 +359,5 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 
 - Added a resolved `requirements.lock` from the green Python 3.12 CI environment and switched Render, CI and the live-source workflow to exact dependency pins. The next CI run validates installation from the lock itself.
 - Added [Final Release Runbook](docs/FINAL_RELEASE_RUNBOOK.md) covering backup/restore, Render DB-role verification, secret rotation, migration order, production smoke tests and rollback.
+
+- NAV status now reports retrieval freshness and effective NAV-date freshness separately. Portfolio valuation surfaces per-scheme NAV age, stale/missing scheme codes and oldest/newest effective dates; XIRR is withheld when NAV inputs are stale, and rebalance previews reject stale NAVs.
