@@ -301,12 +301,13 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             )
             if not advisory_lock_acquired:
                 raise HTTPException(409, "A NAV refresh is already running on another service instance")
+        fetch_started = time.perf_counter()
         try:
             raw_payload, source_meta = _fetch_amfi_payload()
             logger.info(
-                "nav_source_response status=%s content_type=%s content_length=%s bytes_received=%s attempt=%s",
+                "nav_source_response status=%s content_type=%s content_length=%s bytes_received=%s attempt=%s fetch_ms=%s",
                 source_meta["http_status"], source_meta["content_type"], source_meta["content_length"],
-                source_meta["bytes_received"], source_meta["attempt"],
+                source_meta["bytes_received"], source_meta["attempt"], int((time.perf_counter() - fetch_started) * 1000),
             )
             payload = raw_payload.decode("utf-8-sig", errors="strict")
         except UnicodeDecodeError:
@@ -343,16 +344,18 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             )
 
         now = datetime.now(timezone.utc)
+        persist_started = time.perf_counter()
         try:
             persisted = _persist_nav_snapshot(records, report, now)
+            persist_ms = int((time.perf_counter() - persist_started) * 1000)
         except Exception:
             raise HTTPException(500, "NAV snapshot persistence failed; existing accepted data was preserved where the transaction rolled back") from None
         snapshot = persisted["snapshot"]
         elapsed_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
         logger.info(
-            "nav_refresh_committed snapshot_id=%s schemes=%s nav_inserted=%s nav_corrected=%s nav_unchanged=%s elapsed_ms=%s",
+            "nav_refresh_committed snapshot_id=%s schemes=%s nav_inserted=%s nav_corrected=%s nav_unchanged=%s persist_ms=%s elapsed_ms=%s",
             snapshot.id, report["unique_scheme_codes"], persisted["nav_rows_inserted"],
-            persisted["nav_rows_updated"], persisted["nav_rows_unchanged"], elapsed_ms,
+            persisted["nav_rows_updated"], persisted["nav_rows_unchanged"], persist_ms, elapsed_ms,
         )
         return {
             "status": "ingested", "snapshot": _snapshot_dict(snapshot),
