@@ -757,43 +757,43 @@ def portfolio_valuation(
             .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
         ).scalars().all()
         holdings: dict[int, dict[str, Any]] = {}
-        cashflows: list[tuple[date, float]] = []
-        gross_buys = 0.0
-        realized_proceeds = 0.0
-        realized_gain_loss = 0.0
+        cashflows_decimal: list[tuple[date, Decimal]] = []
+        gross_buys = Decimal("0")
+        realized_proceeds = Decimal("0")
+        realized_gain_loss = Decimal("0")
 
         for txn in txns:
             holding = holdings.setdefault(
                 txn.scheme_code,
-                {"units": 0.0, "cost_basis": 0.0, "name": str(txn.scheme_code)},
+                {"units": Decimal("0"), "cost_basis": Decimal("0"), "name": str(txn.scheme_code)},
             )
-            units = float(txn.units)
-            amount = float(txn.amount)
-            charges = float(txn.charges)
+            units = Decimal(txn.units)
+            amount = Decimal(txn.amount)
+            charges = Decimal(txn.charges)
             if txn.transaction_type == "BUY":
                 total_cost = amount + charges
                 holding["units"] += units
                 holding["cost_basis"] += total_cost
                 gross_buys += total_cost
-                cashflows.append((txn.transaction_date, -total_cost))
+                cashflows_decimal.append((txn.transaction_date, -total_cost))
             else:
-                if units > holding["units"] + 1e-8:
+                if units > holding["units"]:
                     raise HTTPException(
                         409,
                         f"Sell transaction exceeds available units for scheme {txn.scheme_code}",
                     )
-                average_cost = holding["cost_basis"] / holding["units"] if holding["units"] else 0.0
+                average_cost = holding["cost_basis"] / holding["units"] if holding["units"] else Decimal("0")
                 cost_removed = average_cost * units
                 net_proceeds = amount - charges
                 holding["units"] -= units
                 holding["cost_basis"] -= cost_removed
                 realized_proceeds += net_proceeds
                 realized_gain_loss += net_proceeds - cost_removed
-                cashflows.append((txn.transaction_date, net_proceeds))
+                cashflows_decimal.append((txn.transaction_date, net_proceeds))
 
         items = []
-        current_value = 0.0
-        remaining_cost_basis = 0.0
+        current_value = Decimal("0")
+        remaining_cost_basis = Decimal("0")
         valuation_dates = []
         missing_nav_scheme_codes: list[int] = []
         for code, holding in holdings.items():
@@ -805,7 +805,7 @@ def portfolio_valuation(
                 .order_by(desc(NavObservation.nav_date))
                 .limit(1)
             ).scalar_one_or_none()
-            nav_value = float(latest.nav_value) if latest else None
+            nav_value = Decimal(latest.nav_value) if latest else None
             value = holding["units"] * nav_value if nav_value is not None else None
             if value is not None:
                 current_value += value
@@ -817,33 +817,35 @@ def portfolio_valuation(
                 {
                     "scheme_code": code,
                     "scheme_name": holding["name"],
-                    "units": round(holding["units"], 8),
-                    "cost_basis": round(holding["cost_basis"], 2),
-                    "latest_nav": nav_value,
+                    "units": round(float(holding["units"]), 8),
+                    "cost_basis": float(holding["cost_basis"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                    "latest_nav": float(nav_value) if nav_value is not None else None,
                     "nav_date": latest.nav_date.isoformat() if latest else None,
-                    "market_value": round(value, 2) if value is not None else None,
+                    "market_value": float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if value is not None else None,
                 }
             )
 
         valuation_date = max(valuation_dates) if valuation_dates else None
         valuation_complete = not missing_nav_scheme_codes
         if valuation_complete and current_value > 0 and valuation_date and txns:
-            cashflows.append((valuation_date, current_value))
+            cashflows_decimal.append((valuation_date, current_value))
         unrealized_gain_loss = current_value - remaining_cost_basis if valuation_complete else None
         total_gain_loss = realized_gain_loss + unrealized_gain_loss if unrealized_gain_loss is not None else None
+        cashflows = [(flow_date, float(amount)) for flow_date, amount in cashflows_decimal]
+        money = lambda value: float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         return {
             "portfolio_id": portfolio_id,
             "portfolio_name": portfolio.name,
             "currency": portfolio.currency,
             "valuation_date": valuation_date.isoformat() if valuation_date else None,
             "holdings": items,
-            "gross_buy_amount": round(gross_buys, 2),
-            "realized_proceeds": round(realized_proceeds, 2),
-            "remaining_cost_basis": round(remaining_cost_basis, 2),
-            "current_value": round(current_value, 2),
-            "realized_gain_loss": round(realized_gain_loss, 2),
-            "unrealized_gain_loss": round(unrealized_gain_loss, 2) if unrealized_gain_loss is not None else None,
-            "total_gain_loss": round(total_gain_loss, 2) if total_gain_loss is not None else None,
+            "gross_buy_amount": money(gross_buys),
+            "realized_proceeds": money(realized_proceeds),
+            "remaining_cost_basis": money(remaining_cost_basis),
+            "current_value": money(current_value),
+            "realized_gain_loss": money(realized_gain_loss),
+            "unrealized_gain_loss": money(unrealized_gain_loss) if unrealized_gain_loss is not None else None,
+            "total_gain_loss": money(total_gain_loss) if total_gain_loss is not None else None,
             "xirr": xirr(cashflows) if valuation_complete else None,
             "valuation_status": "COMPLETE" if valuation_complete else "PARTIAL_MISSING_NAV",
             "missing_nav_scheme_codes": missing_nav_scheme_codes,
