@@ -57,3 +57,8 @@ def test_short_numeric_candidate_row_is_counted_as_invalid():
     assert len(records) == 2
     assert report["invalid_rows"] == 1
     assert report["candidate_data_lines"] == 3
+
+
+def test_rejects_html_error_page_instead_of_nav_feed():
+    with pytest.raises(ValueError, match="HTML instead of the NAV text feed"):
+        parse_amfi_nav_text("<!doctype html><html><body>temporarily unavailable</body></html>")
