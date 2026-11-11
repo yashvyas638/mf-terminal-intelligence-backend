@@ -1248,14 +1248,14 @@ def portfolio_valuation(
             "realized_gain_loss": money(realized_gain_loss),
             "unrealized_gain_loss": money(unrealized_gain_loss) if unrealized_gain_loss is not None else None,
             "total_gain_loss": money(total_gain_loss) if total_gain_loss is not None else None,
-            "xirr": xirr(cashflows) if valuation_complete else None,
+            "xirr": xirr(cashflows) if valuation_complete and not stale_nav_scheme_codes else None,
             "valuation_status": "COMPLETE" if valuation_complete else "PARTIAL_MISSING_NAV",
             "missing_nav_scheme_codes": missing_nav_scheme_codes,
             "stale_nav_scheme_codes": stale_nav_scheme_codes,
             "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
             "valuation_note": (
                 "Uses latest stored AMFI NAV and average-cost accounting for sold units. "
-                "Record all transactions for meaningful results. Aggregate valuation, unrealized gain/loss, "
-                "and XIRR are withheld when an active holding has no stored NAV."
+                "Record all transactions for meaningful results. Aggregate valuation and unrealized gain/loss "
+                "are withheld when an active holding has no stored NAV; XIRR is also withheld when NAV inputs are stale."
             ),
         }
