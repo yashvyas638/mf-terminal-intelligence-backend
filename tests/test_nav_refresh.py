@@ -143,3 +143,25 @@ def test_streamed_amfi_response_enforces_memory_limit():
     )
     with pytest.raises(HTTPException, match="30 MB"):
         main._read_bounded_amfi_response(response, max_bytes=10)
+
+
+def test_successful_refresh_emits_commit_diagnostic_without_credentials(monkeypatch, caplog):
+    import logging
+
+    init_db()
+    api_key = "test-api-key-that-is-at-least-32-characters-long"
+    monkeypatch.setenv("API_KEY", api_key)
+    monkeypatch.setattr(main, "MINIMUM_VALID_RECORDS", 1)
+    monkeypatch.setattr(main, "MAX_NAV_STALENESS_DAYS", 7)
+    monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: _amfi_response("100.0000"))
+
+    with caplog.at_level(logging.INFO, logger="mf_terminal.nav"):
+        response = TestClient(main.app).post(
+            "/v1/nav/refresh", headers={"X-API-Key": api_key}
+        )
+
+    assert response.status_code == 200
+    assert "nav_refresh_started" in caplog.text
+    assert "nav_source_validated" in caplog.text
+    assert "nav_refresh_committed" in caplog.text
+    assert api_key not in caplog.text
