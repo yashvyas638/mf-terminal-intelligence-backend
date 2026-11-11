@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+import pytest
+
 from app.analytics import max_drawdown, performance_metrics, xirr
 
 
