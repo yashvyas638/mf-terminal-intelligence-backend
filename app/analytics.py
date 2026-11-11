@@ -130,8 +130,6 @@ def rolling_return_series(
     if endpoints[-1] != rows[-1]:
         endpoints.append(rows[-1])
 
-    dates = [row[0] for row in rows]
-    values = [row[1] for row in rows]
     results = []
     for end_date, end_value in endpoints:
         target_ordinal = end_date.toordinal() - window_days
