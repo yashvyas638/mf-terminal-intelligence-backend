@@ -41,6 +41,7 @@ from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 APP_VERSION = "0.2.0"
 MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
+MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 
 @asynccontextmanager
@@ -53,6 +54,8 @@ async def lifespan(_: FastAPI):
             raise RuntimeError("Production API_KEY must be configured and contain at least 32 characters")
         if MINIMUM_VALID_RECORDS < 1:
             raise RuntimeError("MINIMUM_VALID_RECORDS must be a positive integer")
+        if MAX_NAV_STALENESS_DAYS < 0:
+            raise RuntimeError("MAX_NAV_STALENESS_DAYS cannot be negative")
         # Fail deployment startup if the configured PostgreSQL database is unreachable.
         # Never create or mutate the production schema here; Alembic owns migrations.
         with SessionLocal() as db:
@@ -142,6 +145,13 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             raise HTTPException(502, f"AMFI payload validation failed: {exc}; existing data was not changed") from None
         if report["records_valid"] < MINIMUM_VALID_RECORDS:
             raise HTTPException(502, f"AMFI payload had only {report['records_valid']} valid rows; minimum is {MINIMUM_VALID_RECORDS}; existing data was not changed")
+        latest_nav_date = date.fromisoformat(report["max_nav_date"])
+        nav_age_days = (date.today() - latest_nav_date).days
+        if nav_age_days > MAX_NAV_STALENESS_DAYS:
+            raise HTTPException(
+                502,
+                f"AMFI NAV data is stale by {nav_age_days} days; maximum allowed is {MAX_NAV_STALENESS_DAYS}; existing data was not changed",
+            )
 
         now = datetime.now(timezone.utc)
         with SessionLocal() as db:
