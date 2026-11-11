@@ -2,8 +2,10 @@ from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 import app.main as main
 from app.db import NavObservation, NavObservationRevision, SessionLocal, engine, init_db
@@ -105,7 +107,7 @@ def test_refresh_returns_conflict_when_another_session_holds_distributed_lock(mo
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     with SessionLocal() as lock_session:
         acquired = lock_session.execute(
-            __import__("sqlalchemy").text("SELECT pg_try_advisory_lock(:lock_key)"),
+            text("SELECT pg_try_advisory_lock(:lock_key)"),
             {"lock_key": main.NAV_REFRESH_LOCK_KEY},
         ).scalar_one()
         assert acquired is True
