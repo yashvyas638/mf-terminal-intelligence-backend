@@ -1076,6 +1076,7 @@ def portfolio_valuation(
         remaining_cost_basis = Decimal("0")
         valuation_dates = []
         missing_nav_scheme_codes: list[int] = []
+        stale_nav_scheme_codes: list[int] = []
         for code, holding in holdings.items():
             scheme = db.get(Scheme, code)
             holding["name"] = scheme.scheme_name if scheme else holding["name"]
@@ -1086,6 +1087,9 @@ def portfolio_valuation(
                 .limit(1)
             ).scalar_one_or_none()
             nav_value = Decimal(latest.nav_value) if latest else None
+            nav_age_days = (date.today() - latest.nav_date).days if latest else None
+            if nav_age_days is not None and nav_age_days > MAX_NAV_STALENESS_DAYS:
+                stale_nav_scheme_codes.append(code)
             value = holding["units"] * nav_value if nav_value is not None else None
             if value is not None:
                 current_value += value
@@ -1101,6 +1105,8 @@ def portfolio_valuation(
                     "cost_basis": float(holding["cost_basis"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
                     "latest_nav": float(nav_value) if nav_value is not None else None,
                     "nav_date": latest.nav_date.isoformat() if latest else None,
+                    "nav_age_days": nav_age_days,
+                    "nav_freshness": "STALE" if nav_age_days is not None and nav_age_days > MAX_NAV_STALENESS_DAYS else "FRESH" if nav_age_days is not None else "MISSING",
                     "market_value": float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if value is not None else None,
                 }
             )
@@ -1118,6 +1124,9 @@ def portfolio_valuation(
             "portfolio_name": portfolio.name,
             "currency": portfolio.currency,
             "valuation_date": valuation_date.isoformat() if valuation_date else None,
+            "oldest_nav_date": min(valuation_dates).isoformat() if valuation_dates else None,
+            "newest_nav_date": max(valuation_dates).isoformat() if valuation_dates else None,
+            "valuation_freshness": "NO_NAV_DATA" if not valuation_dates else "STALE" if stale_nav_scheme_codes else "FRESH",
             "holdings": items,
             "gross_buy_amount": money(gross_buys),
             "realized_proceeds": money(realized_proceeds),
@@ -1129,6 +1138,8 @@ def portfolio_valuation(
             "xirr": xirr(cashflows) if valuation_complete else None,
             "valuation_status": "COMPLETE" if valuation_complete else "PARTIAL_MISSING_NAV",
             "missing_nav_scheme_codes": missing_nav_scheme_codes,
+            "stale_nav_scheme_codes": stale_nav_scheme_codes,
+            "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
             "valuation_note": (
                 "Uses latest stored AMFI NAV and average-cost accounting for sold units. "
                 "Record all transactions for meaningful results. Aggregate valuation, unrealized gain/loss, "
