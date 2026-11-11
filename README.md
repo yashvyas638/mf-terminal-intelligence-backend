@@ -9,7 +9,9 @@ A deployable FastAPI service that retrieves the official AMFI all-schemes NAV fe
 - Protects every data endpoint with a constant-time API-key check.
 - Downloads AMFI's official `NAVAll.txt` source only when an authenticated refresh is requested.
 - Rejects empty, malformed, oversized, invalid-UTF-8, stale, and unexpectedly small source responses before changing persisted data.
-- Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.\n- Preserves prior NAV values and both source snapshot references when AMFI republishes a corrected NAV for the same scheme/date.\n- Uses Alembic as the production schema manager; production startup does not run ORM create-all.
+- Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.
+- Preserves prior NAV values and both source snapshot references when AMFI republishes a corrected NAV for the same scheme/date.
+- Uses Alembic as the production schema manager; production startup does not run ORM create-all.
 - Prevents duplicate refreshes within a process and across PostgreSQL-backed service instances using an advisory lock.
 - Provides health, freshness, scheme search, history, and latest-snapshot endpoints.
 - Records an append-only audit event for each portfolio transaction and supports audited voids rather than destructive deletes.
@@ -53,7 +55,8 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `POST /v1/portfolios/{id}/transactions` | Creates a validated BUY/SELL ledger transaction. |
 | `POST /v1/portfolios/{id}/transactions/{transaction_id}/void` | Audited void; never deletes a financial record. |
 | `GET /v1/portfolios/{id}/transactions/{transaction_id}/audit` | Immutable, authenticated event history for one transaction. |
-| `POST /v1/portfolios/{id}/transactions/import/preview` | Validates a CSV without writing transactions and returns a short-lived signed confirmation token. |\n| `POST /v1/portfolios/{id}/transactions/import` | Requires the preview token; atomically imports the exact normalized statement and rejects duplicates. |
+| `POST /v1/portfolios/{id}/transactions/import/preview` | Validates a CSV without writing transactions and returns a short-lived signed confirmation token. |
+| `POST /v1/portfolios/{id}/transactions/import` | Requires the preview token; atomically imports the exact normalized statement and rejects duplicates. |
 | `POST /v1/portfolios/{id}/rebalance/preview` | Non-executable target-allocation trade estimate using stored NAVs. |
 | `GET /v1/portfolios/{id}/valuation` | Latest stored-NAV valuation, with explicit missing-coverage status. |
 
