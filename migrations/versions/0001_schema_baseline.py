@@ -15,7 +15,7 @@ depends_on = None
 def upgrade() -> None:
     # checkfirst=True makes this baseline adopt existing deployments created by
     # SQLAlchemy create_all while creating any newly introduced tables.
-    Base.metadata.create_all(bind=op.get_bind(), checkfirst=True)
+    # Keep this baseline immutable: later models must be introduced by their own revision.\n    baseline_tables = [\n        Base.metadata.tables[name]\n        for name in (\n            "schemes",\n            "ingestion_snapshots",\n            "nav_observations",\n            "portfolios",\n            "portfolio_transactions",\n            "portfolio_transaction_audit",\n        )\n    ]\n    Base.metadata.create_all(bind=op.get_bind(), tables=baseline_tables, checkfirst=True)
 
 
 def downgrade() -> None:
