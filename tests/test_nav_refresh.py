@@ -85,8 +85,8 @@ def test_stale_nav_effective_date_is_rejected(monkeypatch):
     monkeypatch.setattr(main, "MINIMUM_VALID_RECORDS", 1)
     monkeypatch.setattr(main, "MAX_NAV_STALENESS_DAYS", 7)
     stale = (
-        "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\\n"
-        "998876;INF000000003;INF000000004;Stale Test Fund;100.0000;01-Nov-2026\\n"
+        "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
+        "998876;INF000000003;INF000000004;Stale Test Fund;100.0000;01-Nov-2026\n"
     )
     monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
         content=stale.encode("utf-8"), raise_for_status=lambda: None
