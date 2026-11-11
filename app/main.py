@@ -1088,12 +1088,13 @@ def portfolio_valuation(
             ).scalar_one_or_none()
             nav_value = Decimal(latest.nav_value) if latest else None
             nav_age_days = (date.today() - latest.nav_date).days if latest else None
-            if nav_age_days is not None and nav_age_days > MAX_NAV_STALENESS_DAYS:
+            if holding["units"] > 0 and nav_age_days is not None and nav_age_days > MAX_NAV_STALENESS_DAYS:
                 stale_nav_scheme_codes.append(code)
             value = holding["units"] * nav_value if nav_value is not None else None
             if value is not None:
-                current_value += value
-                valuation_dates.append(latest.nav_date)
+                if holding["units"] > 0:
+                    current_value += value
+                    valuation_dates.append(latest.nav_date)
             elif holding["units"] > 0:
                 missing_nav_scheme_codes.append(code)
             remaining_cost_basis += holding["cost_basis"]
