@@ -14,7 +14,19 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select
 
-from pydantic import BaseModel, Field\nfrom decimal import Decimal\n\nfrom app.db import IngestionSnapshot, NavObservation, Scheme, SessionLocal, init_db, Portfolio, PortfolioTransaction
+from decimal import Decimal
+
+from pydantic import BaseModel, Field
+
+from app.db import (
+    IngestionSnapshot,
+    NavObservation,
+    Portfolio,
+    PortfolioTransaction,
+    Scheme,
+    SessionLocal,
+    init_db,
+)
 from app.analytics import performance_metrics
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
