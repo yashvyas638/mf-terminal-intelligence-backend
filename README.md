@@ -125,3 +125,8 @@ The product is developed in seven gated phases. Read these documents before chan
 - [UX and Design System — terminal experience and interaction standards](docs/UX_AND_DESIGN_SYSTEM.md)
 
 **Current phase: P0 — OPEN / BLOCKED.** Do not begin P1 implementation until P0 exit evidence is complete and explicitly signed off. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
+
+
+## P0 security remediation
+
+Live Supabase access findings and the containment migration are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md). Migration 0004 is pending CI and production connection-role verification; it must not be treated as deployed until the exact migration revision is confirmed in Supabase.
