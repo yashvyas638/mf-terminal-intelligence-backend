@@ -3,13 +3,17 @@ from decimal import Decimal
 
 import pytest
 
-from app.nav_ingest import parse_amfi_nav_text
+from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 SAMPLE = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
 Open Ended Schemes ( Growth Scheme - Equity Scheme );;;;;
 119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund - Direct Plan - Growth;89.1234;21-Oct-2026
 120503;INF204K01K31;;Nippon India Liquid Fund - Direct Plan - Growth;1000.1234;21-Oct-2026
 """
+
+
+def test_uses_canonical_amfi_portal_feed():
+    assert AMFI_NAV_URL == "https://portal.amfiindia.com/spages/NAVAll.txt"
 
 
 def test_parses_valid_rows_and_dates():
@@ -20,6 +24,15 @@ def test_parses_valid_rows_and_dates():
     assert records[0].nav_date == date(2026, 10, 21)
     assert report["unique_scheme_codes"] == 2
     assert report["quality_status"] == "PASS"
+    assert report["source_url"] == AMFI_NAV_URL
+
+
+def test_normalizes_amfi_missing_isin_marker_to_null():
+    records, _ = parse_amfi_nav_text(
+        "119551;-;-;Example Fund;12.3456;21-Oct-2026\n"
+    )
+    assert records[0].isin_growth is None
+    assert records[0].isin_dividend_reinvestment is None
 
 
 def test_skips_duplicate_scheme_date_and_reports_it():
