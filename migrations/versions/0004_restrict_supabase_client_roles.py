@@ -1,11 +1,11 @@
 """Revoke Supabase client-role access to the single-operator backend schema.
 
-Revision ID: 0004_restrict_supabase_client_roles
+Revision ID: 0004_supabase_role_lockdown
 Revises: 0003_nav_correction_history
 """
 from alembic import op
 
-revision = "0004_restrict_supabase_client_roles"
+revision = "0004_supabase_role_lockdown"
 down_revision = "0003_nav_correction_history"
 branch_labels = None
 depends_on = None
