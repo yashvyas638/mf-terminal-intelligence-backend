@@ -27,6 +27,7 @@ Primary navigation:
 - **Fund Explorer:** search, filters, category/AMC, plan/option, benchmark, fund profile.
 - **Fund Research:** returns, rolling returns, risk, consistency, drawdowns, manager, costs, documents.
 - **Compare:** side-by-side funds with like-for-like period, category, benchmark, plan and data coverage.
+- **Current P0 implementation:** 2–10 scheme comparison using stored AMFI NAV observations, showing per-scheme observation count, latest NAV date, total return, CAGR, annualised volatility and maximum drawdown. It does not yet satisfy category/benchmark/plan/option like-for-like comparison.
 - **Portfolio X-Ray:** underlying holdings, sector/stock exposure, overlap, concentration, factor and risk contribution.
 - **Market & Macro:** rates, inflation, currency, liquidity, equity/bond regimes, event timeline and portfolio sensitivity.
 - **Decision Centre:** ADD / HOLD / REDUCE / SWITCH / EXIT research cases, target allocation, tax/exit-load checks, action log.
@@ -252,3 +253,8 @@ The Home screen should feel like a calm professional terminal:
 - Activity timeline: imports, NAV refreshes, corrections and user decisions.
 
 Use progressive disclosure. Do not cram every metric into the home screen.
+
+
+### P0 delivered comparison slice (not full research comparison)
+
+The current API/UI provides a limited NAV-series comparison for two to ten selected scheme codes. It deliberately reports each scheme's own observation count and latest NAV date because data coverage may differ. It does not infer categories, AMC, plan/option equivalence, benchmark TRI, distributions, holdings, expense ratio or manager history. Do not rank funds or call this a peer comparison until authoritative reference data and benchmark/disclosure sources are implemented.
