@@ -62,3 +62,12 @@ def test_short_numeric_candidate_row_is_counted_as_invalid():
 def test_rejects_html_error_page_instead_of_nav_feed():
     with pytest.raises(ValueError, match="HTML instead of the NAV text feed"):
         parse_amfi_nav_text("<!doctype html><html><body>temporarily unavailable</body></html>")
+
+
+def test_rejects_conflicting_duplicate_scheme_date_nav_values():
+    conflicting = (
+        "119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;89.1234;21-Oct-2026\\n"
+        "119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;90.1234;21-Oct-2026\\n"
+    )
+    with pytest.raises(ValueError, match="conflicting duplicate NAV"):
+        parse_amfi_nav_text(conflicting)
