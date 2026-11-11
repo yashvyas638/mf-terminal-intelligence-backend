@@ -34,6 +34,9 @@ def test_nav_correction_is_audited_and_replay_is_idempotent(monkeypatch):
     third = client.post("/v1/nav/refresh", headers=headers)
 
     assert first.status_code == second.status_code == third.status_code == 200
+    assert first.json()["nav_rows_inserted"] == 1
+    assert second.json()["nav_corrections_recorded"] == 1
+    assert third.json()["nav_rows_unchanged"] == 1
     with SessionLocal() as db:
         current = db.execute(
             select(NavObservation).where(
