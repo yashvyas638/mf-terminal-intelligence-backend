@@ -71,3 +71,20 @@ def test_rejects_conflicting_duplicate_scheme_date_nav_values():
     )
     with pytest.raises(ValueError, match="conflicting duplicate NAV"):
         parse_amfi_nav_text(conflicting)
+
+
+def test_parses_expanded_amfi_eight_column_rows():
+    expanded = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;Direct;Growth;89.1234;21-Oct-2026
+120503;INF204K01K31;;Nippon India Liquid Fund;Regular;IDCW Payout;1000.1234;21-Oct-2026
+"""
+    records, report = parse_amfi_nav_text(expanded)
+    assert len(records) == 2
+    assert records[0].scheme_name == "Nippon India Large Cap Fund - Direct - Growth"
+    assert records[0].nav == Decimal("89.1234")
+    assert records[0].nav_date == date(2026, 10, 21)
+    assert records[1].scheme_name == "Nippon India Liquid Fund - Regular - IDCW Payout"
+    assert records[1].nav == Decimal("1000.1234")
+    assert report["unique_scheme_codes"] == 2
+
+
