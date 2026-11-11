@@ -17,7 +17,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -47,7 +47,17 @@ _refresh_lock = threading.Lock()
 async def lifespan(_: FastAPI):
     # Production schema changes are exclusively Alembic-managed by the Render start command.
     # Local development and isolated tests retain automatic table bootstrap.
-    if os.getenv("ENVIRONMENT", "").lower() != "production":
+    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        configured_key = os.getenv("API_KEY", "")
+        if len(configured_key) < 32:
+            raise RuntimeError("Production API_KEY must be configured and contain at least 32 characters")
+        if MINIMUM_VALID_RECORDS < 1:
+            raise RuntimeError("MINIMUM_VALID_RECORDS must be a positive integer")
+        # Fail deployment startup if the configured PostgreSQL database is unreachable.
+        # Never create or mutate the production schema here; Alembic owns migrations.
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    else:
         init_db()
     yield
 
