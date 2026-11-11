@@ -377,3 +377,15 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Branch-only verification: current tip CI run includes SQLite and PostgreSQL 16 migrations/tests, Ruff and dashboard JavaScript syntax. Production remains unverified until the actual Render request and Supabase persistence flow is inspected and run.
 
 - Added secret-safe NAV refresh lifecycle diagnostics: request start, upstream response metadata, parser/quality totals, stale/minimum-record gates, transaction rollback errors and successful snapshot commit/counts. No credentials, DB URLs or raw NAV feed are logged. Regression test verifies API key absence from captured logs.
+
+
+## 2026-11-12 — P1 fund research implementation slice
+
+- Added nullable scheme metadata fields for AMC, structure, category group, category, asset class, plan and option. These are not guessed from scheme names.
+- Extended the expanded eight-column AMFI parser to preserve the source Plan and Option fields. Legacy six-column feeds remain supported; unknown fields remain null.
+- Added monthly-sampled 1Y/3Y rolling NAV return windows. A window is omitted when the nearest actual base NAV is more than seven days before the target start date; no interpolation is used.
+- Added observed positive-month and positive-rolling-window rates, downside deviation and research profile API.
+- Added a paginated NAV-based screener API and a responsive Research Terminal page with sortable current-page metrics, plan/option filters, fund profile and rolling-return diagnostics.
+- Added navigation from the existing dashboard. Portfolio, valuation, ledger, NAV ingestion and correction routes remain in the existing application.
+- Not delivered by this slice: authoritative category/AMC/asset-class mapping, benchmark TRI, distribution-adjusted total returns, AUM, P/E/P/B, expense ratio, exit load, holdings, manager data, proprietary recency/volatility/consistency scores, peer leaderboards or tax engine. These require trusted sources, methodology and additional migrations.
+- This is an implementation slice, not P1 sign-off. Run all CI and migration checks on the exact branch SHA before considering merge or deployment.
