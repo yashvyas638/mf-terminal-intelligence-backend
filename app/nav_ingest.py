@@ -12,6 +12,10 @@ from typing import Any
 AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
 
 
+class ConflictingDuplicateNavError(ValueError):
+    """Raised when one feed assigns different NAVs to the same scheme/date."""
+
+
 @dataclass(frozen=True)
 class NavRecord:
     scheme_code: int
@@ -71,13 +75,15 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
             key = (code, nav_date)
             if key in seen:
                 if seen[key] != nav:
-                    raise ValueError(
+                    raise ConflictingDuplicateNavError(
                         f"conflicting duplicate NAV for scheme {code} on {nav_date.isoformat()}"
                     )
                 issues.append({"line": line_number, "type": "duplicate_scheme_date", "scheme_code": code, "date": nav_date.isoformat()})
                 continue
             seen[key] = nav
             records.append(NavRecord(code, _clean(parts[1]), _clean(parts[2]), name, nav, nav_date))
+        except ConflictingDuplicateNavError:
+            raise
         except (ValueError, InvalidOperation, IndexError) as exc:
             issues.append({"line": line_number, "type": "invalid_nav_row", "detail": str(exc)[:180]})
     if not records:
