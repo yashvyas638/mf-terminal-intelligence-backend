@@ -88,6 +88,11 @@ def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "dashboard.html")
 
 
+@app.get("/research", include_in_schema=False)
+def research_dashboard() -> FileResponse:
+    return FileResponse(STATIC_DIR / "research.html")
+
+
 def require_api_key(x_api_key: str | None) -> None:
     expected = os.getenv("API_KEY")
     if not expected:
