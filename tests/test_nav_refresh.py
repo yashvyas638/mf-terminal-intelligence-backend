@@ -49,3 +49,31 @@ def test_nav_correction_is_audited_and_replay_is_idempotent(monkeypatch):
     assert len(revisions) == 1
     assert Decimal(revisions[0].previous_nav_value) == Decimal("100.0000")
     assert Decimal(revisions[0].replacement_nav_value) == Decimal("101.0000")
+
+
+def test_oversized_amfi_payload_is_rejected_before_parsing(monkeypatch):
+    init_db()
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
+        content=b"x" * 30_000_001, raise_for_status=lambda: None
+    ))
+    response = TestClient(main.app).post(
+        "/v1/nav/refresh",
+        headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+    )
+    assert response.status_code == 502
+    assert "30 MB" in response.json()["detail"]
+
+
+def test_invalid_utf8_amfi_payload_is_rejected(monkeypatch):
+    init_db()
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
+        content=b"\\xff\\xfe", raise_for_status=lambda: None
+    ))
+    response = TestClient(main.app).post(
+        "/v1/nav/refresh",
+        headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+    )
+    assert response.status_code == 502
+    assert "valid UTF-8" in response.json()["detail"]
