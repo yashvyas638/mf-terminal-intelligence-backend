@@ -49,7 +49,7 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `GET /health` | Public database/service readiness probe; exposes no data or secrets. |
 | `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot. |
 | `GET /v1/nav/status` | Latest ingestion snapshot and retrieval freshness. |
-| `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |
+| `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |\n| `GET /v1/nav/schemes/{scheme_code}` | Scheme metadata, ISINs, latest stored NAV, observation coverage and NAV-derived metrics. |\n| `POST /v1/analytics/compare` | Compare 2–10 schemes on stored AMFI NAV series; each scheme's coverage is reported independently. |
 | `GET /v1/nav/history/{scheme_code}?days=` | Stored NAV history for one scheme. |
 | `GET /v1/nav/snapshot/latest` | Latest full validation report. |
 | `POST /v1/portfolios` | Creates a private workspace portfolio for the single trusted operator. |
@@ -104,7 +104,7 @@ Portfolio transactions are immutable financial facts. To correct one, use the au
 
 The statement-import workflow accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. Preview validates known schemes, arithmetic and chronological unit balances without writing transactions. The confirmation token is bound to the portfolio, normalized transaction fingerprint and row count, and expires after 10 minutes. Confirmation revalidates under a per-portfolio database lock and commits all rows atomically. Re-importing the same normalized statement into the same portfolio is rejected. The raw statement is deliberately not retained; only a SHA-256 fingerprint is stored.
 
-The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.
+The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It rejects stale NAV inputs rather than presenting them as current values. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.
 
 ## NAV correction history
 
@@ -112,7 +112,7 @@ The current NAV table stores one effective value per scheme/date. If AMFI republ
 
 ## Authentication and tenancy boundary
 
-The current service uses one shared server-side API key and is suitable only for a single trusted operator/private workspace. It is not yet a multi-tenant public SaaS: portfolio records are not bound to authenticated user identities, and the shared API key is not a substitute for per-user JWT authorization and Supabase RLS. Do not expose it to unrelated users until ownership mapping, authorization checks, and RLS have been implemented and verified. Use a random API key of at least 32 characters.
+Fund comparison is now implemented using the stored NAV time series for 2–10 schemes, returning total return, CAGR, volatility, drawdown and underlying coverage counts. The comparison is NAV-derived only: it does not add benchmark TRI, dividend/distribution adjustment or peer/category ranking.\n\nThe current service uses one shared server-side API key and is suitable only for a single trusted operator/private workspace. It is not yet a multi-tenant public SaaS: portfolio records are not bound to authenticated user identities, and the shared API key is not a substitute for per-user JWT authorization and Supabase RLS. Do not expose it to unrelated users until ownership mapping, authorization checks, and RLS have been implemented and verified. Use a random API key of at least 32 characters.
 
 ## Database and source CI
 
