@@ -289,61 +289,143 @@ def add_portfolio_transaction(
                 "charges": str(transaction.charges)}
 
 
+@app.get("/v1/portfolios/{portfolio_id}/transactions")
+def list_portfolio_transactions(
+    portfolio_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        if db.get(Portfolio, portfolio_id) is None:
+            raise HTTPException(404, "Portfolio not found")
+        rows = db.execute(
+            select(PortfolioTransaction)
+            .where(PortfolioTransaction.portfolio_id == portfolio_id)
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        return {
+            "count": len(rows),
+            "items": [
+                {
+                    "id": row.id,
+                    "scheme_code": row.scheme_code,
+                    "transaction_type": row.transaction_type,
+                    "transaction_date": row.transaction_date.isoformat(),
+                    "units": str(row.units),
+                    "nav": str(row.nav),
+                    "amount": str(row.amount),
+                    "charges": str(row.charges),
+                    "notes": row.notes,
+                }
+                for row in rows
+            ],
+        }
+
+
 @app.get("/v1/portfolios/{portfolio_id}/valuation")
 def portfolio_valuation(
     portfolio_id: int,
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
+    from app.analytics import xirr
+
     with SessionLocal() as db:
         portfolio = db.get(Portfolio, portfolio_id)
         if portfolio is None:
             raise HTTPException(404, "Portfolio not found")
         txns = db.execute(
-            select(PortfolioTransaction).where(PortfolioTransaction.portfolio_id == portfolio_id)
+            select(PortfolioTransaction)
+            .where(PortfolioTransaction.portfolio_id == portfolio_id)
             .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
         ).scalars().all()
         holdings: dict[int, dict[str, Any]] = {}
         cashflows: list[tuple[date, float]] = []
-        invested = 0.0
-        realized = 0.0
+        gross_buys = 0.0
+        realized_proceeds = 0.0
+        realized_gain_loss = 0.0
+
         for txn in txns:
-            holding = holdings.setdefault(txn.scheme_code, {"units": 0.0, "name": None})
+            holding = holdings.setdefault(
+                txn.scheme_code,
+                {"units": 0.0, "cost_basis": 0.0, "name": str(txn.scheme_code)},
+            )
             units = float(txn.units)
             amount = float(txn.amount)
             charges = float(txn.charges)
             if txn.transaction_type == "BUY":
+                total_cost = amount + charges
                 holding["units"] += units
-                cashflows.append((txn.transaction_date, -(amount + charges)))
-                invested += amount + charges
+                holding["cost_basis"] += total_cost
+                gross_buys += total_cost
+                cashflows.append((txn.transaction_date, -total_cost))
             else:
+                if units > holding["units"] + 1e-8:
+                    raise HTTPException(
+                        409,
+                        f"Sell transaction exceeds available units for scheme {txn.scheme_code}",
+                    )
+                average_cost = holding["cost_basis"] / holding["units"] if holding["units"] else 0.0
+                cost_removed = average_cost * units
+                net_proceeds = amount - charges
                 holding["units"] -= units
-                cashflows.append((txn.transaction_date, amount - charges))
-                realized += amount - charges
+                holding["cost_basis"] -= cost_removed
+                realized_proceeds += net_proceeds
+                realized_gain_loss += net_proceeds - cost_removed
+                cashflows.append((txn.transaction_date, net_proceeds))
+
         items = []
         current_value = 0.0
+        remaining_cost_basis = 0.0
+        valuation_dates = []
         for code, holding in holdings.items():
             scheme = db.get(Scheme, code)
-            holding["name"] = scheme.scheme_name if scheme else str(code)
-            if holding["units"] < -1e-8:
-                raise HTTPException(409, f"Transactions produce negative units for scheme {code}; correct the sell ledger")
+            holding["name"] = scheme.scheme_name if scheme else holding["name"]
             latest = db.execute(
-                select(NavObservation).where(NavObservation.scheme_code == code)
-                .order_by(desc(NavObservation.nav_date)).limit(1)
+                select(NavObservation)
+                .where(NavObservation.scheme_code == code)
+                .order_by(desc(NavObservation.nav_date))
+                .limit(1)
             ).scalar_one_or_none()
             nav_value = float(latest.nav_value) if latest else None
             value = holding["units"] * nav_value if nav_value is not None else None
             if value is not None:
                 current_value += value
-            items.append({"scheme_code": code, "scheme_name": holding["name"], "units": round(holding["units"], 8),
-                          "latest_nav": nav_value, "nav_date": latest.nav_date.isoformat() if latest else None,
-                          "market_value": round(value, 2) if value is not None else None})
-        if current_value > 0 and txns:
-            cashflows.append((date.today(), current_value))
-        from app.analytics import xirr
-        money_weighted = xirr(cashflows)
-        return {"portfolio_id": portfolio_id, "portfolio_name": portfolio.name, "currency": portfolio.currency,
-                "holdings": items, "invested_amount": round(invested, 2), "realized_proceeds": round(realized, 2),
-                "current_value": round(current_value, 2), "total_value_including_realized": round(current_value + realized, 2),
-                "unrealized_gain_loss": round(current_value - invested + realized, 2),
-                "xirr": money_weighted, "valuation_note": "Uses latest stored AMFI NAV per scheme. Historical transactions must be complete for meaningful XIRR."}
+                valuation_dates.append(latest.nav_date)
+            remaining_cost_basis += holding["cost_basis"]
+            items.append(
+                {
+                    "scheme_code": code,
+                    "scheme_name": holding["name"],
+                    "units": round(holding["units"], 8),
+                    "cost_basis": round(holding["cost_basis"], 2),
+                    "latest_nav": nav_value,
+                    "nav_date": latest.nav_date.isoformat() if latest else None,
+                    "market_value": round(value, 2) if value is not None else None,
+                }
+            )
+
+        valuation_date = max(valuation_dates) if valuation_dates else None
+        if current_value > 0 and valuation_date and txns:
+            cashflows.append((valuation_date, current_value))
+        unrealized_gain_loss = current_value - remaining_cost_basis
+        total_gain_loss = realized_gain_loss + unrealized_gain_loss
+        return {
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "currency": portfolio.currency,
+            "valuation_date": valuation_date.isoformat() if valuation_date else None,
+            "holdings": items,
+            "gross_buy_amount": round(gross_buys, 2),
+            "realized_proceeds": round(realized_proceeds, 2),
+            "remaining_cost_basis": round(remaining_cost_basis, 2),
+            "current_value": round(current_value, 2),
+            "realized_gain_loss": round(realized_gain_loss, 2),
+            "unrealized_gain_loss": round(unrealized_gain_loss, 2),
+            "total_gain_loss": round(total_gain_loss, 2),
+            "xirr": xirr(cashflows),
+            "valuation_note": (
+                "Uses latest stored AMFI NAV and average-cost accounting for sold units. "
+                "Record all transactions for meaningful results; missing NAVs are not treated as zero."
+            ),
+        }
