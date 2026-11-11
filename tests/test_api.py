@@ -442,6 +442,7 @@ def test_stale_nav_is_disclosed_in_valuation_and_blocks_rebalance(monkeypatch):
     valuation = client.get(f"/v1/portfolios/{portfolio['id']}/valuation", headers=headers).json()
     assert valuation["valuation_freshness"] == "STALE"
     assert valuation["stale_nav_scheme_codes"] == [scheme_code]
+    assert valuation["xirr"] is None
     rebalance = client.post(
         f"/v1/portfolios/{portfolio['id']}/rebalance/preview",
         headers=headers,
