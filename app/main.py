@@ -549,7 +549,7 @@ def _validate_import_batch(db: Any, portfolio_id: int, transactions: list[Transa
 
 
 def _canonical_statement_fingerprint(transactions: list[TransactionCreate]) -> str:
-    """Fingerprint transaction meaning, independent of CSV column order and formatting."""
+    """Fingerprint normalized transaction meaning while preserving same-day row order."""
     rows = [
         {
             "transaction_date": item.transaction_date.isoformat(),
@@ -563,7 +563,6 @@ def _canonical_statement_fingerprint(transactions: list[TransactionCreate]) -> s
         }
         for item in transactions
     ]
-    rows.sort(key=lambda row: json.dumps(row, sort_keys=True, separators=(",", ":")))
     canonical = json.dumps(rows, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
