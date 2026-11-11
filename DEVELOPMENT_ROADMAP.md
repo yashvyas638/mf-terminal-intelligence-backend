@@ -347,3 +347,6 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Current work remains on `audit/production-foundation`; no main merge, Supabase production migration or Render deploy was performed.
 
 - Added a configurable maximum NAV effective-date age (`MAX_NAV_STALENESS_DAYS`, default 7) to the ingestion gate. Stale source files are rejected before snapshot or NAV writes; Render blueprint config declares the default. A stale-feed regression test was added.
+
+- Added a PostgreSQL session-level advisory lock around NAV refresh so multiple Render workers/processes cannot run ingestion concurrently; the in-process lock remains as a fast local guard. PostgreSQL integration test verifies a second process receives HTTP 409 when the lock is held.
+- Added database CHECK constraints for positive NAV, valid BUY/SELL transaction type, positive units/NAV/amount, nonnegative charges and positive import row count. Migration 0006 preflights existing rows and aborts rather than silently modifying invalid historical data.
