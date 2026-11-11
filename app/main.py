@@ -27,6 +27,13 @@ app = FastAPI(
     version=APP_VERSION,
     description="AMFI NAV ingestion, persistence, freshness and quality checks. Research support only; no trading.",
 )
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(STATIC_DIR / "dashboard.html")
 
 
 @app.on_event("startup")
@@ -65,7 +72,7 @@ def health() -> dict[str, Any]:
             db.execute(select(func.count()).select_from(Scheme)).scalar_one()
         return {"status": "ok", "service": "mf-terminal-nav", "version": APP_VERSION, "database": "reachable", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
     except Exception as exc:
-        raise HTTPException(503, f"database unavailable: {type(exc).__name__}")
+        raise HTTPException(503, f"database unavailable: {type(exc).__name__}") from None
 
 
 @app.post("/v1/nav/refresh")
@@ -81,11 +88,11 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             response.raise_for_status()
             payload = response.content.decode("utf-8-sig", errors="replace")
         except requests.RequestException as exc:
-            raise HTTPException(502, f"AMFI source request failed: {type(exc).__name__}; existing data was not changed")
+            raise HTTPException(502, f"AMFI source request failed: {type(exc).__name__}; existing data was not changed") from None
         try:
             records, report = parse_amfi_nav_text(payload)
         except ValueError as exc:
-            raise HTTPException(502, f"AMFI payload validation failed: {exc}; existing data was not changed")
+            raise HTTPException(502, f"AMFI payload validation failed: {exc}; existing data was not changed") from None
         if report["records_valid"] < MINIMUM_VALID_RECORDS:
             raise HTTPException(502, f"AMFI payload had only {report['records_valid']} valid rows; minimum is {MINIMUM_VALID_RECORDS}; existing data was not changed")
 
