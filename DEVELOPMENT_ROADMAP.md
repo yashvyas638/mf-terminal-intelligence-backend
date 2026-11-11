@@ -325,3 +325,11 @@ For every phase:
 - See [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md) for scope, preconditions and remaining blockers.
 
 P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production permission change, or production deployment is authorised by this evidence update.
+
+
+### CI follow-up — 2026-11-11
+- Branch head before this correction: `32fae8c320028f95a72c472cfa2b9fc315a1270f`.
+- CI run `43025896565`: SQLite migration, Ruff and pytest passed; PostgreSQL job failed before migrations in the Supabase role-fixture step.
+- Root cause identified in workflow SQL: the anonymous DO block used an invalid dollar-quote delimiter. Corrected to PostgreSQL `$$ ... $$` quoting in the CI workflow.
+- A fresh CI run on the corrected commit is required. PostgreSQL migration/test status remains unverified until that run completes.
+- No production migration or Render deployment was performed.
