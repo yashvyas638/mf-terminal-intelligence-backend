@@ -112,3 +112,16 @@ The current service uses one shared server-side API key and is suitable only for
 ## Database and source CI
 
 CI applies migrations and runs tests independently against SQLite and PostgreSQL 16. A separate scheduled/manual workflow validates the public AMFI response without writing to any database. These checks do not replace verification against the actual Supabase project or Render deployment.
+
+
+## Product roadmap and engineering governance
+
+The product is developed in seven gated phases. Read these documents before changing scope:
+
+- [Development Roadmap — phase gates and acceptance criteria](DEVELOPMENT_ROADMAP.md)
+- [Product Blueprint — modules, user outcomes and feature boundaries](docs/PRODUCT_BLUEPRINT.md)
+- [Engineering Playbook — end-to-end development, CI, database and deployment flow](docs/ENGINEERING_PLAYBOOK.md)
+- [Architecture and Data Model — canonical entities, tenancy and provenance](docs/ARCHITECTURE_AND_DATA_MODEL.md)
+- [UX and Design System — terminal experience and interaction standards](docs/UX_AND_DESIGN_SYSTEM.md)
+
+**Current phase: P0 — OPEN / BLOCKED.** Do not begin P1 implementation until P0 exit evidence is complete and explicitly signed off. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
