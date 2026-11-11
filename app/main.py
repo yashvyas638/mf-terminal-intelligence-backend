@@ -974,7 +974,9 @@ def rebalance_preview(
         if not all_codes:
             raise HTTPException(422, "Portfolio has no active holdings or targets")
         navs: dict[int, Decimal] = {}
+        nav_dates: dict[int, date] = {}
         missing_navs: list[int] = []
+        stale_navs: list[tuple[int, int]] = []
         for code in all_codes:
             latest = db.execute(
                 select(NavObservation)
@@ -986,8 +988,17 @@ def rebalance_preview(
                 missing_navs.append(code)
             else:
                 navs[code] = Decimal(latest.nav_value)
+                nav_dates[code] = latest.nav_date
+                age_days = (date.today() - latest.nav_date).days
+                if age_days > MAX_NAV_STALENESS_DAYS:
+                    stale_navs.append((code, age_days))
         if missing_navs:
             raise HTTPException(409, f"Cannot create a rebalance preview without NAV coverage: {sorted(missing_navs)}")
+        if stale_navs:
+            raise HTTPException(
+                409,
+                f"Cannot create a rebalance preview with stale NAVs: {stale_navs}; refresh NAV data first",
+            )
         current_values = {code: units_by_scheme.get(code, Decimal("0")) * navs[code] for code in all_codes}
         portfolio_value = sum(current_values.values(), Decimal("0"))
         if portfolio_value <= 0:
@@ -1006,11 +1017,18 @@ def rebalance_preview(
                     "estimated_units": str((abs(delta_value) / navs[code]).quantize(Decimal("0.000001"))),
                     "action": "BUY" if delta_value > Decimal("0.01") else "SELL" if delta_value < Decimal("-0.01") else "HOLD",
                     "nav_used": str(navs[code]),
+                    "nav_date": nav_dates[code].isoformat(),
+                    "nav_age_days": (date.today() - nav_dates[code]).days,
                 }
             )
         return {
             "portfolio_id": portfolio_id,
             "portfolio_value": str(portfolio_value.quantize(Decimal("0.01"))),
+            "nav_effective_date_range": {
+                "oldest": min(nav_dates.values()).isoformat(),
+                "newest": max(nav_dates.values()).isoformat(),
+            },
+            "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
             "recommendations": recommendations,
             "limitations": [
                 "Preview only; it does not place trades or account for taxes, exit loads, minimum transaction sizes, or settlement rules.",
