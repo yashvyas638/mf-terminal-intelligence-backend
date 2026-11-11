@@ -1,6 +1,6 @@
 # MF Terminal Intelligence — NAV Data Service
 
-A secure, deployable FastAPI service that retrieves the official AMFI all-schemes NAV feed, validates it, and stores an auditable daily history in SQLite (local development) or PostgreSQL (production).
+A deployable FastAPI service that retrieves the official AMFI all-schemes NAV feed, validates it, and stores dated NAV observations plus append-only correction provenance in PostgreSQL (production) or SQLite (local tests only).
 
 > Research support only. This service does not place orders, provide investment advice, or reconcile a scheme against AMC disclosures.
 
@@ -9,7 +9,7 @@ A secure, deployable FastAPI service that retrieves the official AMFI all-scheme
 - Protects every data endpoint with a constant-time API-key check.
 - Downloads AMFI's official `NAVAll.txt` source only when an authenticated refresh is requested.
 - Rejects empty, malformed, and unexpectedly small source responses before changing persisted data.
-- Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.
+- Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.\n- Preserves prior NAV values and both source snapshot references when AMFI republishes a corrected NAV for the same scheme/date.\n- Uses Alembic as the production schema manager; production startup does not run ORM create-all.
 - Prevents duplicate refreshes within a running service process.
 - Provides health, freshness, scheme search, history, and latest-snapshot endpoints.
 - Records an append-only audit event for each portfolio transaction and supports audited voids rather than destructive deletes.
@@ -63,7 +63,7 @@ Except `/health`, every endpoint requires `X-API-Key`.
 
 1. Push this folder to a GitHub repository.
 2. Create a managed PostgreSQL database. Do **not** use SQLite on an ephemeral web-service disk in production.
-3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL URL.
+3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL URL. Production mode rejects SQLite.
 4. Keep Render's generated `API_KEY`, or replace it with a strong secret.
 5. Confirm `/health` reports `database: reachable`, then run one authenticated refresh.
 6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler then refreshes Monday–Saturday at 09:30 IST.
@@ -87,7 +87,7 @@ pytest -q
 
 The included concurrency guard applies to a single process. If this service is scaled to multiple workers or instances, use a PostgreSQL advisory lock or a dedicated job queue before enabling more than one scheduler.
 
-Alembic manages versioned schema changes. The baseline safely adopts tables created by the earlier `create_all` bootstrap; run `alembic upgrade head` before deploying each schema release. Application startup retains `create_all` as a backwards-compatible bootstrap, not as a replacement for reviewed migrations.
+Alembic is the sole production schema manager. Render runs `alembic upgrade head` before starting the API. `init_db()` remains only for local development and isolated tests. Production startup does not mutate schema.
 
 ## Portfolio ledger integrity
 
@@ -100,3 +100,15 @@ Portfolio transactions are immutable financial facts. To correct one, use the au
 The statement-import endpoint accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. It rejects unknown scheme codes, invalid arithmetic, invalid dated ledgers, and files above 5,000 rows. Imports are all-or-nothing. The raw statement is deliberately not retained; only a SHA-256 fingerprint is included in the transaction audit event.
 
 The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.
+
+## NAV correction history
+
+The current NAV table stores one effective value per scheme/date. If AMFI republishes a different value for the same date, the previous value, replacement value, both source snapshot IDs, and correction timestamp are appended to `nav_observation_revisions` before the effective observation is updated. Replaying an identical feed does not create a correction record. This preserves corrections observed after migration 0003; it cannot reconstruct values overwritten before that migration.
+
+## Authentication and tenancy boundary
+
+The current service uses one shared server-side API key and is suitable only for a single trusted operator/private workspace. It is not yet a multi-tenant public SaaS: portfolio records are not bound to authenticated user identities, and the shared API key is not a substitute for per-user JWT authorization and Supabase RLS. Do not expose it to unrelated users until ownership mapping, authorization checks, and RLS have been implemented and verified. Use a random API key of at least 32 characters.
+
+## Database and source CI
+
+CI applies migrations and runs tests independently against SQLite and PostgreSQL 16. A separate scheduled/manual workflow validates the public AMFI response without writing to any database. These checks do not replace verification against the actual Supabase project or Render deployment.
