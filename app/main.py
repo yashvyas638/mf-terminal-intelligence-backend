@@ -398,6 +398,26 @@ def _lock_portfolio(db: Any, portfolio_id: int) -> Portfolio:
     return portfolio
 
 
+def _canonical_statement_fingerprint(transactions: list[TransactionCreate]) -> str:
+    """Fingerprint transaction meaning, independent of CSV column order and formatting."""
+    rows = [
+        {
+            "transaction_date": item.transaction_date.isoformat(),
+            "scheme_code": item.scheme_code,
+            "transaction_type": item.transaction_type,
+            "units": format(item.units.normalize(), "f"),
+            "nav": format(item.nav.normalize(), "f"),
+            "amount": format(item.amount.normalize(), "f"),
+            "charges": format(item.charges.normalize(), "f"),
+            "notes": item.notes,
+        }
+        for item in transactions
+    ]
+    rows.sort(key=lambda row: json.dumps(row, sort_keys=True, separators=(",", ":")))
+    canonical = json.dumps(rows, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _transaction_details(transaction: PortfolioTransaction) -> str:
     """Serialize ledger facts at the time of an auditable mutation."""
     return json.dumps(
@@ -553,7 +573,7 @@ def import_portfolio_statement(
     """Atomically import a documented CSV format; raw statement text is not persisted."""
     require_api_key(x_api_key)
     transactions = _statement_transactions(payload.csv_text)
-    statement_sha256 = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
+    statement_sha256 = _canonical_statement_fingerprint(transactions)
     with SessionLocal() as db:
         _lock_portfolio(db, portfolio_id)
         existing_batch = db.execute(
