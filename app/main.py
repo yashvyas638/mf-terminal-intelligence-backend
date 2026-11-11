@@ -335,6 +335,100 @@ def latest_snapshot(x_api_key: str | None = Header(default=None, alias="X-API-Ke
 
 
 
+@app.get("/v1/nav/schemes/{scheme_code}")
+def scheme_detail(
+    scheme_code: int,
+    days: int = Query(3650, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Return one scheme's real metadata, latest stored NAV and dated coverage."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found in the ingested scheme master")
+        latest = db.execute(
+            select(NavObservation)
+            .where(NavObservation.scheme_code == scheme_code)
+            .order_by(desc(NavObservation.nav_date))
+            .limit(1)
+        ).scalar_one_or_none()
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+        rows = db.execute(
+            select(NavObservation)
+            .where(NavObservation.scheme_code == scheme_code, NavObservation.nav_date >= since)
+            .order_by(NavObservation.nav_date)
+        ).scalars().all()
+        return {
+            "scheme_code": scheme.scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "isin_growth": scheme.isin_growth,
+            "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
+            "first_seen_at": scheme.first_seen_at.isoformat(),
+            "last_seen_at": scheme.last_seen_at.isoformat(),
+            "latest_nav": str(latest.nav_value) if latest else None,
+            "latest_nav_date": latest.nav_date.isoformat() if latest else None,
+            "observations_in_window": len(rows),
+            "window_start": rows[0].nav_date.isoformat() if rows else None,
+            "window_end": rows[-1].nav_date.isoformat() if rows else None,
+            "performance": performance_metrics([(row.nav_date, float(row.nav_value)) for row in rows]),
+        }
+
+
+class CompareFundsRequest(BaseModel):
+    scheme_codes: list[int] = Field(min_length=2, max_length=10)
+    days: int = Field(default=365, ge=30, le=3650)
+    risk_free_rate: float = Field(default=0.06, ge=0, le=0.25)
+
+    @model_validator(mode="after")
+    def validate_codes(self) -> "CompareFundsRequest":
+        if any(code <= 0 for code in self.scheme_codes):
+            raise ValueError("scheme codes must be positive integers")
+        if len(set(self.scheme_codes)) != len(self.scheme_codes):
+            raise ValueError("scheme codes must be unique")
+        return self
+
+
+@app.post("/v1/analytics/compare")
+def compare_funds(
+    payload: CompareFundsRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Compare 2–10 funds using their own actual stored AMFI NAV observations."""
+    require_api_key(x_api_key)
+    since = (datetime.now(timezone.utc) - timedelta(days=payload.days)).date()
+    results = []
+    with SessionLocal() as db:
+        for code in payload.scheme_codes:
+            scheme = db.get(Scheme, code)
+            if scheme is None:
+                raise HTTPException(404, f"Scheme code {code} is absent from the ingested scheme master")
+            rows = db.execute(
+                select(NavObservation)
+                .where(NavObservation.scheme_code == code, NavObservation.nav_date >= since)
+                .order_by(NavObservation.nav_date)
+            ).scalars().all()
+            metrics = performance_metrics(
+                [(row.nav_date, float(row.nav_value)) for row in rows],
+                risk_free_rate=payload.risk_free_rate,
+            )
+            latest = rows[-1] if rows else None
+            results.append({
+                "scheme_code": code,
+                "scheme_name": scheme.scheme_name,
+                "observations": len(rows),
+                "latest_nav": str(latest.nav_value) if latest else None,
+                "latest_nav_date": latest.nav_date.isoformat() if latest else None,
+                "metrics": metrics,
+            })
+    return {
+        "days_requested": payload.days,
+        "risk_free_rate_assumption": payload.risk_free_rate,
+        "results": results,
+        "methodology": "Each scheme is calculated from its stored AMFI NAV observations. Coverage dates can differ by scheme; benchmark TRI, distributions and category peer adjustments are not included.",
+    }
+
+
 @app.get("/v1/analytics/performance/{scheme_code}")
 def scheme_performance(
     scheme_code: int,
