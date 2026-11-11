@@ -16,14 +16,14 @@ def test_protected_endpoints_fail_closed_when_key_is_missing(monkeypatch):
 
 
 def test_invalid_key_is_rejected(monkeypatch):
-    monkeypatch.setenv("API_KEY", "correct-secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     client = TestClient(app)
     response = client.get("/v1/nav/status", headers={"X-API-Key": "wrong-secret"})
     assert response.status_code == 401
 
 
 def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(monkeypatch):
-    monkeypatch.setenv("API_KEY", "correct-secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999991
     with SessionLocal() as db:
@@ -41,7 +41,7 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
             db.commit()
 
     client = TestClient(app)
-    headers = {"X-API-Key": "correct-secret"}
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
     portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Integrity Test"}).json()
     invalid_amount = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions",
@@ -73,7 +73,7 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
 
 
 def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
-    monkeypatch.setenv("API_KEY", "correct-secret")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999992
     with SessionLocal() as db:
@@ -90,7 +90,7 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
             )
             db.commit()
     client = TestClient(app)
-    headers = {"X-API-Key": "correct-secret"}
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
     portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Import Test"}).json()
     csv_text = "date,scheme_code,type,units,nav,amount\n2026-01-01,999992,BUY,2,100,200\n"
     response = client.post(
