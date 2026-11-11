@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import threading
+import time
 import csv
 import hashlib
 import base64
@@ -21,7 +22,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import desc, func, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -124,6 +125,135 @@ def _read_bounded_amfi_response(response: Any, max_bytes: int = 30_000_000) -> b
     return payload
 
 
+
+def _fetch_amfi_payload(max_attempts: int = 3) -> tuple[bytes, dict[str, Any]]:
+    """Fetch AMFI with bounded streaming, transient retries and source diagnostics."""
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        response = None
+        try:
+            response = requests.get(
+                AMFI_NAV_URL,
+                timeout=(8, 45),
+                headers={
+                    "User-Agent": "MF-Terminal-Intelligence/0.4 (+NAV data service)",
+                    "Accept": "text/plain, */*;q=0.8",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive",
+                },
+                stream=True,
+            )
+            status = int(response.status_code)
+            if status in {429, 500, 502, 503, 504}:
+                raise requests.HTTPError(f"transient AMFI HTTP status {status}", response=response)
+            response.raise_for_status()
+            headers = getattr(response, "headers", {}) or {}
+            raw_payload = _read_bounded_amfi_response(response)
+            metadata = {
+                "http_status": status,
+                "content_type": headers.get("Content-Type", "unknown"),
+                "content_length": headers.get("Content-Length", str(len(raw_payload))),
+                "bytes_received": len(raw_payload),
+                "attempt": attempt,
+            }
+            return raw_payload, metadata
+        except requests.RequestException as exc:
+            last_error = exc
+            retryable = not isinstance(exc, requests.HTTPError) or getattr(exc.response, "status_code", 0) in {429, 500, 502, 503, 504}
+            if not retryable or attempt >= max_attempts:
+                raise
+            delay = min(2 ** (attempt - 1), 4)
+            logger.warning("nav_source_retry attempt=%s next_delay_seconds=%s error_type=%s", attempt, delay, type(exc).__name__)
+            time.sleep(delay)
+        finally:
+            if response is not None:
+                close_response = getattr(response, "close", None)
+                if callable(close_response):
+                    close_response()
+    raise requests.RequestException(f"AMFI request failed after retries: {type(last_error).__name__ if last_error else 'unknown'}")
+
+
+def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Persist a validated feed with batched reads and writes, preserving corrections."""
+    with SessionLocal() as db:
+        snapshot = IngestionSnapshot(
+            source_url=AMFI_NAV_URL, retrieved_at=now, payload_sha256=report["payload_sha256"],
+            records_valid=report["records_valid"], unique_scheme_codes=report["unique_scheme_codes"],
+            min_nav_date=date.fromisoformat(report["min_nav_date"]),
+            max_nav_date=date.fromisoformat(report["max_nav_date"]), invalid_rows=report["invalid_rows"],
+            duplicate_rows_skipped=report["duplicate_rows_skipped"], quality_status=report["quality_status"],
+            report_json=json.dumps(report, ensure_ascii=False),
+        )
+        db.add(snapshot)
+        db.flush()
+        codes = sorted({record.scheme_code for record in records})
+        existing_schemes = {
+            scheme.scheme_code: scheme
+            for offset in range(0, len(codes), 500)
+            for scheme in db.execute(select(Scheme).where(Scheme.scheme_code.in_(codes[offset:offset + 500]))).scalars()
+        }
+        keys = [(record.scheme_code, record.nav_date) for record in records]
+        existing_nav = {}
+        for offset in range(0, len(keys), 400):
+            batch = keys[offset:offset + 400]
+            rows = db.execute(
+                select(NavObservation).where(tuple_(NavObservation.scheme_code, NavObservation.nav_date).in_(batch))
+            ).scalars()
+            for row in rows:
+                existing_nav[(row.scheme_code, row.nav_date)] = row
+
+        schemes_created = schemes_updated = 0
+        nav_rows_inserted = nav_rows_updated = nav_rows_unchanged = nav_corrections_recorded = 0
+        for record in records:
+            scheme = existing_schemes.get(record.scheme_code)
+            if scheme is None:
+                scheme = Scheme(
+                    scheme_code=record.scheme_code, scheme_name=record.scheme_name,
+                    isin_growth=record.isin_growth, isin_dividend_reinvestment=record.isin_dividend_reinvestment,
+                    first_seen_at=now, last_seen_at=now,
+                )
+                db.add(scheme)
+                existing_schemes[record.scheme_code] = scheme
+                schemes_created += 1
+            else:
+                schemes_updated += 1
+                scheme.scheme_name = record.scheme_name
+                scheme.isin_growth = record.isin_growth or scheme.isin_growth
+                scheme.isin_dividend_reinvestment = record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
+                scheme.last_seen_at = now
+            key = (record.scheme_code, record.nav_date)
+            existing = existing_nav.get(key)
+            if existing is None:
+                db.add(NavObservation(
+                    scheme_code=record.scheme_code, nav_date=record.nav_date,
+                    nav_value=record.nav, source_snapshot_id=snapshot.id,
+                ))
+                nav_rows_inserted += 1
+            elif Decimal(existing.nav_value) != record.nav:
+                db.add(NavObservationRevision(
+                    scheme_code=record.scheme_code, nav_date=record.nav_date,
+                    previous_nav_value=existing.nav_value, replacement_nav_value=record.nav,
+                    previous_source_snapshot_id=existing.source_snapshot_id,
+                    replacement_source_snapshot_id=snapshot.id, corrected_at=now,
+                ))
+                existing.nav_value = record.nav
+                existing.source_snapshot_id = snapshot.id
+                nav_rows_updated += 1
+                nav_corrections_recorded += 1
+            else:
+                nav_rows_unchanged += 1
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("nav_database_transaction_failed records=%s payload_sha256=%s", len(records), report["payload_sha256"])
+            raise
+        return {
+            "snapshot": snapshot, "schemes_created": schemes_created, "schemes_updated": schemes_updated,
+            "nav_rows_inserted": nav_rows_inserted, "nav_rows_updated": nav_rows_updated,
+            "nav_rows_unchanged": nav_rows_unchanged, "nav_corrections_recorded": nav_corrections_recorded,
+        }
+
 def _snapshot_dict(snapshot: IngestionSnapshot) -> dict[str, Any]:
     return {
         "snapshot_id": snapshot.id,
@@ -172,32 +302,18 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             if not advisory_lock_acquired:
                 raise HTTPException(409, "A NAV refresh is already running on another service instance")
         try:
-            response = requests.get(
-                AMFI_NAV_URL,
-                timeout=(10, 60),
-                headers={"User-Agent": "MF-Terminal-Intelligence/0.3"},
-                stream=True,
-            )
-            response.raise_for_status()
+            raw_payload, source_meta = _fetch_amfi_payload()
             logger.info(
-                "nav_source_response status=%s content_type=%s content_length=%s",
-                response.status_code,
-                response.headers.get("Content-Type", "unknown"),
-                response.headers.get("Content-Length", "unknown"),
+                "nav_source_response status=%s content_type=%s content_length=%s bytes_received=%s attempt=%s",
+                source_meta["http_status"], source_meta["content_type"], source_meta["content_length"],
+                source_meta["bytes_received"], source_meta["attempt"],
             )
-            try:
-                raw_payload = _read_bounded_amfi_response(response)
-            finally:
-                close_response = getattr(response, "close", None)
-                if callable(close_response):
-                    close_response()
-            try:
-                payload = raw_payload.decode("utf-8-sig", errors="strict")
-            except UnicodeDecodeError:
-                raise HTTPException(502, "AMFI response is not valid UTF-8; existing data was not changed") from None
+            payload = raw_payload.decode("utf-8-sig", errors="strict")
+        except UnicodeDecodeError:
+            raise HTTPException(502, "AMFI response is not valid UTF-8; existing data was not changed") from None
         except requests.RequestException as exc:
             logger.exception("nav_source_request_failed error_type=%s", type(exc).__name__)
-            raise HTTPException(502, f"AMFI source request failed: {type(exc).__name__}; existing data was not changed") from None
+            raise HTTPException(502, f"AMFI source request failed after bounded retries: {type(exc).__name__}; existing data was not changed") from None
         try:
             records, report = parse_amfi_nav_text(payload)
         except ValueError as exc:
@@ -227,78 +343,28 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             )
 
         now = datetime.now(timezone.utc)
-        with SessionLocal() as db:
-            snapshot = IngestionSnapshot(source_url=AMFI_NAV_URL, retrieved_at=now, payload_sha256=report["payload_sha256"], records_valid=report["records_valid"], unique_scheme_codes=report["unique_scheme_codes"], min_nav_date=datetime.fromisoformat(report["min_nav_date"]).date(), max_nav_date=datetime.fromisoformat(report["max_nav_date"]).date(), invalid_rows=report["invalid_rows"], duplicate_rows_skipped=report["duplicate_rows_skipped"], quality_status=report["quality_status"], report_json=json.dumps(report, ensure_ascii=False))
-            db.add(snapshot)
-            db.flush()
-            schemes_created = 0
-            schemes_updated = 0
-            nav_rows_inserted = 0
-            nav_rows_updated = 0
-            nav_rows_unchanged = 0
-            nav_corrections_recorded = 0
-            try:
-                for record in records:
-                    scheme = db.get(Scheme, record.scheme_code)
-                    if scheme is None:
-                        db.add(Scheme(scheme_code=record.scheme_code, scheme_name=record.scheme_name, isin_growth=record.isin_growth, isin_dividend_reinvestment=record.isin_dividend_reinvestment, first_seen_at=now, last_seen_at=now))
-                        schemes_created += 1
-                    else:
-                        schemes_updated += 1
-                        scheme.scheme_name = record.scheme_name
-                        # A missing marker in a later feed must not erase a previously observed ISIN.
-                        scheme.isin_growth = record.isin_growth or scheme.isin_growth
-                        scheme.isin_dividend_reinvestment = record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
-                        scheme.last_seen_at = now
-                    existing = db.execute(select(NavObservation).where(NavObservation.scheme_code == record.scheme_code, NavObservation.nav_date == record.nav_date)).scalar_one_or_none()
-                    if existing:
-                        if Decimal(existing.nav_value) != record.nav:
-                            db.add(
-                                NavObservationRevision(
-                                    scheme_code=record.scheme_code,
-                                    nav_date=record.nav_date,
-                                    previous_nav_value=existing.nav_value,
-                                    replacement_nav_value=record.nav,
-                                    previous_source_snapshot_id=existing.source_snapshot_id,
-                                    replacement_source_snapshot_id=snapshot.id,
-                                    corrected_at=now,
-                                )
-                            )
-                            existing.nav_value, existing.source_snapshot_id = record.nav, snapshot.id
-                            nav_rows_updated += 1
-                            nav_corrections_recorded += 1
-                        else:
-                            nav_rows_unchanged += 1
-                    else:
-                        db.add(NavObservation(scheme_code=record.scheme_code, nav_date=record.nav_date, nav_value=record.nav, source_snapshot_id=snapshot.id))
-                        nav_rows_inserted += 1
-                db.commit()
-            except Exception:
-                db.rollback()
-                logger.exception(
-                    "nav_database_transaction_failed records=%s payload_sha256=%s",
-                    len(records), report["payload_sha256"],
-                )
-                raise
-            elapsed_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
-            logger.info(
-                "nav_refresh_committed snapshot_id=%s schemes=%s nav_inserted=%s nav_corrected=%s nav_unchanged=%s elapsed_ms=%s",
-                snapshot.id, report["unique_scheme_codes"], nav_rows_inserted,
-                nav_rows_updated, nav_rows_unchanged, elapsed_ms,
-            )
-            return {
-                "status": "ingested",
-                "snapshot": _snapshot_dict(snapshot),
-                "scheme_rows_processed": len(records),
-                "schemes_created": schemes_created,
-                "schemes_updated": schemes_updated,
-                "nav_rows_inserted": nav_rows_inserted,
-                "nav_rows_updated": nav_rows_updated,
-                "nav_rows_unchanged": nav_rows_unchanged,
-                "nav_corrections_recorded": nav_corrections_recorded,
-                "nav_rows_upserted": nav_rows_inserted + nav_rows_updated,
-                "validation": report,
-            }
+        try:
+            persisted = _persist_nav_snapshot(records, report, now)
+        except Exception:
+            raise HTTPException(500, "NAV snapshot persistence failed; existing accepted data was preserved where the transaction rolled back") from None
+        snapshot = persisted["snapshot"]
+        elapsed_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+        logger.info(
+            "nav_refresh_committed snapshot_id=%s schemes=%s nav_inserted=%s nav_corrected=%s nav_unchanged=%s elapsed_ms=%s",
+            snapshot.id, report["unique_scheme_codes"], persisted["nav_rows_inserted"],
+            persisted["nav_rows_updated"], persisted["nav_rows_unchanged"], elapsed_ms,
+        )
+        return {
+            "status": "ingested", "snapshot": _snapshot_dict(snapshot),
+            "scheme_rows_processed": len(records),
+            "schemes_created": persisted["schemes_created"], "schemes_updated": persisted["schemes_updated"],
+            "nav_rows_inserted": persisted["nav_rows_inserted"], "nav_rows_updated": persisted["nav_rows_updated"],
+            "nav_rows_unchanged": persisted["nav_rows_unchanged"],
+            "nav_corrections_recorded": persisted["nav_corrections_recorded"],
+            "nav_rows_upserted": persisted["nav_rows_inserted"] + persisted["nav_rows_updated"],
+            "validation": report,
+        }
+
     finally:
         try:
             if advisory_lock_acquired:
