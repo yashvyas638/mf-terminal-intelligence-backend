@@ -41,7 +41,7 @@ from app.db import (
     SessionLocal,
     init_db,
 )
-from app.analytics import performance_metrics
+from app.analytics import performance_metrics, research_metrics
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 logger = logging.getLogger("mf_terminal.nav")
@@ -212,6 +212,7 @@ def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datet
                     scheme_code=record.scheme_code, scheme_name=record.scheme_name,
                     isin_growth=record.isin_growth, isin_dividend_reinvestment=record.isin_dividend_reinvestment,
                     first_seen_at=now, last_seen_at=now,
+                    plan_type=record.plan_type, option_type=record.option_type,
                 )
                 db.add(scheme)
                 existing_schemes[record.scheme_code] = scheme
@@ -221,6 +222,8 @@ def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datet
                 scheme.scheme_name = record.scheme_name
                 scheme.isin_growth = record.isin_growth or scheme.isin_growth
                 scheme.isin_dividend_reinvestment = record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
+                scheme.plan_type = record.plan_type or scheme.plan_type
+                scheme.option_type = record.option_type or scheme.option_type
                 scheme.last_seen_at = now
         db.flush()
 
@@ -418,7 +421,7 @@ def list_schemes(q: str | None = None, limit: int = Query(50, ge=1, le=500), off
         total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
         latest_id = select(NavObservation.id).where(NavObservation.scheme_code == Scheme.scheme_code).order_by(desc(NavObservation.nav_date), desc(NavObservation.id)).limit(1).correlate(Scheme).scalar_subquery()
         rows = db.execute(query.outerjoin(NavObservation, NavObservation.id == latest_id).add_columns(NavObservation).order_by(Scheme.scheme_name).offset(offset).limit(limit)).all()
-        return {"count": len(rows), "total_matching": total, "limit": limit, "offset": offset, "items": [{"scheme_code": scheme.scheme_code, "scheme_name": scheme.scheme_name, "isin_growth": scheme.isin_growth, "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment, "latest_nav": str(nav.nav_value) if nav else None, "nav_date": nav.nav_date.isoformat() if nav else None} for scheme, nav in rows]}
+        return {"count": len(rows), "total_matching": total, "limit": limit, "offset": offset, "items": [{"scheme_code": scheme.scheme_code, "scheme_name": scheme.scheme_name, "isin_growth": scheme.isin_growth, "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment, "plan_type": scheme.plan_type, "option_type": scheme.option_type, "category": scheme.category, "asset_class": scheme.asset_class, "latest_nav": str(nav.nav_value) if nav else None, "nav_date": nav.nav_date.isoformat() if nav else None} for scheme, nav in rows]}
 
 
 @app.get("/v1/nav/history/{scheme_code}")
@@ -473,6 +476,9 @@ def scheme_detail(
             "scheme_name": scheme.scheme_name,
             "isin_growth": scheme.isin_growth,
             "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
+            "amc": scheme.amc, "structure": scheme.structure, "category_group": scheme.category_group,
+            "category": scheme.category, "asset_class": scheme.asset_class,
+            "plan_type": scheme.plan_type, "option_type": scheme.option_type,
             "first_seen_at": scheme.first_seen_at.isoformat(),
             "last_seen_at": scheme.last_seen_at.isoformat(),
             "latest_nav": str(latest.nav_value) if latest else None,
@@ -574,6 +580,154 @@ def scheme_performance(
                     "Ratios are estimates and are sensitive to observation frequency and data gaps.",
                 ],
             },
+        }
+
+
+
+
+@app.get("/v1/analytics/research/{scheme_code}")
+def scheme_research(
+    scheme_code: int,
+    days: int = Query(3650, ge=30, le=3650),
+    risk_free_rate: float = Query(0.06, ge=0, le=0.25),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Fund research profile from stored NAVs, with rolling-window diagnostics."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found in ingested scheme master")
+        since = (date.today() - timedelta(days=days))
+        rows = db.execute(
+            select(NavObservation)
+            .where(NavObservation.scheme_code == scheme_code, NavObservation.nav_date >= since)
+            .order_by(NavObservation.nav_date)
+        ).scalars().all()
+        points = [(row.nav_date, float(row.nav_value)) for row in rows]
+        metrics = research_metrics(points, risk_free_rate=risk_free_rate)
+        latest = rows[-1] if rows else None
+        return {
+            "scheme": {
+                "scheme_code": scheme.scheme_code,
+                "scheme_name": scheme.scheme_name,
+                "isin_growth": scheme.isin_growth,
+                "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
+                "amc": scheme.amc,
+                "structure": scheme.structure,
+                "category_group": scheme.category_group,
+                "category": scheme.category,
+                "asset_class": scheme.asset_class,
+                "plan_type": scheme.plan_type,
+                "option_type": scheme.option_type,
+            },
+            "latest_nav": str(latest.nav_value) if latest else None,
+            "latest_nav_date": latest.nav_date.isoformat() if latest else None,
+            "coverage": {
+                "observations": len(rows),
+                "start_date": rows[0].nav_date.isoformat() if rows else None,
+                "end_date": rows[-1].nav_date.isoformat() if rows else None,
+                "requested_days": days,
+            },
+            "metrics": metrics,
+            "data_limitations": [
+                "Metrics use stored AMFI NAV observations only; AMFI feed does not provide benchmark TRI, category averages, AUM, expense ratio, holdings or fund-manager history.",
+                "NAV-only returns may not represent total return where distributions are not reinvested or otherwise reflected.",
+                "Alpha, beta, tracking error and information ratio are withheld until an aligned benchmark total-return series is available.",
+                "No missing NAV values are interpolated; rolling windows with insufficient base-date coverage are omitted.",
+            ],
+            "methodology_version": "nav-research-v1",
+        }
+
+
+@app.get("/v1/analytics/screener")
+def fund_screener(
+    q: str | None = Query(default=None, max_length=120),
+    category: str | None = Query(default=None, max_length=160),
+    asset_class: str | None = Query(default=None, max_length=40),
+    plan_type: str | None = Query(default=None, max_length=20),
+    option_type: str | None = Query(default=None, max_length=20),
+    days: int = Query(default=1095, ge=30, le=3650),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Paginated NAV-based screener. Sort in UI only within the returned page."""
+    require_api_key(x_api_key)
+    since = date.today() - timedelta(days=days)
+    with SessionLocal() as db:
+        query = select(Scheme)
+        if q:
+            term = q.strip()[:120]
+            if term.isdigit():
+                query = query.where(Scheme.scheme_code == int(term))
+            else:
+                query = query.where(Scheme.scheme_name.ilike(f"%{term}%"))
+        if category:
+            query = query.where(Scheme.category == category)
+        if asset_class:
+            query = query.where(Scheme.asset_class == asset_class)
+        if plan_type:
+            query = query.where(Scheme.plan_type == plan_type)
+        if option_type:
+            query = query.where(Scheme.option_type == option_type)
+        total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
+        schemes = db.execute(query.order_by(Scheme.scheme_name).offset(offset).limit(limit)).scalars().all()
+        codes = [scheme.scheme_code for scheme in schemes]
+        nav_rows = db.execute(
+            select(NavObservation)
+            .where(NavObservation.scheme_code.in_(codes), NavObservation.nav_date >= since)
+            .order_by(NavObservation.scheme_code, NavObservation.nav_date)
+        ).scalars().all() if codes else []
+        grouped: dict[int, list[NavObservation]] = {code: [] for code in codes}
+        for row in nav_rows:
+            grouped[row.scheme_code].append(row)
+        items = []
+        for scheme in schemes:
+            rows = grouped[scheme.scheme_code]
+            metrics = research_metrics([(row.nav_date, float(row.nav_value)) for row in rows])
+            latest = rows[-1] if rows else None
+            period = metrics.get("period_returns", {})
+            items.append({
+                "scheme_code": scheme.scheme_code,
+                "scheme_name": scheme.scheme_name,
+                "category": scheme.category,
+                "asset_class": scheme.asset_class,
+                "plan_type": scheme.plan_type,
+                "option_type": scheme.option_type,
+                "latest_nav": str(latest.nav_value) if latest else None,
+                "nav_date": latest.nav_date.isoformat() if latest else None,
+                "observations": len(rows),
+                "return_1m": period.get("1M"),
+                "return_1y": period.get("1Y"),
+                "return_3y": period.get("3Y"),
+                "volatility": metrics.get("annualized_volatility"),
+                "sharpe_ratio": metrics.get("sharpe_ratio"),
+                "sortino_ratio": metrics.get("sortino_ratio"),
+                "max_drawdown": metrics.get("max_drawdown"),
+                "positive_month_rate": metrics.get("positive_month_rate"),
+                "rolling_1y_positive_rate": metrics.get("rolling_1y", {}).get("positive_window_rate"),
+                "metrics_status": metrics.get("status"),
+            })
+        return {
+            "count": len(items),
+            "total_matching": total,
+            "limit": limit,
+            "offset": offset,
+            "days_requested": days,
+            "items": items,
+            "sorting_note": "The browser sorts the current page only. Use filters and pagination; a global ranked screener requires a precomputed research snapshot.",
+            "classification_coverage": {
+                "category_populated": sum(bool(item["category"]) for item in items),
+                "asset_class_populated": sum(bool(item["asset_class"]) for item in items),
+                "plan_type_populated": sum(bool(item["plan_type"]) for item in items),
+                "option_type_populated": sum(bool(item["option_type"]) for item in items),
+            },
+            "limitations": [
+                "AMFI NAV ingestion supplies scheme name, ISIN and (in the expanded feed) plan/option labels; it does not supply reliable AMC/category/asset-class classifications.",
+                "Do not interpret NAV-only return as distribution-adjusted total return.",
+                "This is a research screener, not an investment recommendation or trade instruction.",
+            ],
         }
 
 
