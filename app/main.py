@@ -9,6 +9,7 @@ import threading
 import csv
 import hashlib
 import base64
+import binascii
 import hmac
 from io import StringIO
 from datetime import date, datetime, timedelta, timezone
@@ -429,7 +430,7 @@ def _verify_import_confirmation_token(
             and int(token_count) == row_count
             and int(expires_at) >= int(datetime.now(timezone.utc).timestamp())
         )
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, binascii.Error):
         return False
 
 
