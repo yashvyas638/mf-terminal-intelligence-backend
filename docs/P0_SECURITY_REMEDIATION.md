@@ -14,7 +14,7 @@ workspace design, not a multi-user SaaS authorization model.
 
 ## Migration 0004
 
-`0004_restrict_supabase_client_roles` revokes existing table, sequence and
+`0004_supabase_role_lockdown` revokes existing table, sequence and
 function privileges from `anon` and `authenticated`, and revokes their
 default privileges for future objects created by PostgreSQL role `postgres`.
 
