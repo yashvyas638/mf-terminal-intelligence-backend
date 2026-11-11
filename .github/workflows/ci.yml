@@ -18,7 +18,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Apply SQLite migrations
+      - name: Apply SQLite baseline through existing production revision
+        run: alembic upgrade 0003_nav_correction_history
+        env:
+          DATABASE_URL: sqlite:///./ci_migrations.db
+      - name: Apply remaining SQLite migrations
         run: alembic upgrade head
         env:
           DATABASE_URL: sqlite:///./ci_migrations.db
@@ -77,7 +81,9 @@ jobs:
               $$;
               """)
           PY
-      - name: Apply PostgreSQL migrations
+      - name: Apply PostgreSQL baseline through existing production revision
+        run: alembic upgrade 0003_nav_correction_history
+      - name: Apply remaining PostgreSQL migrations
         run: alembic upgrade head
       - name: Test PostgreSQL
         run: python -m pytest -q
