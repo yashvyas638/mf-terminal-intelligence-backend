@@ -20,7 +20,7 @@ A deployable FastAPI service that retrieves the official AMFI all-schemes NAV fe
 
 ## Quick start
 
-Python 3.11+ is recommended.
+Python 3.12.16 is the pinned and CI-tested runtime.
 
 ```bash
 python -m venv .venv
