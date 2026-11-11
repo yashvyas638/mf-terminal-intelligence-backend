@@ -11,8 +11,6 @@ permissions:
 jobs:
   test-sqlite:
     runs-on: ubuntu-latest
-    env:
-      ENVIRONMENT: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
