@@ -383,3 +383,69 @@ def test_statement_fingerprint_preserves_same_day_row_order():
         "2026-01-01,999997,BUY,2,100,200\n"
     )
     assert main._canonical_statement_fingerprint(buy_first) != main._canonical_statement_fingerprint(sell_first)
+
+
+def test_stale_nav_is_disclosed_in_valuation_and_blocks_rebalance(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_code = 999998
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Stale NAV Test Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+            ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.invalid/nav",
+            retrieved_at=now,
+            payload_sha256="b" * 64,
+            records_valid=1,
+            unique_scheme_codes=1,
+            min_nav_date=date(2026, 11, 1),
+            max_nav_date=date(2026, 11, 1),
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add(NavObservation(
+            scheme_code=scheme_code,
+            nav_date=date(2026, 11, 1),
+            nav_value="100.00000000",
+            source_snapshot_id=snapshot.id,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Stale NAV Test"}).json()
+    added = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions",
+        headers=headers,
+        json={
+            "scheme_code": scheme_code,
+            "transaction_type": "BUY",
+            "transaction_date": "2026-01-01",
+            "units": "2",
+            "nav": "100",
+            "amount": "200",
+        },
+    )
+    assert added.status_code == 201
+    valuation = client.get(f"/v1/portfolios/{portfolio['id']}/valuation", headers=headers).json()
+    assert valuation["valuation_freshness"] == "STALE"
+    assert valuation["stale_nav_scheme_codes"] == [scheme_code]
+    rebalance = client.post(
+        f"/v1/portfolios/{portfolio['id']}/rebalance/preview",
+        headers=headers,
+        json={"targets": [{"scheme_code": scheme_code, "target_percent": "100"}]},
+    )
+    assert rebalance.status_code == 409
+    assert "stale NAVs" in rebalance.json()["detail"]
