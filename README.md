@@ -136,3 +136,8 @@ The product is developed in seven gated phases. Read these documents before chan
 ## P0 security remediation
 
 Live Supabase access findings and the containment migration are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md). Migration 0004 passed isolated PostgreSQL CI after its revision identifier was shortened. Migrations 0004–0007 have not been applied to production Supabase; the Render database role and deployment state must be verified before the final release.
+
+
+## NAV ingestion diagnostics
+
+The service emits structured lifecycle diagnostics for refresh start, source HTTP metadata, validation totals, freshness/minimum-record gates, database transaction failures and successful snapshot commits. Logs exclude API keys, database URLs and raw feed contents. `GET /health` confirms only basic database connectivity; use authenticated `GET /v1/nav/status` and the snapshot ID/quality details to verify actual ingestion.
