@@ -18,6 +18,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -28,6 +29,7 @@ from app.db import (
     NavObservation,
     NavObservationRevision,
     Portfolio,
+    PortfolioImportBatch,
     PortfolioTransaction,
     PortfolioTransactionAudit,
     Scheme,
@@ -497,6 +499,22 @@ def import_portfolio_statement(
     with SessionLocal() as db:
         if db.get(Portfolio, portfolio_id) is None:
             raise HTTPException(404, "Portfolio not found")
+        existing_batch = db.execute(
+            select(PortfolioImportBatch).where(
+                PortfolioImportBatch.portfolio_id == portfolio_id,
+                PortfolioImportBatch.statement_sha256 == statement_sha256,
+            )
+        ).scalar_one_or_none()
+        if existing_batch is not None:
+            raise HTTPException(
+                409,
+                {
+                    "message": "This exact statement has already been imported into this portfolio.",
+                    "imported_count": existing_batch.imported_count,
+                    "imported_at": existing_batch.imported_at.isoformat(),
+                    "statement_sha256": statement_sha256,
+                },
+            )
         scheme_codes = {transaction.scheme_code for transaction in transactions}
         known_codes = set(db.execute(select(Scheme.scheme_code).where(Scheme.scheme_code.in_(scheme_codes))).scalars())
         missing_codes = sorted(scheme_codes - known_codes)
@@ -523,6 +541,14 @@ def import_portfolio_statement(
             db.add(transaction)
             db.flush()
         imported_at = datetime.now(timezone.utc)
+        db.add(
+            PortfolioImportBatch(
+                portfolio_id=portfolio_id,
+                statement_sha256=statement_sha256,
+                imported_at=imported_at,
+                imported_count=len(proposed),
+            )
+        )
         for transaction in proposed:
             db.add(
                 PortfolioTransactionAudit(
@@ -534,7 +560,12 @@ def import_portfolio_statement(
                     ),
                 )
             )
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            # A concurrent identical upload may win the unique-key race.
+            raise HTTPException(409, "This exact statement was imported concurrently; no duplicate rows were added") from None
         return {
             "status": "imported",
             "imported_count": len(proposed),
