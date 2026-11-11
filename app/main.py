@@ -43,6 +43,7 @@ APP_VERSION = "0.2.0"
 MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
 MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
+NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
