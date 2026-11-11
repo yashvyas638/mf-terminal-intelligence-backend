@@ -736,8 +736,9 @@ def preview_portfolio_statement(
         if existing_batch is not None:
             raise HTTPException(409, "This statement has already been imported into this portfolio")
         scheme_codes = {transaction.scheme_code for transaction in transactions}
-        known_codes = set(db.execute(select(Scheme.scheme_code).where(Scheme.scheme_code.in_(scheme_codes))).scalars())
-        missing_codes = sorted(scheme_codes - known_codes)
+        schemes = db.execute(select(Scheme).where(Scheme.scheme_code.in_(scheme_codes))).scalars().all()
+        scheme_names = {scheme.scheme_code: scheme.scheme_name for scheme in schemes}
+        missing_codes = sorted(scheme_codes - set(scheme_names))
         if missing_codes:
             raise HTTPException(422, f"CSV references scheme codes absent from the ingested scheme master: {missing_codes}")
         _validate_import_batch(db, portfolio_id, transactions)
@@ -763,6 +764,7 @@ def preview_portfolio_statement(
                 {
                     "row_number": index + 2,
                     "scheme_code": item.scheme_code,
+                    "scheme_name": scheme_names[item.scheme_code],
                     "transaction_type": item.transaction_type,
                     "transaction_date": item.transaction_date.isoformat(),
                     "units": str(item.units),
