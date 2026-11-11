@@ -333,3 +333,15 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Root cause identified in workflow SQL: the anonymous DO block used an invalid dollar-quote delimiter. Corrected to PostgreSQL `$$ ... $$` quoting in the CI workflow.
 - A fresh CI run on the corrected commit is required. PostgreSQL migration/test status remains unverified until that run completes.
 - No production migration or Render deployment was performed.
+
+
+## 2026-11-11 — Continued P0 engineering (development only)
+
+- PostgreSQL CI root cause: Alembic's `alembic_version.version_num` is `VARCHAR(32)`; the original 0004 revision identifier exceeded that limit. Shortened the revision identifier to `0004_supabase_role_lockdown` (27 characters). CI run `43028091739` passed both SQLite and PostgreSQL on commit `cc857999bc3061b21d6c2386e970087b009e05dc`.
+- Added migration `0005_portfolio_import_dedup` and model `PortfolioImportBatch` to record a statement SHA-256 fingerprint per portfolio. Exact duplicate CSV uploads now return HTTP 409 and do not add duplicate transactions. Raw CSV content remains unpersisted.
+- AMFI parser now fails closed when the same scheme/date appears with conflicting NAV values; exact duplicates remain skipped and reported.
+- NAV refresh now rejects response bodies over 30 MB and invalid UTF-8 before parsing/persistence.
+- Production lifespan now fails startup if API_KEY is missing/weak and checks database connectivity; production schema is still Alembic-only.
+- Replaced obsolete START_HERE setup instructions with the current branch/release process; no deployment actions are authorised during development.
+- Regression tests were added for duplicate imports, conflicting duplicate NAVs, oversized/invalid source payloads and production startup secret validation. CI on the latest branch head must pass before these changes are considered verified.
+- Current work remains on `audit/production-foundation`; no main merge, Supabase production migration or Render deploy was performed.
