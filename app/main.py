@@ -173,12 +173,20 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             snapshot = IngestionSnapshot(source_url=AMFI_NAV_URL, retrieved_at=now, payload_sha256=report["payload_sha256"], records_valid=report["records_valid"], unique_scheme_codes=report["unique_scheme_codes"], min_nav_date=datetime.fromisoformat(report["min_nav_date"]).date(), max_nav_date=datetime.fromisoformat(report["max_nav_date"]).date(), invalid_rows=report["invalid_rows"], duplicate_rows_skipped=report["duplicate_rows_skipped"], quality_status=report["quality_status"], report_json=json.dumps(report, ensure_ascii=False))
             db.add(snapshot)
             db.flush()
+            schemes_created = 0
+            schemes_updated = 0
+            nav_rows_inserted = 0
+            nav_rows_updated = 0
+            nav_rows_unchanged = 0
+            nav_corrections_recorded = 0
             try:
                 for record in records:
                     scheme = db.get(Scheme, record.scheme_code)
                     if scheme is None:
                         db.add(Scheme(scheme_code=record.scheme_code, scheme_name=record.scheme_name, isin_growth=record.isin_growth, isin_dividend_reinvestment=record.isin_dividend_reinvestment, first_seen_at=now, last_seen_at=now))
+                        schemes_created += 1
                     else:
+                        schemes_updated += 1
                         scheme.scheme_name = record.scheme_name
                         # A missing marker in a later feed must not erase a previously observed ISIN.
                         scheme.isin_growth = record.isin_growth or scheme.isin_growth
@@ -199,13 +207,30 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                                 )
                             )
                             existing.nav_value, existing.source_snapshot_id = record.nav, snapshot.id
+                            nav_rows_updated += 1
+                            nav_corrections_recorded += 1
+                        else:
+                            nav_rows_unchanged += 1
                     else:
                         db.add(NavObservation(scheme_code=record.scheme_code, nav_date=record.nav_date, nav_value=record.nav, source_snapshot_id=snapshot.id))
+                        nav_rows_inserted += 1
                 db.commit()
             except Exception:
                 db.rollback()
                 raise
-            return {"status": "ingested", "snapshot": _snapshot_dict(snapshot), "scheme_rows_processed": len(records), "nav_rows_upserted": len(records), "validation": report}
+            return {
+                "status": "ingested",
+                "snapshot": _snapshot_dict(snapshot),
+                "scheme_rows_processed": len(records),
+                "schemes_created": schemes_created,
+                "schemes_updated": schemes_updated,
+                "nav_rows_inserted": nav_rows_inserted,
+                "nav_rows_updated": nav_rows_updated,
+                "nav_rows_unchanged": nav_rows_unchanged,
+                "nav_corrections_recorded": nav_corrections_recorded,
+                "nav_rows_upserted": nav_rows_inserted + nav_rows_updated,
+                "validation": report,
+            }
     finally:
         try:
             if advisory_lock_acquired:
