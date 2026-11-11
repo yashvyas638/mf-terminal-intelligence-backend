@@ -4,7 +4,6 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.db import (
-    IngestionSnapshot,
     Portfolio,
     PortfolioTransaction,
     Scheme,
