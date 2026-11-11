@@ -42,7 +42,7 @@ from app.db import (
 from app.analytics import performance_metrics
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
 MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
@@ -115,7 +115,7 @@ def health() -> dict[str, Any]:
     try:
         with SessionLocal() as db:
             db.execute(select(func.count()).select_from(Scheme)).scalar_one()
-        return {"status": "ok", "service": "mf-terminal-nav", "version": APP_VERSION, "database": "reachable", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
+        return {"status": "ok", "service": "mf-terminal-intelligence-backend", "version": APP_VERSION, "database": "reachable", "timestamp_utc": datetime.now(timezone.utc).isoformat()}
     except Exception as exc:
         raise HTTPException(503, f"database unavailable: {type(exc).__name__}") from None
 
