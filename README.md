@@ -8,9 +8,9 @@ A deployable FastAPI service that retrieves the official AMFI all-schemes NAV fe
 
 - Protects every data endpoint with a constant-time API-key check.
 - Downloads AMFI's official `NAVAll.txt` source only when an authenticated refresh is requested.
-- Rejects empty, malformed, and unexpectedly small source responses before changing persisted data.
+- Rejects empty, malformed, oversized, invalid-UTF-8, stale, and unexpectedly small source responses before changing persisted data.
 - Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.\n- Preserves prior NAV values and both source snapshot references when AMFI republishes a corrected NAV for the same scheme/date.\n- Uses Alembic as the production schema manager; production startup does not run ORM create-all.
-- Prevents duplicate refreshes within a running service process.
+- Prevents duplicate refreshes within a process and across PostgreSQL-backed service instances using an advisory lock.
 - Provides health, freshness, scheme search, history, and latest-snapshot endpoints.
 - Records an append-only audit event for each portfolio transaction and supports audited voids rather than destructive deletes.
 - Rejects transaction cash/NAV mismatches and any transaction or void that would create a negative unit balance.
@@ -24,9 +24,9 @@ Python 3.11+ is recommended.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-# Set a strong API_KEY in .env, then export it for your shell.
 export API_KEY='replace-with-a-long-random-secret'
+# Optional for local SQLite; production must set DATABASE_URL to PostgreSQL.
+export ENVIRONMENT=development
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
@@ -53,7 +53,7 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `POST /v1/portfolios/{id}/transactions` | Creates a validated BUY/SELL ledger transaction. |
 | `POST /v1/portfolios/{id}/transactions/{transaction_id}/void` | Audited void; never deletes a financial record. |
 | `GET /v1/portfolios/{id}/transactions/{transaction_id}/audit` | Immutable, authenticated event history for one transaction. |
-| `POST /v1/portfolios/{id}/transactions/import` | Atomic CSV statement import with validation and no raw-statement retention. |
+| `POST /v1/portfolios/{id}/transactions/import/preview` | Validates a CSV without writing transactions and returns a short-lived signed confirmation token. |\n| `POST /v1/portfolios/{id}/transactions/import` | Requires the preview token; atomically imports the exact normalized statement and rejects duplicates. |
 | `POST /v1/portfolios/{id}/rebalance/preview` | Non-executable target-allocation trade estimate using stored NAVs. |
 | `GET /v1/portfolios/{id}/valuation` | Latest stored-NAV valuation, with explicit missing-coverage status. |
 
@@ -85,7 +85,7 @@ ruff check .
 pytest -q
 ```
 
-The included concurrency guard applies to a single process. If this service is scaled to multiple workers or instances, use a PostgreSQL advisory lock or a dedicated job queue before enabling more than one scheduler.
+NAV refresh uses a process-local fast guard plus a PostgreSQL session-level advisory lock across service instances. SQLite tests exercise only the local guard; the PostgreSQL CI job exercises the database lock.
 
 Alembic is the sole production schema manager. Render runs `alembic upgrade head` before starting the API. `init_db()` remains only for local development and isolated tests. Production startup does not mutate schema.
 
@@ -97,7 +97,7 @@ Portfolio transactions are immutable financial facts. To correct one, use the au
 
 ## Statement import and rebalancing
 
-The statement-import endpoint accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. It rejects unknown scheme codes, invalid arithmetic, invalid dated ledgers, and files above 5,000 rows. Imports are all-or-nothing. The raw statement is deliberately not retained; only a SHA-256 fingerprint is included in the transaction audit event.
+The statement-import workflow accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. Preview validates known schemes, arithmetic and chronological unit balances without writing transactions. The confirmation token is bound to the portfolio, normalized transaction fingerprint and row count, and expires after 10 minutes. Confirmation revalidates under a per-portfolio database lock and commits all rows atomically. Re-importing the same normalized statement into the same portfolio is rejected. The raw statement is deliberately not retained; only a SHA-256 fingerprint is stored.
 
 The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.
 
@@ -111,7 +111,7 @@ The current service uses one shared server-side API key and is suitable only for
 
 ## Database and source CI
 
-CI applies migrations and runs tests independently against SQLite and PostgreSQL 16. A separate scheduled/manual workflow validates the public AMFI response without writing to any database. These checks do not replace verification against the actual Supabase project or Render deployment.
+CI applies migrations and runs tests independently against SQLite and PostgreSQL 16, including financial CHECK constraints, append-only audit triggers, import idempotency and advisory locking. A separate scheduled/manual workflow validates the public AMFI response without writing to any database. These checks do not replace verification against the actual Supabase project or Render deployment.
 
 
 ## Product roadmap and engineering governance
@@ -129,4 +129,4 @@ The product is developed in seven gated phases. Read these documents before chan
 
 ## P0 security remediation
 
-Live Supabase access findings and the containment migration are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md). Migration 0004 is pending CI and production connection-role verification; it must not be treated as deployed until the exact migration revision is confirmed in Supabase.
+Live Supabase access findings and the containment migration are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md). Migration 0004 passed isolated PostgreSQL CI after its revision identifier was shortened. Migrations 0004–0007 have not been applied to production Supabase; the Render database role and deployment state must be verified before the final release.
