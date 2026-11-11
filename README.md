@@ -25,7 +25,7 @@ Python 3.11+ is recommended.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 export API_KEY='replace-with-a-long-random-secret'
 # Optional for local SQLite; production must set DATABASE_URL to PostgreSQL.
 export ENVIRONMENT=development
