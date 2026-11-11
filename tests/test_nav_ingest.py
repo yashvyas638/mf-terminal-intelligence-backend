@@ -83,6 +83,10 @@ def test_parses_expanded_amfi_eight_column_rows():
     assert records[0].scheme_name == "Nippon India Large Cap Fund - Direct - Growth"
     assert records[0].nav == Decimal("89.1234")
     assert records[0].nav_date == date(2026, 10, 21)
+    assert records[0].plan_type == "Direct"
+    assert records[0].option_type == "Growth"
+    assert records[1].plan_type == "Regular"
+    assert records[1].option_type == "IDCW Payout"
     assert records[1].scheme_name == "Nippon India Liquid Fund - Regular - IDCW Payout"
     assert records[1].nav == Decimal("1000.1234")
     assert report["unique_scheme_codes"] == 2
