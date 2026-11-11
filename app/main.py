@@ -405,7 +405,7 @@ def _validate_portfolio_ledger(
     ).scalars().all()
     if proposed is not None:
         rows.append(proposed)
-        rows.sort(key=lambda row: (row.transaction_date, row.id or 0))
+        rows.sort(key=lambda row: (row.transaction_date, row.id if row.id is not None else 2**63))
     balances: dict[int, Decimal] = {}
     for row in rows:
         balance = balances.get(row.scheme_code, Decimal("0"))
@@ -783,10 +783,10 @@ def portfolio_valuation(
                         f"Sell transaction exceeds available units for scheme {txn.scheme_code}",
                     )
                 average_cost = holding["cost_basis"] / holding["units"] if holding["units"] else Decimal("0")
-                cost_removed = average_cost * units
+                cost_removed = holding["cost_basis"] if units == holding["units"] else average_cost * units
                 net_proceeds = amount - charges
                 holding["units"] -= units
-                holding["cost_basis"] -= cost_removed
+                holding["cost_basis"] = Decimal("0") if holding["units"] == 0 else holding["cost_basis"] - cost_removed
                 realized_proceeds += net_proceeds
                 realized_gain_loss += net_proceeds - cost_removed
                 cashflows_decimal.append((txn.transaction_date, net_proceeds))
