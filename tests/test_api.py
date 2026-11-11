@@ -449,3 +449,67 @@ def test_stale_nav_is_disclosed_in_valuation_and_blocks_rebalance(monkeypatch):
     )
     assert rebalance.status_code == 409
     assert "stale NAVs" in rebalance.json()["detail"]
+
+
+def test_scheme_detail_and_fund_comparison_use_persisted_nav_data(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_codes = [999981, 999982]
+    with SessionLocal() as db:
+        for code, name in zip(scheme_codes, ["Comparison Fund A", "Comparison Fund B"], strict=True):
+            if db.get(Scheme, code) is None:
+                db.add(Scheme(
+                    scheme_code=code,
+                    scheme_name=name,
+                    isin_growth=None,
+                    isin_dividend_reinvestment=None,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.invalid/nav",
+            retrieved_at=now,
+            payload_sha256="b" * 64,
+            records_valid=4,
+            unique_scheme_codes=2,
+            min_nav_date=date(2026, 10, 1),
+            max_nav_date=date(2026, 11, 10),
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        for code, old_nav, new_nav in [(scheme_codes[0], "100", "110"), (scheme_codes[1], "100", "105")]:
+            db.add_all([
+                NavObservation(scheme_code=code, nav_date=date(2026, 10, 1), nav_value=old_nav, source_snapshot_id=snapshot.id),
+                NavObservation(scheme_code=code, nav_date=date(2026, 11, 10), nav_value=new_nav, source_snapshot_id=snapshot.id),
+            ])
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    detail = client.get(f"/v1/nav/schemes/{scheme_codes[0]}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["scheme_name"] == "Comparison Fund A"
+    assert detail.json()["latest_nav"] == "110.00000000"
+
+    comparison = client.post(
+        "/v1/analytics/compare",
+        headers=headers,
+        json={"scheme_codes": scheme_codes, "days": 365},
+    )
+    assert comparison.status_code == 200
+    results = comparison.json()["results"]
+    assert len(results) == 2
+    assert results[0]["metrics"]["total_return"] == pytest.approx(0.10)
+    assert results[1]["metrics"]["total_return"] == pytest.approx(0.05)
+
+
+def test_scheme_detail_and_comparison_require_api_key(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    client = TestClient(app)
+    assert client.get("/v1/nav/schemes/999981").status_code == 401
+    assert client.post("/v1/analytics/compare", json={"scheme_codes": [1, 2]}).status_code == 401
