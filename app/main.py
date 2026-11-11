@@ -310,6 +310,13 @@ class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     currency: str = Field(default="INR", pattern="^[A-Z]{3}$")
 
+    @model_validator(mode="after")
+    def normalize_name(self) -> "PortfolioCreate":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("portfolio name cannot be blank")
+        return self
+
 
 class TransactionCreate(BaseModel):
     scheme_code: int = Field(gt=0)
@@ -320,6 +327,12 @@ class TransactionCreate(BaseModel):
     amount: Decimal = Field(gt=0)
     charges: Decimal = Field(default=Decimal("0"), ge=0)
     notes: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_transaction_date(self) -> "TransactionCreate":
+        if self.transaction_date > date.today():
+            raise ValueError("transaction_date cannot be in the future")
+        return self
 
 
 class TransactionVoid(BaseModel):
