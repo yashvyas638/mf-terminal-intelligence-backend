@@ -636,6 +636,68 @@ def list_portfolio_transactions(
         }
 
 
+@app.post("/v1/portfolios/{portfolio_id}/transactions/import/preview")
+def preview_portfolio_statement(
+    portfolio_id: int,
+    payload: StatementImport,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Validate and preview a CSV statement without persisting transaction rows."""
+    require_api_key(x_api_key)
+    transactions = _statement_transactions(payload.csv_text)
+    statement_sha256 = _canonical_statement_fingerprint(transactions)
+    with SessionLocal() as db:
+        if db.get(Portfolio, portfolio_id) is None:
+            raise HTTPException(404, "Portfolio not found")
+        existing_batch = db.execute(
+            select(PortfolioImportBatch).where(
+                PortfolioImportBatch.portfolio_id == portfolio_id,
+                PortfolioImportBatch.statement_sha256 == statement_sha256,
+            )
+        ).scalar_one_or_none()
+        if existing_batch is not None:
+            raise HTTPException(409, "This statement has already been imported into this portfolio")
+        scheme_codes = {transaction.scheme_code for transaction in transactions}
+        known_codes = set(db.execute(select(Scheme.scheme_code).where(Scheme.scheme_code.in_(scheme_codes))).scalars())
+        missing_codes = sorted(scheme_codes - known_codes)
+        if missing_codes:
+            raise HTTPException(422, f"CSV references scheme codes absent from the ingested scheme master: {missing_codes}")
+        _validate_import_batch(db, portfolio_id, transactions)
+        buy_amount = sum(
+            (item.amount + item.charges for item in transactions if item.transaction_type == "BUY"),
+            Decimal("0"),
+        )
+        sell_amount = sum(
+            (item.amount - item.charges for item in transactions if item.transaction_type == "SELL"),
+            Decimal("0"),
+        )
+        token = _issue_import_confirmation_token(portfolio_id, statement_sha256, len(transactions))
+        return {
+            "status": "PREVIEW_READY",
+            "portfolio_id": portfolio_id,
+            "row_count": len(transactions),
+            "buy_cash_outflow": str(buy_amount.quantize(Decimal("0.01"))),
+            "sell_cash_inflow": str(sell_amount.quantize(Decimal("0.01"))),
+            "statement_sha256": statement_sha256,
+            "confirmation_token": token,
+            "token_expires_in_seconds": 600,
+            "rows": [
+                {
+                    "row_number": index + 1,
+                    "scheme_code": item.scheme_code,
+                    "transaction_type": item.transaction_type,
+                    "transaction_date": item.transaction_date.isoformat(),
+                    "units": str(item.units),
+                    "nav": str(item.nav),
+                    "amount": str(item.amount),
+                    "charges": str(item.charges),
+                }
+                for index, item in enumerate(transactions)
+            ],
+            "note": "Preview only. No portfolio transactions have been written. Confirm this exact normalized statement within 10 minutes to commit atomically.",
+        }
+
+
 @app.post("/v1/portfolios/{portfolio_id}/transactions/import", status_code=201)
 def import_portfolio_statement(
     portfolio_id: int,
@@ -646,6 +708,10 @@ def import_portfolio_statement(
     require_api_key(x_api_key)
     transactions = _statement_transactions(payload.csv_text)
     statement_sha256 = _canonical_statement_fingerprint(transactions)
+    if not _verify_import_confirmation_token(
+        payload.confirmation_token, portfolio_id, statement_sha256, len(transactions)
+    ):
+        raise HTTPException(428, "A valid, unexpired preview confirmation token is required before import")
     with SessionLocal() as db:
         _lock_portfolio(db, portfolio_id)
         existing_batch = db.execute(
