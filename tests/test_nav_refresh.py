@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -140,5 +141,5 @@ def test_streamed_amfi_response_enforces_memory_limit():
         headers={},
         iter_content=lambda chunk_size: iter([b"a" * 6, b"b" * 6]),
     )
-    with pytest.raises(Exception, match="30 MB"):
+    with pytest.raises(HTTPException, match="30 MB"):
         main._read_bounded_amfi_response(response, max_bytes=10)
