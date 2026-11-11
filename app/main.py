@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import json
 import os
 import secrets
@@ -24,6 +26,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from app.db import (
     IngestionSnapshot,
     NavObservation,
+    NavObservationRevision,
     Portfolio,
     PortfolioTransaction,
     PortfolioTransactionAudit,
@@ -38,8 +41,18 @@ APP_VERSION = "0.2.0"
 MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
 _refresh_lock = threading.Lock()
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Production schema changes are exclusively Alembic-managed by the Render start command.
+    # Local development and isolated tests retain automatic table bootstrap.
+    if os.getenv("ENVIRONMENT", "").lower() != "production":
+        init_db()
+    yield
+
+
 app = FastAPI(
     title="MF Terminal Intelligence — NAV Data Service",
+    lifespan=lifespan,
     version=APP_VERSION,
     description="AMFI NAV ingestion, persistence, freshness and quality checks. Research support only; no trading.",
 )
@@ -50,11 +63,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", include_in_schema=False)
 def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "dashboard.html")
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
 
 
 def require_api_key(x_api_key: str | None) -> None:
@@ -126,7 +134,19 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                         scheme.scheme_name, scheme.isin_growth, scheme.isin_dividend_reinvestment, scheme.last_seen_at = record.scheme_name, record.isin_growth, record.isin_dividend_reinvestment, now
                     existing = db.execute(select(NavObservation).where(NavObservation.scheme_code == record.scheme_code, NavObservation.nav_date == record.nav_date)).scalar_one_or_none()
                     if existing:
-                        existing.nav_value, existing.source_snapshot_id = record.nav, snapshot.id
+                        if Decimal(existing.nav_value) != record.nav:
+                            db.add(
+                                NavObservationRevision(
+                                    scheme_code=record.scheme_code,
+                                    nav_date=record.nav_date,
+                                    previous_nav_value=existing.nav_value,
+                                    replacement_nav_value=record.nav,
+                                    previous_source_snapshot_id=existing.source_snapshot_id,
+                                    replacement_source_snapshot_id=snapshot.id,
+                                    corrected_at=now,
+                                )
+                            )
+                            existing.nav_value, existing.source_snapshot_id = record.nav, snapshot.id
                     else:
                         db.add(NavObservation(scheme_code=record.scheme_code, nav_date=record.nav_date, nav_value=record.nav, source_snapshot_id=snapshot.id))
                 db.commit()
