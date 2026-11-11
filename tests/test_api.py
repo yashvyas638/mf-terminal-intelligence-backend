@@ -284,3 +284,12 @@ def test_portfolio_rejects_blank_names_and_future_transactions(monkeypatch):
         },
     )
     assert future.status_code == 422
+
+
+def test_health_reports_service_identity_and_database_readiness():
+    init_db()
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["service"] == "mf-terminal-intelligence-backend"
+    assert response.json()["database"] == "reachable"
