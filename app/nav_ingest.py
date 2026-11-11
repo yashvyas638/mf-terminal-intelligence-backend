@@ -7,7 +7,9 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-AMFI_NAV_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
+# Use AMFI's portal host directly. The www host has historically redirected and
+# can return a non-feed response to automated clients.
+AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
 
 
 @dataclass(frozen=True)
@@ -28,7 +30,8 @@ class NavRecord:
 
 def _clean(value: str | None) -> str | None:
     value = (value or "").strip()
-    return value or None
+    # AMFI uses a literal hyphen when an ISIN is unavailable.
+    return None if not value or value == "-" else value
 
 
 def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
