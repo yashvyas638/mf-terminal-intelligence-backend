@@ -132,6 +132,13 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     )
     assert before_confirmation.json()["count"] == 0
 
+    tampered = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/import",
+        headers=headers,
+        json={"csv_text": csv_text, "confirmation_token": preview.json()["confirmation_token"] + "x"},
+    )
+    assert tampered.status_code == 428
+
     response = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions/import",
         headers=headers,
