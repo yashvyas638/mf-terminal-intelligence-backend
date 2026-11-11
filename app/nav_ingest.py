@@ -44,7 +44,7 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
         raise ValueError("AMFI endpoint returned HTML instead of the NAV text feed")
     records: list[NavRecord] = []
     issues: list[dict[str, Any]] = []
-    seen: set[tuple[int, date]] = set()
+    seen: dict[tuple[int, date], Decimal] = {}
     lines = payload.lstrip("\ufeff").splitlines()
     data_lines = 0
     for line_number, raw_line in enumerate(lines, start=1):
@@ -70,9 +70,13 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
                 raise ValueError("NAV date cannot be in the future")
             key = (code, nav_date)
             if key in seen:
+                if seen[key] != nav:
+                    raise ValueError(
+                        f"conflicting duplicate NAV for scheme {code} on {nav_date.isoformat()}"
+                    )
                 issues.append({"line": line_number, "type": "duplicate_scheme_date", "scheme_code": code, "date": nav_date.isoformat()})
                 continue
-            seen.add(key)
+            seen[key] = nav
             records.append(NavRecord(code, _clean(parts[1]), _clean(parts[2]), name, nav, nav_date))
         except (ValueError, InvalidOperation, IndexError) as exc:
             issues.append({"line": line_number, "type": "invalid_nav_row", "detail": str(exc)[:180]})
