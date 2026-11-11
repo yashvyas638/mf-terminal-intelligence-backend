@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import SQLAlchemyError
 
 import app.main as main
 from app.db import NavObservation, NavObservationRevision, SessionLocal, engine, init_db
@@ -51,6 +52,15 @@ def test_nav_correction_is_audited_and_replay_is_idempotent(monkeypatch):
     assert len(revisions) == 1
     assert Decimal(revisions[0].previous_nav_value) == Decimal("100.0000")
     assert Decimal(revisions[0].replacement_nav_value) == Decimal("101.0000")
+    with SessionLocal() as db:
+        with pytest.raises(SQLAlchemyError):
+            db.execute(
+                update(NavObservationRevision)
+                .where(NavObservationRevision.id == revisions[0].id)
+                .values(replacement_nav_value=Decimal("102.0000"))
+            )
+            db.commit()
+        db.rollback()
 
 
 def test_oversized_amfi_payload_is_rejected_before_parsing(monkeypatch):
