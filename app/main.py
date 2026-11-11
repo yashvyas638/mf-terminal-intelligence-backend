@@ -4,8 +4,8 @@ import json
 import os
 import secrets
 import threading
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Literal
 from pathlib import Path
 
 import requests
@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select
 
-from app.db import IngestionSnapshot, NavObservation, Scheme, SessionLocal, init_db
+from pydantic import BaseModel, Field\nfrom decimal import Decimal\n\nfrom app.db import IngestionSnapshot, NavObservation, Scheme, SessionLocal, init_db, Portfolio, PortfolioTransaction
 from app.analytics import performance_metrics
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
@@ -201,3 +201,130 @@ def scheme_performance(
                 ],
             },
         }
+
+
+class PortfolioCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    currency: str = Field(default="INR", pattern="^[A-Z]{3}$")
+
+
+class TransactionCreate(BaseModel):
+    scheme_code: int = Field(gt=0)
+    transaction_type: Literal["BUY", "SELL"]
+    transaction_date: date
+    units: Decimal = Field(gt=0)
+    nav: Decimal = Field(gt=0)
+    amount: Decimal = Field(gt=0)
+    charges: Decimal = Field(default=Decimal("0"), ge=0)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/v1/portfolios", status_code=201)
+def create_portfolio(
+    payload: PortfolioCreate,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, created_at=datetime.now(timezone.utc))
+        db.add(portfolio)
+        db.commit()
+        db.refresh(portfolio)
+        return {"id": portfolio.id, "name": portfolio.name, "currency": portfolio.currency, "created_at": portfolio.created_at.isoformat()}
+
+
+@app.get("/v1/portfolios")
+def list_portfolios(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        rows = db.execute(select(Portfolio).order_by(Portfolio.created_at.desc())).scalars().all()
+        return {"count": len(rows), "items": [{"id": p.id, "name": p.name, "currency": p.currency, "created_at": p.created_at.isoformat()} for p in rows]}
+
+
+@app.post("/v1/portfolios/{portfolio_id}/transactions", status_code=201)
+def add_portfolio_transaction(
+    portfolio_id: int,
+    payload: TransactionCreate,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        if db.get(Portfolio, portfolio_id) is None:
+            raise HTTPException(404, "Portfolio not found")
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found; ingest the AMFI scheme master first")
+        transaction = PortfolioTransaction(
+            portfolio_id=portfolio_id, scheme_code=payload.scheme_code,
+            transaction_type=payload.transaction_type, transaction_date=payload.transaction_date,
+            units=payload.units, nav=payload.nav, amount=payload.amount, charges=payload.charges,
+            notes=payload.notes, created_at=datetime.now(timezone.utc),
+        )
+        db.add(transaction)
+        db.commit()
+        db.refresh(transaction)
+        return {"id": transaction.id, "portfolio_id": portfolio_id, "scheme_code": transaction.scheme_code,
+                "transaction_type": transaction.transaction_type, "transaction_date": transaction.transaction_date.isoformat(),
+                "units": str(transaction.units), "nav": str(transaction.nav), "amount": str(transaction.amount),
+                "charges": str(transaction.charges)}
+
+
+@app.get("/v1/portfolios/{portfolio_id}/valuation")
+def portfolio_valuation(
+    portfolio_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        portfolio = db.get(Portfolio, portfolio_id)
+        if portfolio is None:
+            raise HTTPException(404, "Portfolio not found")
+        txns = db.execute(
+            select(PortfolioTransaction).where(PortfolioTransaction.portfolio_id == portfolio_id)
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        holdings: dict[int, dict[str, Any]] = {}
+        cashflows: list[tuple[date, float]] = []
+        invested = 0.0
+        realized = 0.0
+        for txn in txns:
+            holding = holdings.setdefault(txn.scheme_code, {"units": 0.0, "name": None})
+            units = float(txn.units)
+            amount = float(txn.amount)
+            charges = float(txn.charges)
+            if txn.transaction_type == "BUY":
+                holding["units"] += units
+                cashflows.append((txn.transaction_date, -(amount + charges)))
+                invested += amount + charges
+            else:
+                holding["units"] -= units
+                cashflows.append((txn.transaction_date, amount - charges))
+                realized += amount - charges
+        items = []
+        current_value = 0.0
+        for code, holding in holdings.items():
+            scheme = db.get(Scheme, code)
+            holding["name"] = scheme.scheme_name if scheme else str(code)
+            if holding["units"] < -1e-8:
+                raise HTTPException(409, f"Transactions produce negative units for scheme {code}; correct the sell ledger")
+            latest = db.execute(
+                select(NavObservation).where(NavObservation.scheme_code == code)
+                .order_by(desc(NavObservation.nav_date)).limit(1)
+            ).scalar_one_or_none()
+            nav_value = float(latest.nav_value) if latest else None
+            value = holding["units"] * nav_value if nav_value is not None else None
+            if value is not None:
+                current_value += value
+            items.append({"scheme_code": code, "scheme_name": holding["name"], "units": round(holding["units"], 8),
+                          "latest_nav": nav_value, "nav_date": latest.nav_date.isoformat() if latest else None,
+                          "market_value": round(value, 2) if value is not None else None})
+        if current_value > 0 and txns:
+            cashflows.append((date.today(), current_value))
+        from app.analytics import xirr
+        money_weighted = xirr(cashflows)
+        return {"portfolio_id": portfolio_id, "portfolio_name": portfolio.name, "currency": portfolio.currency,
+                "holdings": items, "invested_amount": round(invested, 2), "realized_proceeds": round(realized, 2),
+                "current_value": round(current_value, 2), "total_value_including_realized": round(current_value + realized, 2),
+                "unrealized_gain_loss": round(current_value - invested + realized, 2),
+                "xirr": money_weighted, "valuation_note": "Uses latest stored AMFI NAV per scheme. Historical transactions must be complete for meaningful XIRR."}
