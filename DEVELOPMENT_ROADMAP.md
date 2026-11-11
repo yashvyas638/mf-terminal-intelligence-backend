@@ -319,7 +319,7 @@ For every phase:
 - User-provided grants inspection showed privileges assigned to Supabase roles `anon` and `authenticated`; SQL Editor session role was `postgres`.
 - Live Alembic revision reported as `0003_nav_correction_history`.
 - Confirmed portfolio schema has no owner/tenant column. Multi-user access remains prohibited.
-- Added migration `0004_restrict_supabase_client_roles` to revoke existing table/sequence/function privileges and future default privileges from `anon` and `authenticated` for objects created by `postgres`. This is containment, not RLS or multi-user authorization.
+- Added migration `0004_supabase_role_lockdown` to revoke existing table/sequence/function privileges and future default privileges from `anon` and `authenticated` for objects created by `postgres`. This is containment, not RLS or multi-user authorization.
 - Added PostgreSQL regression test and CI role fixtures. CI run is pending for commit `735380aa16158f2d7f3ea3e737ed85034e220022`.
 - Production migration is NOT approved or confirmed. First verify Render's connection role and deployment branch; do not deploy blindly.
 - See [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md) for scope, preconditions and remaining blockers.
