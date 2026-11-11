@@ -126,6 +126,7 @@ The product is developed in seven gated phases. Read these documents before chan
 - [Engineering Playbook — end-to-end development, CI, database and deployment flow](docs/ENGINEERING_PLAYBOOK.md)
 - [Architecture and Data Model — canonical entities, tenancy and provenance](docs/ARCHITECTURE_AND_DATA_MODEL.md)
 - [UX and Design System — terminal experience and interaction standards](docs/UX_AND_DESIGN_SYSTEM.md)
+- [Final Release Runbook — Supabase, Render, smoke tests and rollback](docs/FINAL_RELEASE_RUNBOOK.md)
 
 **Current phase: P0 — OPEN / BLOCKED.** Do not begin P1 implementation until P0 exit evidence is complete and explicitly signed off. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
 
