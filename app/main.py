@@ -94,6 +94,33 @@ def require_api_key(x_api_key: str | None) -> None:
         raise HTTPException(401, "Missing or invalid X-API-Key")
 
 
+def _read_bounded_amfi_response(response: Any, max_bytes: int = 30_000_000) -> bytes:
+    """Read a streamed source body without allowing unbounded response memory."""
+    headers = getattr(response, "headers", {}) or {}
+    content_length = headers.get("Content-Length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise HTTPException(502, "AMFI response exceeds the 30 MB safety limit; existing data was not changed")
+        except ValueError:
+            pass
+    if hasattr(response, "iter_content"):
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(502, "AMFI response exceeds the 30 MB safety limit; existing data was not changed")
+            chunks.append(chunk)
+        return b"".join(chunks)
+    payload = response.content
+    if len(payload) > max_bytes:
+        raise HTTPException(502, "AMFI response exceeds the 30 MB safety limit; existing data was not changed")
+    return payload
+
+
 def _snapshot_dict(snapshot: IngestionSnapshot) -> dict[str, Any]:
     return {
         "snapshot_id": snapshot.id,
@@ -143,13 +170,13 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             response = requests.get(
                 AMFI_NAV_URL,
                 timeout=(10, 60),
-                headers={"User-Agent": "MF-Terminal-Intelligence/0.2"},
+                headers={"User-Agent": "MF-Terminal-Intelligence/0.3"},
+                stream=True,
             )
             response.raise_for_status()
-            if len(response.content) > 30_000_000:
-                raise HTTPException(502, "AMFI response exceeds the 30 MB safety limit; existing data was not changed")
+            raw_payload = _read_bounded_amfi_response(response)
             try:
-                payload = response.content.decode("utf-8-sig", errors="strict")
+                payload = raw_payload.decode("utf-8-sig", errors="strict")
             except UnicodeDecodeError:
                 raise HTTPException(502, "AMFI response is not valid UTF-8; existing data was not changed") from None
         except requests.RequestException as exc:
