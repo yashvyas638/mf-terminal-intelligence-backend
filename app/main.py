@@ -358,6 +358,16 @@ def _statement_transactions(csv_text: str) -> list[TransactionCreate]:
     return transactions
 
 
+def _lock_portfolio(db: Any, portfolio_id: int) -> Portfolio:
+    """Serialize ledger mutations per portfolio on PostgreSQL."""
+    portfolio = db.execute(
+        select(Portfolio).where(Portfolio.id == portfolio_id).with_for_update()
+    ).scalar_one_or_none()
+    if portfolio is None:
+        raise HTTPException(404, "Portfolio not found")
+    return portfolio
+
+
 def _transaction_details(transaction: PortfolioTransaction) -> str:
     """Serialize ledger facts at the time of an auditable mutation."""
     return json.dumps(
@@ -441,8 +451,7 @@ def add_portfolio_transaction(
     require_api_key(x_api_key)
     _validate_transaction_amount(payload)
     with SessionLocal() as db:
-        if db.get(Portfolio, portfolio_id) is None:
-            raise HTTPException(404, "Portfolio not found")
+        _lock_portfolio(db, portfolio_id)
         if db.get(Scheme, payload.scheme_code) is None:
             raise HTTPException(404, "Scheme code not found; ingest the AMFI scheme master first")
         transaction = PortfolioTransaction(
@@ -516,8 +525,7 @@ def import_portfolio_statement(
     transactions = _statement_transactions(payload.csv_text)
     statement_sha256 = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
     with SessionLocal() as db:
-        if db.get(Portfolio, portfolio_id) is None:
-            raise HTTPException(404, "Portfolio not found")
+        _lock_portfolio(db, portfolio_id)
         existing_batch = db.execute(
             select(PortfolioImportBatch).where(
                 PortfolioImportBatch.portfolio_id == portfolio_id,
@@ -603,6 +611,7 @@ def void_portfolio_transaction(
     """Void rather than delete a transaction, preserving an auditable ledger."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
+        _lock_portfolio(db, portfolio_id)
         transaction = db.get(PortfolioTransaction, transaction_id)
         if transaction is None or transaction.portfolio_id != portfolio_id:
             raise HTTPException(404, "Portfolio transaction not found")
