@@ -11,6 +11,8 @@ permissions:
 jobs:
   test-sqlite:
     runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,6 +48,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      ENVIRONMENT: production
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mf_terminal_test
     steps:
       - uses: actions/checkout@v4
