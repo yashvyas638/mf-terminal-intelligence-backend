@@ -338,6 +338,13 @@ class TransactionCreate(BaseModel):
 class TransactionVoid(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
+    @model_validator(mode="after")
+    def normalize_reason(self) -> "TransactionVoid":
+        self.reason = self.reason.strip()
+        if len(self.reason) < 3:
+            raise ValueError("void reason must contain at least three non-whitespace characters")
+        return self
+
 
 class StatementImport(BaseModel):
     """CSV import only: client retains the original statement after upload."""
