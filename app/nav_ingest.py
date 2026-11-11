@@ -39,7 +39,7 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
         raise ValueError("AMFI response is empty")
     if len(payload) > 30_000_000:
         raise ValueError("AMFI response exceeds the 30 MB safety limit")
-    prefix = payload.lstrip("\\ufeff \\t\\r\\n")[:512].lower()
+    prefix = payload.lstrip("\ufeff \t\r\n")[:512].lower()
     if "<html" in prefix or prefix.startswith("<!doctype"):
         raise ValueError("AMFI endpoint returned HTML instead of the NAV text feed")
     records: list[NavRecord] = []
