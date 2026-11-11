@@ -57,6 +57,12 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
         json={"scheme_code": scheme_code, "transaction_type": "BUY", "transaction_date": "2026-01-01", "units": "2", "nav": "100", "amount": "200"},
     )
     assert buy.status_code == 201
+    same_day_sell = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions",
+        headers=headers,
+        json={"scheme_code": scheme_code, "transaction_type": "SELL", "transaction_date": "2026-01-01", "units": "1", "nav": "100", "amount": "100"},
+    )
+    assert same_day_sell.status_code == 201
     oversell = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions",
         headers=headers,
