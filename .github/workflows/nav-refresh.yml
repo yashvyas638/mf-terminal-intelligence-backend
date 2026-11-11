@@ -1,0 +1,27 @@
+name: Daily AMFI NAV refresh
+on:
+  schedule:
+    - cron: "0 4 0-6 * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate configuration
+        env:
+          API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+          API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
+        run: |
+          test -n "$API_URL"
+          test -n "$API_KEY"
+      - name: Refresh NAV
+        env:
+          API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+          API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 20 --retry-all-errors \
+            --max-time 120 -X POST "$API_URL/v1/nav/refresh" \
+            -H "X-API-Key: $API_KEY"
