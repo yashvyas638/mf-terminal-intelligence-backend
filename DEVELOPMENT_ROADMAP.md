@@ -32,7 +32,7 @@ Governance: DEVELOP → TEST → REVIEW → COMMIT → PUSH → VERIFY CI → SU
 | Confirm authorised remote branch and exact head | VERIFIED | GitHub remote ref refs/heads/audit/production-foundation points to 3ca12c92a717da5bdda79911e793483d6a376ac9 on 2026-11-11. |
 | Verify local working tree clean | NOT VERIFIED | No local checkout/status capability used. A local git status --short result is still required. |
 | Inspect complete Supabase schema, migrations, indexes, constraints and RLS | PARTIAL / BLOCKED | Repository ORM metadata and both Alembic revisions inspected. Live Supabase catalog and RLS policies have not been queried. |
-| PostgreSQL compatibility independent of SQLite CI | NOT VERIFIED | Existing CI runs Alembic and tests on SQLite only. A PostgreSQL integration run against disposable/staging PostgreSQL is required; do not use production for destructive tests. |
+| PostgreSQL compatibility independent of SQLite CI | CI ADDED — RESULT PENDING | GitHub Actions now includes an isolated PostgreSQL 16 service job that applies Alembic migrations and runs pytest. Await a successful run on the latest branch head. |
 | Live AMFI response and parser validation | PARTIAL / BLOCKED | Configured URL is https://portal.amfiindia.com/spages/NAVAll.txt. A web-opened copy was semicolon-delimited and showed the expected six-column header, but retrieval metadata reported three months old. This is not a fresh live fetch from the service runtime. |
 | Validate records before database insertion | PARTIAL | Code parses and applies a minimum valid-record threshold before writes. Need live payload evidence and stronger quality checks for date/freshness and source-format drift. |
 | Duplicate and missing-ISIN handling | PARTIAL | Parser tests cover duplicate scheme/date rows and '-' ISIN normalization. Database upsert behavior and live-feed cases still need integration tests. |
@@ -40,7 +40,7 @@ Governance: DEVELOP → TEST → REVIEW → COMMIT → PUSH → VERIFY CI → SU
 | Render deployment commit | NOT VERIFIED | Desired SHA is 3ca12c92a717da5bdda79911e793483d6a376ac9; Render deployment record has not been inspected. |
 | Supabase PostgreSQL live connectivity and migration state | NOT VERIFIED | No authenticated live database catalog or Alembic current-revision evidence available. |
 | End-to-end AMFI → backend → Supabase → dashboard/portfolio | NOT VERIFIED | Public Render health endpoint could not be retrieved by the available web reader; authenticated API and dashboard workflow not exercised. |
-| FastAPI startup deprecation | REVIEW REQUIRED | app/main.py uses deprecated @app.on_event('startup') for init_db(). Lifespan is the supported replacement. Migration is likely safe if startup behavior is preserved, but should be a separately tested code change after confirming migration/bootstrap responsibilities. |
+| FastAPI startup deprecation | CODE CHANGE MADE — TEST PENDING | FastAPI lifespan now runs local/test bootstrap only. Production mode skips create_all; Render migration command remains authoritative. Verify CI and production startup. |
 | Rollback commit and procedure | PARTIAL / BLOCKED | Candidate code commit is known; last known-good production deployment commit and deploy ID are not verified. Do not label a code commit as production-good without Render evidence. |
 
 ## Code-level observations requiring P0 resolution
@@ -65,3 +65,18 @@ Governance: DEVELOP → TEST → REVIEW → COMMIT → PUSH → VERIFY CI → SU
 - Prior CI run for this SHA: run ID 43020514070, job 130522253718; SQLite migration, Ruff F,B, and pytest passed; pytest reported 15 passed and 3 warnings.
 - CI does not prove PostgreSQL compatibility, Supabase connectivity, RLS, Render deployment, live AMFI ingestion, or end-to-end production behavior.
 - No local working-tree status, production database mutation, or production deployment was performed during this review.
+
+## Follow-up implementation commits — 2026-11-11
+- `d2fd4a7`: add ORM model for append-only NAV correction provenance.
+- `05101ed`: add Alembic migration 0003 for NAV correction history; downgrade intentionally retains the audit table.
+- `2f54d97`: switch startup to FastAPI lifespan; production skips ORM create_all and relies on Alembic.
+- `cc2fd4e`: reject empty, oversized, HTML, and future-dated AMFI payloads.
+- `af037f2`: parser regression test for HTML error responses.
+- `779437b`: add isolated PostgreSQL 16 migration/test job to CI.
+- `e7e1c42`: preserve previously known ISIN values when a later AMFI feed has a missing marker.
+- `a19c637`: add NAV correction-history and idempotent-replay test.
+- `211a39f`: set Render blueprint environment to production so schema is migration-managed.
+- `308c127`: add read-only live AMFI source validation workflow.
+- `822735d`: document correction-history and single-operator tenancy boundary.
+
+These commits are pushed to the authorised feature branch. CI results are pending. Supabase live catalog/RLS, Render deployment SHA, local working-tree status, and end-to-end production verification remain unverified. Do not sign off P0 or expose this API as a multi-user service.
