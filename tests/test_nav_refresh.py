@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 import app.main as main
-from app.db import NavObservation, NavObservationRevision, SessionLocal, init_db
+from app.db import NavObservation, NavObservationRevision, SessionLocal, engine, init_db
 
 
 def _amfi_response(nav: str):
@@ -97,3 +97,24 @@ def test_stale_nav_effective_date_is_rejected(monkeypatch):
     )
     assert response.status_code == 502
     assert "stale" in response.json()["detail"]
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="PostgreSQL advisory lock integration test")
+def test_refresh_returns_conflict_when_another_session_holds_distributed_lock(monkeypatch):
+    init_db()
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    with SessionLocal() as lock_session:
+        acquired = lock_session.execute(
+            __import__("sqlalchemy").text("SELECT pg_try_advisory_lock(:lock_key)"),
+            {"lock_key": main.NAV_REFRESH_LOCK_KEY},
+        ).scalar_one()
+        assert acquired is True
+        response = TestClient(main.app).post(
+            "/v1/nav/refresh",
+            headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+        )
+        assert response.status_code == 409
+        lock_session.execute(
+            __import__("sqlalchemy").text("SELECT pg_advisory_unlock(:lock_key)"),
+            {"lock_key": main.NAV_REFRESH_LOCK_KEY},
+        )
