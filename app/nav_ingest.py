@@ -43,6 +43,10 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
             continue
         parts = [part.strip() for part in line.split(";")]
         if len(parts) < 6:
+            # Ignore section headings, but account for malformed candidate data rows.
+            if parts[0] and parts[0][0].isdigit():
+                data_lines += 1
+                issues.append({"line": line_number, "type": "invalid_nav_row", "detail": "expected at least six semicolon-delimited fields"})
             continue
         data_lines += 1
         try:
