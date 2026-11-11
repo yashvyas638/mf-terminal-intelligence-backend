@@ -100,7 +100,6 @@ def xirr(cashflows: list[tuple[date, float]]) -> float | None:
 def rolling_return_series(
     points: Iterable[tuple[date, float]],
     window_days: int = 365,
-    step_days: int = 30,
     max_base_gap_days: int = 7,
 ) -> dict:
     """Calculate rolling NAV returns using real observations only.
@@ -110,7 +109,7 @@ def rolling_return_series(
     performed. Monthly endpoint sampling reduces redundant daily windows.
     """
     rows = _clean_series(points)
-    if window_days < 30 or step_days < 1 or max_base_gap_days < 0:
+    if window_days < 30 or max_base_gap_days < 0:
         raise ValueError("invalid rolling-return window configuration")
     if len(rows) < 2:
         return {
