@@ -53,7 +53,7 @@ def test_bad_row_is_reported_without_losing_good_rows():
 
 
 def test_short_numeric_candidate_row_is_counted_as_invalid():
-    records, report = parse_amfi_nav_text(SAMPLE + "119551;broken\\n")
+    records, report = parse_amfi_nav_text(SAMPLE + "119551;broken\n")
     assert len(records) == 2
     assert report["invalid_rows"] == 1
     assert report["candidate_data_lines"] == 3
@@ -66,8 +66,8 @@ def test_rejects_html_error_page_instead_of_nav_feed():
 
 def test_rejects_conflicting_duplicate_scheme_date_nav_values():
     conflicting = (
-        "119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;89.1234;21-Oct-2026\\n"
-        "119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;90.1234;21-Oct-2026\\n"
+        "119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;89.1234;21-Oct-2026\n"
+        "119551;INF204K01K15;INF204K01K23;Nippon India Large Cap Fund;90.1234;21-Oct-2026\n"
     )
     with pytest.raises(ValueError, match="conflicting duplicate NAV"):
         parse_amfi_nav_text(conflicting)
