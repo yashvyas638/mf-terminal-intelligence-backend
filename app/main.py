@@ -6,12 +6,16 @@ import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from pathlib import Path
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select
 
 from app.db import IngestionSnapshot, NavObservation, Scheme, SessionLocal, init_db
+from app.analytics import performance_metrics
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 APP_VERSION = "0.2.0"
@@ -157,3 +161,43 @@ def latest_snapshot(x_api_key: str | None = Header(default=None, alias="X-API-Ke
         if snapshot is None:
             raise HTTPException(404, "No ingestion snapshot yet; call POST /v1/nav/refresh")
         return {**_snapshot_dict(snapshot), "validation_report": json.loads(snapshot.report_json)}
+
+
+
+@app.get("/v1/analytics/performance/{scheme_code}")
+def scheme_performance(
+    scheme_code: int,
+    days: int = Query(3650, ge=30, le=3650),
+    risk_free_rate: float = Query(0.06, ge=0, le=0.25),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Calculate transparent NAV-derived return and risk statistics."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found in ingested scheme master")
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+        rows = db.execute(
+            select(NavObservation)
+            .where(NavObservation.scheme_code == scheme_code, NavObservation.nav_date >= since)
+            .order_by(NavObservation.nav_date)
+        ).scalars().all()
+        points = [(row.nav_date, float(row.nav_value)) for row in rows]
+        metrics = performance_metrics(points, risk_free_rate=risk_free_rate)
+        return {
+            "scheme_code": scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "days_requested": days,
+            "metrics": metrics,
+            "methodology": {
+                "source": "Stored AMFI NAV observations",
+                "annualization": "252 observations per year for volatility and ratios; calendar days for CAGR",
+                "risk_free_rate": risk_free_rate,
+                "limitations": [
+                    "NAV total-return interpretation depends on the selected scheme NAV series and distributions.",
+                    "No benchmark comparison is included in this endpoint.",
+                    "Ratios are estimates and are sensitive to observation frequency and data gaps.",
+                ],
+            },
+        }
