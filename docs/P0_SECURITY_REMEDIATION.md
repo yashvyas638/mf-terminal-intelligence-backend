@@ -24,6 +24,10 @@ is deliberately a no-op so a code rollback cannot silently reopen access.
 CI creates Supabase-role fixtures and tests that the roles cannot access
 application tables after migration.
 
+## Portfolio import integrity addition (migration 0005)
+
+Migration `0005_portfolio_import_dedup` adds a per-portfolio statement fingerprint ledger. The service stores only the SHA-256 fingerprint, import timestamp and row count—not raw CSV statement content. Re-uploading the exact same CSV to the same portfolio is rejected with HTTP 409. This prevents accidental duplicate ledger entries; it is not a substitute for row-level reconciliation when the same transactions appear in a differently formatted statement.
+
 ## Production precondition
 
 Before applying migration 0004 in production, verify Render's
