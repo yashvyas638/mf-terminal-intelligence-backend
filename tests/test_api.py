@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import IngestionSnapshot, NavObservation, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
+from app.db import IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
 from app.main import app
 
 
@@ -86,6 +86,18 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
                 .where(PortfolioTransactionAudit.transaction_id == buy.json()["id"])
                 .values(details_json="{}")
             )
+            db.commit()
+        db.rollback()
+        with pytest.raises(SQLAlchemyError):
+            db.execute(
+                update(PortfolioTransaction)
+                .where(PortfolioTransaction.id == buy.json()["id"])
+                .values(units=3)
+            )
+            db.commit()
+        db.rollback()
+        with pytest.raises(SQLAlchemyError):
+            db.delete(db.get(PortfolioTransaction, buy.json()["id"]))
             db.commit()
         db.rollback()
 
