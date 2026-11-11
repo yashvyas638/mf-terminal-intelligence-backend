@@ -592,6 +592,8 @@ def _validate_transaction_amount(payload: TransactionCreate) -> None:
     expected = (payload.units * payload.nav).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if payload.amount != expected:
         raise HTTPException(422, f"amount must equal units × nav rounded to 2 decimals ({expected})")
+    if payload.transaction_type == "SELL" and payload.charges >= payload.amount:
+        raise HTTPException(422, "SELL charges must be lower than gross proceeds")
 
 
 def _validate_portfolio_ledger(
