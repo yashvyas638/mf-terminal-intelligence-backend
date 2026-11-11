@@ -305,3 +305,53 @@ def test_health_reports_service_identity_and_database_readiness():
     assert response.json()["status"] == "ok"
     assert response.json()["service"] == "mf-terminal-intelligence-backend"
     assert response.json()["database"] == "reachable"
+
+
+def test_transaction_can_be_voided_once_with_audited_reason(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_code = 999996
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Void Test Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+            ))
+            db.commit()
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Void Test"}).json()
+    transaction = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions",
+        headers=headers,
+        json={
+            "scheme_code": scheme_code,
+            "transaction_type": "BUY",
+            "transaction_date": "2026-01-01",
+            "units": "2",
+            "nav": "100",
+            "amount": "200",
+        },
+    ).json()
+    voided = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/{transaction['id']}/void",
+        headers=headers,
+        json={"reason": "Duplicate statement entry"},
+    )
+    assert voided.status_code == 200
+    audit = client.get(
+        f"/v1/portfolios/{portfolio['id']}/transactions/{transaction['id']}/audit",
+        headers=headers,
+    ).json()
+    assert [item["event_type"] for item in audit["items"]] == ["CREATED", "VOIDED"]
+    second_void = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/{transaction['id']}/void",
+        headers=headers,
+        json={"reason": "Second attempt"},
+    )
+    assert second_void.status_code == 409
