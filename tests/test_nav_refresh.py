@@ -69,7 +69,7 @@ def test_invalid_utf8_amfi_payload_is_rejected(monkeypatch):
     init_db()
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
-        content=b"\\xff\\xfe", raise_for_status=lambda: None
+        content=b"\xff\xfe", raise_for_status=lambda: None
     ))
     response = TestClient(main.app).post(
         "/v1/nav/refresh",
