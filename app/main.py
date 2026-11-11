@@ -204,6 +204,7 @@ def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datet
 
         schemes_created = schemes_updated = 0
         nav_rows_inserted = nav_rows_updated = nav_rows_unchanged = nav_corrections_recorded = 0
+        # Flush scheme master first: PostgreSQL must see FK parents before NAV rows.
         for record in records:
             scheme = existing_schemes.get(record.scheme_code)
             if scheme is None:
@@ -221,6 +222,9 @@ def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datet
                 scheme.isin_growth = record.isin_growth or scheme.isin_growth
                 scheme.isin_dividend_reinvestment = record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
                 scheme.last_seen_at = now
+        db.flush()
+
+        for record in records:
             key = (record.scheme_code, record.nav_date)
             existing = existing_nav.get(key)
             if existing is None:
