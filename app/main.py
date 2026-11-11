@@ -463,7 +463,7 @@ def _validate_import_batch(db: Any, portfolio_id: int, transactions: list[Transa
         balance = balances.get(row.scheme_code, Decimal("0"))
         balance += row.units if row.transaction_type == "BUY" else -row.units
         if balance < 0:
-            suffix = f" in import row {row_index + 1}" if source_order else ""
+            suffix = f" in import row {row_index + 2}" if source_order else ""
             raise HTTPException(
                 409,
                 f"Import would create a negative unit balance for scheme {row.scheme_code}{suffix}",
@@ -684,7 +684,7 @@ def preview_portfolio_statement(
             "token_expires_in_seconds": 600,
             "rows": [
                 {
-                    "row_number": index + 1,
+                    "row_number": index + 2,
                     "scheme_code": item.scheme_code,
                     "transaction_type": item.transaction_type,
                     "transaction_date": item.transaction_date.isoformat(),
