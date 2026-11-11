@@ -69,3 +69,31 @@ class NavObservation(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+
+
+
+class Portfolio(Base):
+    __tablename__ = "portfolios"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PortfolioTransaction(Base):
+    __tablename__ = "portfolio_transactions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    scheme_code: Mapped[int] = mapped_column(ForeignKey("schemes.scheme_code"), nullable=False)
+    transaction_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    transaction_date: Mapped[object] = mapped_column(Date, nullable=False)
+    units: Mapped[object] = mapped_column(Numeric(24, 8), nullable=False)
+    nav: Mapped[object] = mapped_column(Numeric(20, 8), nullable=False)
+    amount: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False)
+    charges: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False, default=0)
+    notes: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        Index("ix_portfolio_txn_portfolio_date", "portfolio_id", "transaction_date"),
+        Index("ix_portfolio_txn_scheme", "portfolio_id", "scheme_code"),
+    )
