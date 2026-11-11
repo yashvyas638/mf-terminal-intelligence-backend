@@ -112,7 +112,7 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     duplicate = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions/import",
         headers=headers,
-        json={"csv_text": csv_text},
+        json={"csv_text": "type,date,amount,nav,units,scheme_code\\nBUY,2026-01-01,200.00,100.0,2.0,999992\\n"},
     )
     assert duplicate.status_code == 409
     assert "already been imported" in duplicate.json()["detail"]["message"]
