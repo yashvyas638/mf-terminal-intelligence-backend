@@ -25,6 +25,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Set a strong API_KEY in .env, then export it for your shell.
 export API_KEY='replace-with-a-long-random-secret'
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -70,4 +71,4 @@ pytest -q
 
 The included concurrency guard applies to a single process. If this service is scaled to multiple workers or instances, use a PostgreSQL advisory lock or a dedicated job queue before enabling more than one scheduler.
 
-The data model uses `create_all` for the initial deploy. Introduce Alembic migrations before making schema changes to an already populated production database.
+Alembic manages versioned schema changes. The baseline safely adopts tables created by the earlier `create_all` bootstrap; run `alembic upgrade head` before deploying each schema release. Application startup retains `create_all` as a backwards-compatible bootstrap, not as a replacement for reviewed migrations.
