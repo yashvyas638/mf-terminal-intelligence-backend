@@ -56,7 +56,7 @@ Only after all pre-deployment checks and explicit release approval:
 4. Inspect deploy logs for migration success; redact secrets from any evidence.
 5. Query the database privately and verify `alembic_version.version_num = '0007_append_only_audit'`.
 6. Verify `anon` and `authenticated` have no unintended table/sequence/function access, including inherited PUBLIC grants.
-7. Verify append-only triggers exist on `portfolio_transaction_audit` and `nav_observation_revisions`.
+7. Verify append-only triggers exist on `portfolio_transaction_audit`, `nav_observation_revisions` and `portfolio_import_batches`; verify portfolio transaction fact columns cannot be updated/deleted and a one-time audited void is allowed.
 8. Confirm no portfolio, scheme, snapshot, NAV or correction-history row counts unexpectedly changed.
 
 ## Production smoke tests
@@ -75,7 +75,7 @@ Run with the rotated API key in a private terminal or authorised test client; do
 - [ ] Confirm import; verify transaction count, audit records and valuation.
 - [ ] Re-submit the same normalized statement; verify HTTP 409 and no duplicate transactions.
 - [ ] Verify invalid oversell, expired/altered confirmation token and invalid financial values are rejected.
-- [ ] Verify portfolio transaction audit and NAV correction history cannot be updated/deleted.
+- [ ] Verify portfolio transaction financial facts cannot be updated/deleted, void metadata can be set only once with a reason, and audit/import/NAV provenance rows cannot be updated/deleted.
 - [ ] Verify missing NAV yields partial valuation and does not fabricate aggregate gain/loss or XIRR.
 - [ ] Verify the dashboard loads, searches schemes, previews/commits imports and shows portfolio valuation.
 
