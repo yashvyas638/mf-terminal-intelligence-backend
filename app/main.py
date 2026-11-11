@@ -8,6 +8,8 @@ import secrets
 import threading
 import csv
 import hashlib
+import base64
+import hmac
 from io import StringIO
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
@@ -327,6 +329,7 @@ class StatementImport(BaseModel):
     """CSV import only: client retains the original statement after upload."""
 
     csv_text: str = Field(min_length=1, max_length=1_000_000)
+    confirmation_token: str | None = Field(default=None, max_length=512)
 
 
 class AllocationTarget(BaseModel):
@@ -396,6 +399,75 @@ def _lock_portfolio(db: Any, portfolio_id: int) -> Portfolio:
     if portfolio is None:
         raise HTTPException(404, "Portfolio not found")
     return portfolio
+
+
+def _issue_import_confirmation_token(portfolio_id: int, statement_sha256: str, row_count: int) -> str:
+    key = os.getenv("API_KEY", "")
+    expires_at = int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp())
+    payload = f"{portfolio_id}:{statement_sha256}:{row_count}:{expires_at}"
+    signature = hmac.new(key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}:{signature}".encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _verify_import_confirmation_token(
+    token: str | None, portfolio_id: int, statement_sha256: str, row_count: int
+) -> bool:
+    if not token:
+        return False
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        payload, signature = decoded.rsplit(":", 1)
+        key = os.getenv("API_KEY", "")
+        expected = hmac.new(key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not secrets.compare_digest(signature, expected):
+            return False
+        token_portfolio, token_hash, token_count, expires_at = payload.split(":")
+        return (
+            int(token_portfolio) == portfolio_id
+            and token_hash == statement_sha256
+            and int(token_count) == row_count
+            and int(expires_at) >= int(datetime.now(timezone.utc).timestamp())
+        )
+    except (ValueError, UnicodeDecodeError):
+        return False
+
+
+def _validate_import_batch(db: Any, portfolio_id: int, transactions: list[TransactionCreate]) -> None:
+    existing = db.execute(
+        select(PortfolioTransaction)
+        .where(PortfolioTransaction.portfolio_id == portfolio_id, PortfolioTransaction.voided_at.is_(None))
+    ).scalars().all()
+    events = [
+        (row.transaction_date, 0, row.id or 0, row)
+        for row in existing
+    ]
+    for index, payload in enumerate(transactions):
+        proposed = PortfolioTransaction(
+            portfolio_id=portfolio_id,
+            scheme_code=payload.scheme_code,
+            transaction_type=payload.transaction_type,
+            transaction_date=payload.transaction_date,
+            units=payload.units,
+            nav=payload.nav,
+            amount=payload.amount,
+            charges=payload.charges,
+            notes=payload.notes,
+            created_at=datetime.now(timezone.utc),
+        )
+        events.append((proposed.transaction_date, 1, index, proposed))
+    events.sort(key=lambda event: (event[0], event[1], event[2]))
+    balances: dict[int, Decimal] = {}
+    for _, source_order, row_index, row in events:
+        balance = balances.get(row.scheme_code, Decimal("0"))
+        balance += row.units if row.transaction_type == "BUY" else -row.units
+        if balance < 0:
+            suffix = f" in import row {row_index + 1}" if source_order else ""
+            raise HTTPException(
+                409,
+                f"Import would create a negative unit balance for scheme {row.scheme_code}{suffix}",
+            )
+        balances[row.scheme_code] = balance
 
 
 def _canonical_statement_fingerprint(transactions: list[TransactionCreate]) -> str:
