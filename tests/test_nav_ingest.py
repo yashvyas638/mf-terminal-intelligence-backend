@@ -37,3 +37,10 @@ def test_bad_row_is_reported_without_losing_good_rows():
     records, report = parse_amfi_nav_text(SAMPLE + "bad;row;format;name;not-a-nav;not-a-date\n")
     assert len(records) == 2
     assert report["invalid_rows"] == 1
+
+
+def test_short_numeric_candidate_row_is_counted_as_invalid():
+    records, report = parse_amfi_nav_text(SAMPLE + "119551;broken\\n")
+    assert len(records) == 2
+    assert report["invalid_rows"] == 1
+    assert report["candidate_data_lines"] == 3
