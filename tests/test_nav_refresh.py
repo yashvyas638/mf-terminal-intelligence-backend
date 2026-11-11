@@ -133,3 +133,12 @@ def test_refresh_returns_conflict_when_another_session_holds_distributed_lock(mo
             __import__("sqlalchemy").text("SELECT pg_advisory_unlock(:lock_key)"),
             {"lock_key": main.NAV_REFRESH_LOCK_KEY},
         )
+
+
+def test_streamed_amfi_response_enforces_memory_limit():
+    response = SimpleNamespace(
+        headers={},
+        iter_content=lambda chunk_size: iter([b"a" * 6, b"b" * 6]),
+    )
+    with pytest.raises(Exception, match="30 MB"):
+        main._read_bounded_amfi_response(response, max_bytes=10)
