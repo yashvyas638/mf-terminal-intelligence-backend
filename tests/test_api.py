@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db import PortfolioTransactionAudit, Scheme, SessionLocal, init_db
+from app.db import IngestionSnapshot, NavObservation, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
 from app.main import app
 
 
@@ -129,3 +129,74 @@ def test_production_startup_fails_fast_when_api_key_is_missing(monkeypatch):
     with pytest.raises(RuntimeError, match="Production API_KEY"):
         with TestClient(app):
             pass
+
+
+def test_portfolio_valuation_uses_average_cost_and_decimal_arithmetic(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    scheme_code = 999993
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Valuation Test Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+            ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.invalid/nav",
+            retrieved_at=now,
+            payload_sha256="a" * 64,
+            records_valid=1,
+            unique_scheme_codes=1,
+            min_nav_date=date(2026, 11, 10),
+            max_nav_date=date(2026, 11, 10),
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add(NavObservation(
+            scheme_code=scheme_code,
+            nav_date=date(2026, 11, 10),
+            nav_value="140.00000000",
+            source_snapshot_id=snapshot.id,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Valuation Test"}).json()
+    for tx_date, tx_type, units, nav, amount in [
+        ("2026-01-01", "BUY", "10", "100", "1000"),
+        ("2026-02-01", "BUY", "10", "120", "1200"),
+        ("2026-03-01", "SELL", "5", "130", "650"),
+    ]:
+        response = client.post(
+            f"/v1/portfolios/{portfolio['id']}/transactions",
+            headers=headers,
+            json={
+                "scheme_code": scheme_code,
+                "transaction_type": tx_type,
+                "transaction_date": tx_date,
+                "units": units,
+                "nav": nav,
+                "amount": amount,
+            },
+        )
+        assert response.status_code == 201
+
+    valuation = client.get(f"/v1/portfolios/{portfolio['id']}/valuation", headers=headers)
+    assert valuation.status_code == 200
+    result = valuation.json()
+    assert result["holdings"][0]["units"] == 15
+    assert result["holdings"][0]["cost_basis"] == 1650
+    assert result["current_value"] == 2100
+    assert result["realized_gain_loss"] == 100
+    assert result["unrealized_gain_loss"] == 450
+    assert result["total_gain_loss"] == 550
