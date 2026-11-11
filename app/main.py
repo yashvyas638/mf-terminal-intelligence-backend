@@ -123,7 +123,18 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
     # distributed scheduling should invoke exactly one instance.
     if not _refresh_lock.acquire(blocking=False):
         raise HTTPException(409, "A NAV refresh is already in progress")
+    advisory_session = SessionLocal()
+    advisory_lock_acquired = False
     try:
+        if advisory_session.get_bind().dialect.name == "postgresql":
+            advisory_lock_acquired = bool(
+                advisory_session.execute(
+                    text("SELECT pg_try_advisory_lock(:lock_key)"),
+                    {"lock_key": 0x4D46544E41565246},
+                ).scalar_one()
+            )
+            if not advisory_lock_acquired:
+                raise HTTPException(409, "A NAV refresh is already running on another service instance")
         try:
             response = requests.get(
                 AMFI_NAV_URL,
@@ -192,7 +203,15 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                 raise
             return {"status": "ingested", "snapshot": _snapshot_dict(snapshot), "scheme_rows_processed": len(records), "nav_rows_upserted": len(records), "validation": report}
     finally:
-        _refresh_lock.release()
+        try:
+            if advisory_lock_acquired:
+                advisory_session.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": 0x4D46544E41565246},
+                )
+        finally:
+            advisory_session.close()
+            _refresh_lock.release()
 
 
 @app.get("/v1/nav/status")
