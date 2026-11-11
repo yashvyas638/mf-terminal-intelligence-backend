@@ -112,9 +112,18 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
         raise HTTPException(409, "A NAV refresh is already in progress")
     try:
         try:
-            response = requests.get(AMFI_NAV_URL, timeout=(10, 60), headers={"User-Agent": "MF-Terminal-Intelligence/0.2"})
+            response = requests.get(
+                AMFI_NAV_URL,
+                timeout=(10, 60),
+                headers={"User-Agent": "MF-Terminal-Intelligence/0.2"},
+            )
             response.raise_for_status()
-            payload = response.content.decode("utf-8-sig", errors="replace")
+            if len(response.content) > 30_000_000:
+                raise HTTPException(502, "AMFI response exceeds the 30 MB safety limit; existing data was not changed")
+            try:
+                payload = response.content.decode("utf-8-sig", errors="strict")
+            except UnicodeDecodeError:
+                raise HTTPException(502, "AMFI response is not valid UTF-8; existing data was not changed") from None
         except requests.RequestException as exc:
             raise HTTPException(502, f"AMFI source request failed: {type(exc).__name__}; existing data was not changed") from None
         try:
