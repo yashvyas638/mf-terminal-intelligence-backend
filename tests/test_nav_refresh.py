@@ -92,7 +92,7 @@ def test_oversized_amfi_payload_is_rejected_before_parsing(monkeypatch):
 def test_invalid_utf8_amfi_payload_is_rejected(monkeypatch):
     init_db()
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
-    invalid = b"\\xff\\xfe"
+    invalid = bytes([255, 254])
     monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
         status_code=200,
         headers={"Content-Type": "text/plain", "Content-Length": str(len(invalid))},
