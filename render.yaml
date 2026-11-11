@@ -13,5 +13,7 @@ services:
         generateValue: true
       - key: MINIMUM_VALID_RECORDS
         value: "1000"
+      - key: MAX_NAV_STALENESS_DAYS
+        value: "7"
       - key: ENVIRONMENT
         value: production
