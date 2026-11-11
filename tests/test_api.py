@@ -3,7 +3,8 @@ from datetime import date, datetime, timezone
 import pytest
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import IngestionSnapshot, NavObservation, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
 from app.main import app
@@ -78,6 +79,15 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
     with SessionLocal() as db:
         events = db.execute(select(PortfolioTransactionAudit).where(PortfolioTransactionAudit.transaction_id == buy.json()["id"])).scalars().all()
     assert [event.event_type for event in events] == ["CREATED"]
+    with SessionLocal() as db:
+        with pytest.raises(SQLAlchemyError):
+            db.execute(
+                update(PortfolioTransactionAudit)
+                .where(PortfolioTransactionAudit.transaction_id == buy.json()["id"])
+                .values(details_json="{}")
+            )
+            db.commit()
+        db.rollback()
 
 
 def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
