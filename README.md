@@ -52,6 +52,8 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |
 | `GET /v1/nav/history/{scheme_code}?days=` | Stored NAV history for one scheme. |
 | `GET /v1/nav/snapshot/latest` | Latest full validation report. |
+| `POST /v1/portfolios` | Creates a private workspace portfolio for the single trusted operator. |
+| `GET /v1/portfolios` | Lists available portfolios. |
 | `POST /v1/portfolios/{id}/transactions` | Creates a validated BUY/SELL ledger transaction. |
 | `POST /v1/portfolios/{id}/transactions/{transaction_id}/void` | Audited void; never deletes a financial record. |
 | `GET /v1/portfolios/{id}/transactions/{transaction_id}/audit` | Immutable, authenticated event history for one transaction. |
