@@ -67,6 +67,20 @@ class NavObservation(Base):
     )
 
 
+class NavObservationRevision(Base):
+    """Append-only provenance for an official NAV correction."""
+    __tablename__ = "nav_observation_revisions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheme_code: Mapped[int] = mapped_column(ForeignKey("schemes.scheme_code"), nullable=False)
+    nav_date: Mapped[object] = mapped_column(Date, nullable=False)
+    previous_nav_value: Mapped[object] = mapped_column(Numeric(20, 8), nullable=False)
+    replacement_nav_value: Mapped[object] = mapped_column(Numeric(20, 8), nullable=False)
+    previous_source_snapshot_id: Mapped[int] = mapped_column(ForeignKey("ingestion_snapshots.id"), nullable=False)
+    replacement_source_snapshot_id: Mapped[int] = mapped_column(ForeignKey("ingestion_snapshots.id"), nullable=False)
+    corrected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (Index("ix_nav_revision_code_date", "scheme_code", "nav_date", "corrected_at"),)
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
