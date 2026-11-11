@@ -12,6 +12,9 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Supabase role grants are PostgreSQL-specific; SQLite remains a local test backend.
+    if op.get_bind().dialect.name != "postgresql":
+        return
     # Supabase roles are absent from vanilla PostgreSQL CI unless explicitly created.
     op.execute("""
     DO $$
