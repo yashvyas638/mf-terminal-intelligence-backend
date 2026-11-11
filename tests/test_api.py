@@ -2,6 +2,8 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+import app.main as main
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -367,3 +369,17 @@ def test_transaction_can_be_voided_once_with_audited_reason(monkeypatch):
         json={"reason": "Second attempt"},
     )
     assert second_void.status_code == 409
+
+
+def test_statement_fingerprint_preserves_same_day_row_order():
+    buy_first = main._statement_transactions(
+        "date,scheme_code,type,units,nav,amount\\n"
+        "2026-01-01,999997,BUY,2,100,200\\n"
+        "2026-01-01,999997,SELL,1,100,100\\n"
+    )
+    sell_first = main._statement_transactions(
+        "date,scheme_code,type,units,nav,amount\\n"
+        "2026-01-01,999997,SELL,1,100,100\\n"
+        "2026-01-01,999997,BUY,2,100,200\\n"
+    )
+    assert main._canonical_statement_fingerprint(buy_first) != main._canonical_statement_fingerprint(sell_first)
