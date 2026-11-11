@@ -131,7 +131,11 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                     if scheme is None:
                         db.add(Scheme(scheme_code=record.scheme_code, scheme_name=record.scheme_name, isin_growth=record.isin_growth, isin_dividend_reinvestment=record.isin_dividend_reinvestment, first_seen_at=now, last_seen_at=now))
                     else:
-                        scheme.scheme_name, scheme.isin_growth, scheme.isin_dividend_reinvestment, scheme.last_seen_at = record.scheme_name, record.isin_growth, record.isin_dividend_reinvestment, now
+                        scheme.scheme_name = record.scheme_name
+                        # A missing marker in a later feed must not erase a previously observed ISIN.
+                        scheme.isin_growth = record.isin_growth or scheme.isin_growth
+                        scheme.isin_dividend_reinvestment = record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
+                        scheme.last_seen_at = now
                     existing = db.execute(select(NavObservation).where(NavObservation.scheme_code == record.scheme_code, NavObservation.nav_date == record.nav_date)).scalar_one_or_none()
                     if existing:
                         if Decimal(existing.nav_value) != record.nav:
