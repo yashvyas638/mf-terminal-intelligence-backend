@@ -247,3 +247,40 @@ def test_portfolio_valuation_uses_average_cost_and_decimal_arithmetic(monkeypatc
     assert result["realized_gain_loss"] == 100
     assert result["unrealized_gain_loss"] == 450
     assert result["total_gain_loss"] == 550
+
+
+def test_portfolio_rejects_blank_names_and_future_transactions(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    blank = client.post("/v1/portfolios", headers=headers, json={"name": "   "})
+    assert blank.status_code == 422
+
+    now = datetime.now(timezone.utc)
+    scheme_code = 999995
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Future Date Test Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+            ))
+            db.commit()
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Date Test"}).json()
+    future = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions",
+        headers=headers,
+        json={
+            "scheme_code": scheme_code,
+            "transaction_type": "BUY",
+            "transaction_date": "2099-01-01",
+            "units": "1",
+            "nav": "100",
+            "amount": "100",
+        },
+    )
+    assert future.status_code == 422
