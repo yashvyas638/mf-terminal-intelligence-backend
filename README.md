@@ -86,7 +86,7 @@ Except `/health`, every endpoint requires `X-API-Key`.
 Run checks locally with:
 
 ```bash
-ruff check .
+ruff check --select F,B .
 pytest -q
 ```
 
