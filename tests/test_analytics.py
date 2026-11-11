@@ -32,7 +32,7 @@ def test_xirr_rejects_one_sided_cashflows():
 
 def test_rolling_returns_uses_real_monthly_endpoints():
     start = date(2022, 1, 1)
-    points = [(start + timedelta(days=30 * i), 100 + 2 * i) for i in range(50)]
+    points = [(start + timedelta(days=i), 100 + i * 0.05) for i in range(1500)]
     result = rolling_return_series(points, window_days=365)
     assert result["status"] == "OK"
     assert result["observations"] > 6
@@ -55,7 +55,7 @@ def test_rolling_returns_skips_windows_without_nearby_actual_base_nav():
 
 def test_research_metrics_exposes_consistency_as_observed_rate_not_score():
     start = date(2022, 1, 1)
-    points = [(start + timedelta(days=30 * i), 100 + 2 * i) for i in range(50)]
+    points = [(start + timedelta(days=i), 100 + i * 0.05) for i in range(1500)]
     result = research_metrics(points)
     assert result["status"] == "OK"
     assert result["positive_month_rate"] == 1.0
