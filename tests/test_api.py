@@ -100,7 +100,17 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     )
     assert response.status_code == 201
     assert response.json()["imported_count"] == 1
+
+    duplicate = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/import",
+        headers=headers,
+        json={"csv_text": csv_text},
+    )
+    assert duplicate.status_code == 409
+    assert "already been imported" in duplicate.json()["detail"]["message"]
+
     transactions = client.get(f"/v1/portfolios/{portfolio['id']}/transactions", headers=headers).json()
+    assert len(transactions["items"]) == 1
     assert transactions["items"][0]["transaction_type"] == "BUY"
 
 def test_weak_server_api_key_configuration_fails_closed(monkeypatch):
