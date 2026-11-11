@@ -12,6 +12,8 @@ A secure, deployable FastAPI service that retrieves the official AMFI all-scheme
 - Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.
 - Prevents duplicate refreshes within a running service process.
 - Provides health, freshness, scheme search, history, and latest-snapshot endpoints.
+- Records an append-only audit event for each portfolio transaction and supports audited voids rather than destructive deletes.
+- Rejects transaction cash/NAV mismatches and any transaction or void that would create a negative unit balance.
 - Includes GitHub Actions CI and a Monday–Saturday 09:30 IST scheduler.
 
 ## Quick start
@@ -48,6 +50,12 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |
 | `GET /v1/nav/history/{scheme_code}?days=` | Stored NAV history for one scheme. |
 | `GET /v1/nav/snapshot/latest` | Latest full validation report. |
+| `POST /v1/portfolios/{id}/transactions` | Creates a validated BUY/SELL ledger transaction. |
+| `POST /v1/portfolios/{id}/transactions/{transaction_id}/void` | Audited void; never deletes a financial record. |
+| `GET /v1/portfolios/{id}/transactions/{transaction_id}/audit` | Immutable, authenticated event history for one transaction. |
+| `POST /v1/portfolios/{id}/transactions/import` | Atomic CSV statement import with validation and no raw-statement retention. |
+| `POST /v1/portfolios/{id}/rebalance/preview` | Non-executable target-allocation trade estimate using stored NAVs. |
+| `GET /v1/portfolios/{id}/valuation` | Latest stored-NAV valuation, with explicit missing-coverage status. |
 
 Except `/health`, every endpoint requires `X-API-Key`.
 
@@ -59,6 +67,14 @@ Except `/health`, every endpoint requires `X-API-Key`.
 4. Keep Render's generated `API_KEY`, or replace it with a strong secret.
 5. Confirm `/health` reports `database: reachable`, then run one authenticated refresh.
 6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler then refreshes Monday–Saturday at 09:30 IST.
+
+### Release checklist
+
+- Run `alembic upgrade head` against a staging copy and confirm the recorded revision before promoting a release.
+- Store `API_KEY`, `DATABASE_URL`, and scheduler credentials only in the deployment secret manager; never commit a populated `.env` file.
+- Trigger one authenticated NAV refresh, then verify `/v1/nav/status` reports the expected retrieval timestamp and quality status.
+- Configure an external probe for `/health` and alert on failed refresh jobs or `STALE_RETRIEVAL` data.
+- Restore a PostgreSQL backup into a non-production environment and run the migration and API smoke checks before relying on disaster recovery.
 
 ## Quality and operational boundaries
 
@@ -72,3 +88,15 @@ pytest -q
 The included concurrency guard applies to a single process. If this service is scaled to multiple workers or instances, use a PostgreSQL advisory lock or a dedicated job queue before enabling more than one scheduler.
 
 Alembic manages versioned schema changes. The baseline safely adopts tables created by the earlier `create_all` bootstrap; run `alembic upgrade head` before deploying each schema release. Application startup retains `create_all` as a backwards-compatible bootstrap, not as a replacement for reviewed migrations.
+
+## Portfolio ledger integrity
+
+Portfolio transactions are immutable financial facts. To correct one, use the audited void endpoint with a reason and record a replacement transaction; do not alter rows directly. The API enforces `amount = units × NAV` rounded to paisa and evaluates the complete dated ledger before accepting a BUY, SELL, or void, so an oversell cannot be stored.
+
+`valuation_status=PARTIAL_MISSING_NAV` means at least one active holding has no stored NAV. In that state the displayed covered holding values are informational only: aggregate unrealized gain/loss, total gain/loss, and XIRR are intentionally withheld rather than calculated from incomplete coverage.
+
+## Statement import and rebalancing
+
+The statement-import endpoint accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. It rejects unknown scheme codes, invalid arithmetic, invalid dated ledgers, and files above 5,000 rows. Imports are all-or-nothing. The raw statement is deliberately not retained; only a SHA-256 fingerprint is included in the transaction audit event.
+
+The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.

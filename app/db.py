@@ -93,7 +93,21 @@ class PortfolioTransaction(Base):
     charges: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    void_reason: Mapped[str | None] = mapped_column(String(500))
     __table_args__ = (
         Index("ix_portfolio_txn_portfolio_date", "portfolio_id", "transaction_date"),
         Index("ix_portfolio_txn_scheme", "portfolio_id", "scheme_code"),
     )
+
+
+class PortfolioTransactionAudit(Base):
+    """Append-only record of ledger mutations; never used to calculate holdings."""
+
+    __tablename__ = "portfolio_transaction_audit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("portfolio_transactions.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details_json: Mapped[str] = mapped_column(Text, nullable=False)
+    __table_args__ = (Index("ix_txn_audit_transaction_event", "transaction_id", "event_at"),)
