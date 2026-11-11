@@ -21,7 +21,7 @@ Every feature must be linked to a phase, an acceptance test and a commit. No pha
 | Phase | Objective | User outcome | Status |
 |---|---|---|---|
 | **P0** | Infrastructure, security, NAV reliability, data integrity and portfolio import | Trustworthy, secure, operational foundation and accurate baseline portfolio | **OPEN — BLOCKED** |
-| **P1** | Fund research, historical performance, rolling returns and risk metrics | Understand fund quality, consistency, risk and performance against fair peers/benchmarks | NOT STARTED |
+| **P1** | Fund research, historical performance, rolling returns and risk metrics | Understand fund quality, consistency, risk and performance against fair peers/benchmarks | IN PROGRESS — NAV-only slice; P0 production gate remains |
 | **P2** | Holdings overlap, regression and quantitative research | Understand underlying exposures, concentration, correlations and quantitative relationships | NOT STARTED |
 | **P3** | Macro intelligence and stress testing | Understand economic regimes and portfolio sensitivity under historical/hypothetical shocks | NOT STARTED |
 | **P4** | Portfolio optimisation and Decision Centre | Evaluate portfolio changes with transparent evidence, constraints and trade-offs | NOT STARTED |
