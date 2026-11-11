@@ -35,6 +35,13 @@ def _clean(value: str | None) -> str | None:
 
 
 def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
+    if not isinstance(payload, str) or not payload.strip():
+        raise ValueError("AMFI response is empty")
+    if len(payload) > 30_000_000:
+        raise ValueError("AMFI response exceeds the 30 MB safety limit")
+    prefix = payload.lstrip("\\ufeff \\t\\r\\n")[:512].lower()
+    if "<html" in prefix or prefix.startswith("<!doctype"):
+        raise ValueError("AMFI endpoint returned HTML instead of the NAV text feed")
     records: list[NavRecord] = []
     issues: list[dict[str, Any]] = []
     seen: set[tuple[int, date]] = set()
@@ -59,6 +66,8 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
             nav_date = datetime.strptime(parts[5], "%d-%b-%Y").date()
             if code <= 0 or not name or not nav.is_finite() or nav <= 0:
                 raise ValueError("scheme code, name, and NAV must be valid and NAV must be positive")
+            if nav_date > date.today():
+                raise ValueError("NAV date cannot be in the future")
             key = (code, nav_date)
             if key in seen:
                 issues.append({"line": line_number, "type": "duplicate_scheme_date", "scheme_code": code, "date": nav_date.isoformat()})
