@@ -18,7 +18,15 @@ def _amfi_response(nav: str):
         "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
         f"998877;INF000000001;INF000000002;Correction Test Fund;{nav};10-Nov-2026\n"
     )
-    return SimpleNamespace(content=body.encode("utf-8"), raise_for_status=lambda: None)
+    raw = body.encode("utf-8")
+    return SimpleNamespace(
+        status_code=200,
+        headers={"Content-Type": "text/plain; charset=utf-8", "Content-Length": str(len(raw))},
+        content=raw,
+        iter_content=lambda chunk_size: iter([raw]),
+        close=lambda: None,
+        raise_for_status=lambda: None,
+    )
 
 
 def test_nav_correction_is_audited_and_replay_is_idempotent(monkeypatch):
@@ -71,7 +79,7 @@ def test_oversized_amfi_payload_is_rejected_before_parsing(monkeypatch):
     init_db()
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
-        content=b"x" * 30_000_001, raise_for_status=lambda: None
+        status_code=200, headers={"Content-Type": "text/plain"}, iter_content=lambda chunk_size: iter([b"x" * 30_000_001]), close=lambda: None, raise_for_status=lambda: None
     ))
     response = TestClient(main.app).post(
         "/v1/nav/refresh",
@@ -105,7 +113,7 @@ def test_stale_nav_effective_date_is_rejected(monkeypatch):
         "998876;INF000000003;INF000000004;Stale Test Fund;100.0000;01-Nov-2026\n"
     )
     monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
-        content=stale.encode("utf-8"), raise_for_status=lambda: None
+        status_code=200, headers={"Content-Type": "text/plain"}, iter_content=lambda chunk_size: iter([stale.encode("utf-8")]), close=lambda: None, raise_for_status=lambda: None
     ))
     response = TestClient(main.app).post(
         "/v1/nav/refresh",
