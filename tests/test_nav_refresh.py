@@ -77,3 +77,23 @@ def test_invalid_utf8_amfi_payload_is_rejected(monkeypatch):
     )
     assert response.status_code == 502
     assert "valid UTF-8" in response.json()["detail"]
+
+
+def test_stale_nav_effective_date_is_rejected(monkeypatch):
+    init_db()
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr(main, "MINIMUM_VALID_RECORDS", 1)
+    monkeypatch.setattr(main, "MAX_NAV_STALENESS_DAYS", 7)
+    stale = (
+        "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\\n"
+        "998876;INF000000003;INF000000004;Stale Test Fund;100.0000;01-Nov-2026\\n"
+    )
+    monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
+        content=stale.encode("utf-8"), raise_for_status=lambda: None
+    ))
+    response = TestClient(main.app).post(
+        "/v1/nav/refresh",
+        headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+    )
+    assert response.status_code == 502
+    assert "stale" in response.json()["detail"]
