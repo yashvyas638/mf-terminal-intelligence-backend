@@ -65,9 +65,19 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
         data_lines += 1
         try:
             code = int(parts[0])
-            name = parts[3]
-            nav = Decimal(parts[4].replace(",", ""))
-            nav_date = datetime.strptime(parts[5], "%d-%b-%Y").date()
+            # AMFI expanded NAVAll.txt from 6 to 8 columns by inserting
+            # separate Plan and Option fields before NAV. Keep compatibility
+            # with archived/legacy 6-column payloads.
+            if len(parts) >= 8:
+                plan, option = parts[4], parts[5]
+                name_parts = [parts[3], plan, option]
+                name = " - ".join(part for part in name_parts if part)
+                nav_value, date_value = parts[6], parts[7]
+            else:
+                name = parts[3]
+                nav_value, date_value = parts[4], parts[5]
+            nav = Decimal(nav_value.replace(",", ""))
+            nav_date = datetime.strptime(date_value, "%d-%b-%Y").date()
             if code <= 0 or not name or not nav.is_finite() or nav <= 0:
                 raise ValueError("scheme code, name, and NAV must be valid and NAV must be positive")
             if nav_date > date.today():
