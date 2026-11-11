@@ -13,3 +13,5 @@ services:
         generateValue: true
       - key: MINIMUM_VALID_RECORDS
         value: "1000"
+      - key: ENVIRONMENT
+        value: production
