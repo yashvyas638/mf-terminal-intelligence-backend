@@ -69,6 +69,8 @@ def require_api_key(x_api_key: str | None) -> None:
     expected = os.getenv("API_KEY")
     if not expected:
         raise HTTPException(503, "API_KEY is not configured; protected endpoints are disabled")
+    if len(expected) < 32:
+        raise HTTPException(503, "API_KEY must contain at least 32 characters; protected endpoints are disabled")
     if not x_api_key or not secrets.compare_digest(x_api_key, expected):
         raise HTTPException(401, "Missing or invalid X-API-Key")
 
