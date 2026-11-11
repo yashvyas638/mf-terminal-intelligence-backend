@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -66,6 +66,7 @@ class NavObservation(Base):
     __table_args__ = (
         UniqueConstraint("scheme_code", "nav_date", name="uq_nav_scheme_date"),
         Index("ix_nav_code_date", "scheme_code", "nav_date"),
+        CheckConstraint("nav_value > 0", name="ck_nav_observation_value_positive"),
     )
 
 
@@ -114,6 +115,11 @@ class PortfolioTransaction(Base):
     __table_args__ = (
         Index("ix_portfolio_txn_portfolio_date", "portfolio_id", "transaction_date"),
         Index("ix_portfolio_txn_scheme", "portfolio_id", "scheme_code"),
+        CheckConstraint("transaction_type IN ('BUY', 'SELL')", name="ck_portfolio_txn_type"),
+        CheckConstraint("units > 0", name="ck_portfolio_txn_units_positive"),
+        CheckConstraint("nav > 0", name="ck_portfolio_txn_nav_positive"),
+        CheckConstraint("amount > 0", name="ck_portfolio_txn_amount_positive"),
+        CheckConstraint("charges >= 0", name="ck_portfolio_txn_charges_nonnegative"),
     )
 
 
@@ -140,4 +146,5 @@ class PortfolioImportBatch(Base):
     __table_args__ = (
         UniqueConstraint("portfolio_id", "statement_sha256", name="uq_portfolio_import_hash"),
         Index("ix_portfolio_imported_at", "portfolio_id", "imported_at"),
+        CheckConstraint("imported_count > 0", name="ck_portfolio_import_count_positive"),
     )
