@@ -111,10 +111,26 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
     portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Import Test"}).json()
     csv_text = "date,scheme_code,type,units,nav,amount\n2026-01-01,999992,BUY,2,100,200\n"
-    response = client.post(
+    premature = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions/import",
         headers=headers,
         json={"csv_text": csv_text},
+    )
+    assert premature.status_code == 428
+
+    preview = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/import/preview",
+        headers=headers,
+        json={"csv_text": csv_text},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["status"] == "PREVIEW_READY"
+    assert preview.json()["row_count"] == 1
+
+    response = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/import",
+        headers=headers,
+        json={"csv_text": csv_text, "confirmation_token": preview.json()["confirmation_token"]},
     )
     assert response.status_code == 201
     assert response.json()["imported_count"] == 1
@@ -122,7 +138,10 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     duplicate = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions/import",
         headers=headers,
-        json={"csv_text": "type,date,amount,nav,units,scheme_code\nBUY,2026-01-01,200.00,100.0,2.0,999992\n"},
+        json={
+            "csv_text": "type,date,amount,nav,units,scheme_code\nBUY,2026-01-01,200.00,100.0,2.0,999992\n",
+            "confirmation_token": preview.json()["confirmation_token"],
+        },
     )
     assert duplicate.status_code == 409
     assert "already been imported" in duplicate.json()["detail"]["message"]
