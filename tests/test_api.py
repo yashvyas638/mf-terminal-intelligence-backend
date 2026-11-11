@@ -425,6 +425,8 @@ def test_stale_nav_is_disclosed_in_valuation_and_blocks_rebalance(monkeypatch):
 
     client = TestClient(app)
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    nav_status = client.get("/v1/nav/status", headers=headers).json()
+    assert nav_status["effective_nav_status"] == "STALE_EFFECTIVE_DATE"
     portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Stale NAV Test"}).json()
     added = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions",
