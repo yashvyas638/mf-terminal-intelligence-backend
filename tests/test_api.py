@@ -102,3 +102,10 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     assert response.json()["imported_count"] == 1
     transactions = client.get(f"/v1/portfolios/{portfolio['id']}/transactions", headers=headers).json()
     assert transactions["items"][0]["transaction_type"] == "BUY"
+
+def test_weak_server_api_key_configuration_fails_closed(monkeypatch):
+    monkeypatch.setenv("API_KEY", "short-secret")
+    client = TestClient(app)
+    response = client.get("/v1/nav/status", headers={"X-API-Key": "short-secret"})
+    assert response.status_code == 503
+    assert "at least 32 characters" in response.json()["detail"]
