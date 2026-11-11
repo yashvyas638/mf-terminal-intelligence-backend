@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: amfi-nav-refresh
+  cancel-in-progress: false
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -16,7 +19,8 @@ jobs:
         run: |
           test -n "$API_URL"
           test -n "$API_KEY"
-      - name: Refresh NAV
+          case "$API_URL" in */) echo "API_URL must not end with a slash" >&2; exit 1 ;; esac
+      - name: Refresh NAV and validate ingestion response
         env:
           API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
           API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
@@ -24,4 +28,20 @@ jobs:
           curl --fail-with-body --silent --show-error \
             --retry 3 --retry-delay 20 --retry-all-errors \
             --max-time 120 -X POST "$API_URL/v1/nav/refresh" \
-            -H "X-API-Key: $API_KEY"
+            -H "X-API-Key: $API_KEY" |
+          python -c '
+          import json, sys
+          result = json.load(sys.stdin)
+          snapshot = result.get("snapshot") or {}
+          assert result.get("status") == "ingested", "API did not confirm ingestion"
+          assert snapshot.get("quality_status") in {"PASS", "PASS_WITH_WARNINGS"}, "snapshot quality gate did not pass"
+          assert snapshot.get("records_valid", 0) >= 1000, "valid record count below configured floor"
+          print(json.dumps({
+              "status": result["status"],
+              "snapshot_id": snapshot.get("snapshot_id"),
+              "records_valid": snapshot.get("records_valid"),
+              "quality_status": snapshot.get("quality_status"),
+              "max_nav_date": snapshot.get("max_nav_date"),
+              "payload_sha256": snapshot.get("payload_sha256"),
+          }, indent=2))
+          '
