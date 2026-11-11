@@ -178,3 +178,40 @@ def test_successful_refresh_emits_commit_diagnostic_without_credentials(monkeypa
     assert "nav_source_validated" in caplog.text
     assert "nav_refresh_committed" in caplog.text
     assert api_key not in caplog.text
+
+
+def test_amfi_fetch_retries_transient_http_failure(monkeypatch):
+    attempts = {"count": 0}
+    good = _amfi_response("100.0000")
+
+    def fake_get(*args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            failed = SimpleNamespace(status_code=503, headers={}, close=lambda: None)
+            raise main.requests.HTTPError("temporary unavailable", response=failed)
+        return good
+
+    monkeypatch.setattr(main.requests, "get", fake_get)
+    monkeypatch.setattr(main.time, "sleep", lambda seconds: None)
+    payload, metadata = main._fetch_amfi_payload()
+    assert b"Correction Test Fund" in payload
+    assert metadata["attempt"] == 2
+    assert metadata["bytes_received"] == len(payload)
+    assert attempts["count"] == 2
+
+
+def test_amfi_fetch_reports_exhausted_transient_retries(monkeypatch):
+    attempts = {"count": 0}
+
+    def fake_get(*args, **kwargs):
+        attempts["count"] += 1
+        failed = SimpleNamespace(status_code=503, headers={}, close=lambda: None)
+        raise main.requests.HTTPError("temporary unavailable", response=failed)
+
+    monkeypatch.setattr(main.requests, "get", fake_get)
+    monkeypatch.setattr(main.time, "sleep", lambda seconds: None)
+    with pytest.raises(main.requests.HTTPError):
+        main._fetch_amfi_payload(max_attempts=3)
+    assert attempts["count"] == 3
+
+
