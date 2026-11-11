@@ -71,7 +71,7 @@ Except `/health`, every endpoint requires `X-API-Key`.
 3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL URL. Production mode rejects SQLite.
 4. Keep Render's generated `API_KEY`, or replace it with a strong secret.
 5. Confirm `/health` reports `database: reachable`, then run one authenticated refresh.
-6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler then refreshes Monday–Saturday at 09:30 IST.
+6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler refreshes Monday–Saturday at 22:45 IST, after AMFI's normal publication window (including late liquid/overnight NAVs).
 
 ### Release checklist
 
@@ -105,6 +105,15 @@ Portfolio transactions are immutable financial facts. To correct one, use the au
 The statement-import workflow accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. Preview validates known schemes, arithmetic and chronological unit balances without writing transactions. The confirmation token is bound to the portfolio, normalized transaction fingerprint and row count, and expires after 10 minutes. Confirmation revalidates under a per-portfolio database lock and commits all rows atomically. Re-importing the same normalized statement into the same portfolio is rejected. The raw statement is deliberately not retained; only a SHA-256 fingerprint is stored.
 
 The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It rejects stale NAV inputs rather than presenting them as current values. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.
+
+
+### NAV ingestion performance and resilience
+
+The refresh pipeline streams the official AMFI file with a 30 MB hard cap, bounded connect/read timeouts, and up to three attempts for transient network/HTTP failures. It records response metadata (status, content type, bytes and attempt number) without logging payloads or credentials. A failed or malformed source response never replaces accepted data.
+
+Persistence uses batched scheme and NAV lookups rather than one database round-trip per feed row. The validated snapshot, scheme-master changes, NAV observations and correction history are committed in one transaction. Exact replays remain idempotent; corrections retain their prior-value provenance.
+
+The scheduled refresh runs at 22:45 IST Monday–Saturday to avoid racing AMFI's evening publication, which can include later liquid/overnight NAV updates. Manual refresh remains available. AMFI's official NAVAll.txt remains the sole ingestion authority; third-party mirrors are not silently substituted into the canonical dataset.
 
 ## NAV correction history
 
