@@ -1,82 +1,313 @@
-# Development Roadmap — MF Terminal Intelligence
+# MF Terminal Intelligence — Development Roadmap
 
-Last updated: 2026-11-11
-Authorised working branch: audit/production-foundation
-Repository: yashvyas638/mf-terminal-intelligence-backend
-Governance: DEVELOP → TEST → REVIEW → COMMIT → PUSH → VERIFY CI → SUPABASE → RENDER → PRODUCTION TEST → PHASE SIGN-OFF.
+Last reviewed: 2026-11-11
+Repository: `yashvyas638/mf-terminal-intelligence-backend`
+Authorised branch: `audit/production-foundation`
+Product structure: **P0–P6** (seven gated phases)
+Product north star: a premium, source-grounded Indian mutual-fund research and portfolio intelligence terminal.
 
-## Release controls
-- main is protected from this work; do not merge without explicit approval.
-- Never reset, truncate, drop, or destructively alter production data without explicit approval.
-- Never place credentials, connection strings, API keys, or secret-bearing logs in this file, commits, screenshots, or reports.
-- A phase is COMPLETE only when its exit criteria have evidence. Otherwise mark it BLOCKED or PARTIALLY COMPLETE.
-- Record exact commit SHAs, CI evidence, migration revisions, deployment identifiers, smoke-test results, limitations, and rollback reference for each release.
-- GitHub branch metadata cannot establish local working-tree cleanliness; a local git status check is required.
+## How this roadmap is used
 
-## Phase status
-| Phase | Scope | Status | Exit condition |
+This is the single phase-control document. Detailed product requirements live in:
+- [Product Blueprint](docs/PRODUCT_BLUEPRINT.md)
+- [Engineering Playbook](docs/ENGINEERING_PLAYBOOK.md)
+- [Architecture and Data Model](docs/ARCHITECTURE_AND_DATA_MODEL.md)
+- [UX and Design System](docs/UX_AND_DESIGN_SYSTEM.md)
+
+Every feature must be linked to a phase, an acceptance test and a commit. No phase is complete because code was written; it is complete only when the relevant evidence is recorded here and sign-off is explicitly granted.
+
+## Phase map
+
+| Phase | Objective | User outcome | Status |
 |---|---|---|---|
-| P0 | Infrastructure, reliability, data integrity, production readiness | OPEN — BLOCKED | All P0 gates below verified |
-| P1 | Universal portfolio import, scheme/fund master, official fund documents and metadata | NOT STARTED | P0 signed off |
-| P2 | Performance, risk, benchmark and rolling analytics | NOT STARTED | P1 signed off |
-| P3 | Holdings, sector, overlap, concentration and portfolio risk | NOT STARTED | P2 signed off |
-| P4 | Macro, rates, inflation, currency, global markets and stress regimes | NOT STARTED | P3 signed off |
-| P5 | Decision framework, scoring, allocation, tax and opportunity-cost analysis | NOT STARTED | P4 signed off |
-| P6 | Wealth projections, goals, tax, snapshots and monitoring | NOT STARTED | P5 signed off |
-| P7 | Source-linked AI research, assistant and exports | NOT STARTED | P6 signed off |
-| P8 | Full regression, security, isolation, performance, recovery and UX QA | NOT STARTED | P7 signed off |
+| **P0** | Infrastructure, security, NAV reliability, data integrity and portfolio import | Trustworthy, secure, operational foundation and accurate baseline portfolio | **OPEN — BLOCKED** |
+| **P1** | Fund research, historical performance, rolling returns and risk metrics | Understand fund quality, consistency, risk and performance against fair peers/benchmarks | NOT STARTED |
+| **P2** | Holdings overlap, regression and quantitative research | Understand underlying exposures, concentration, correlations and quantitative relationships | NOT STARTED |
+| **P3** | Macro intelligence and stress testing | Understand economic regimes and portfolio sensitivity under historical/hypothetical shocks | NOT STARTED |
+| **P4** | Portfolio optimisation and Decision Centre | Evaluate portfolio changes with transparent evidence, constraints and trade-offs | NOT STARTED |
+| **P5** | Tax, wealth projections, monitoring and reports | Understand after-tax outcomes, future ranges, goals and portfolio changes | NOT STARTED |
+| **P6** | AI research assistant and production hardening | Ask source-grounded questions and operate a secure, monitored, recoverable product | NOT STARTED |
 
-## P0 exit checklist and evidence
-| Gate | Status | Current evidence / blocker |
-|---|---|---|
-| Confirm authorised remote branch and exact head | VERIFIED | GitHub remote ref refs/heads/audit/production-foundation points to 3ca12c92a717da5bdda79911e793483d6a376ac9 on 2026-11-11. |
-| Verify local working tree clean | NOT VERIFIED | No local checkout/status capability used. A local git status --short result is still required. |
-| Inspect complete Supabase schema, migrations, indexes, constraints and RLS | PARTIAL / BLOCKED | Repository ORM metadata and both Alembic revisions inspected. Live Supabase catalog and RLS policies have not been queried. |
-| PostgreSQL compatibility independent of SQLite CI | CI ADDED — RESULT PENDING | GitHub Actions now includes an isolated PostgreSQL 16 service job that applies Alembic migrations and runs pytest. Await a successful run on the latest branch head. |
-| Live AMFI response and parser validation | PARTIAL / BLOCKED | Configured URL is https://portal.amfiindia.com/spages/NAVAll.txt. A web-opened copy was semicolon-delimited and showed the expected six-column header, but retrieval metadata reported three months old. This is not a fresh live fetch from the service runtime. |
-| Validate records before database insertion | PARTIAL | Code parses and applies a minimum valid-record threshold before writes. Need live payload evidence and stronger quality checks for date/freshness and source-format drift. |
-| Duplicate and missing-ISIN handling | PARTIAL | Parser tests cover duplicate scheme/date rows and '-' ISIN normalization. Database upsert behavior and live-feed cases still need integration tests. |
-| Historical NAV preservation | BLOCKED / RISK FOUND | Unique key is scheme/date. Existing rows for a matching date are overwritten on re-ingestion; this may be intended for official corrections but is not immutable history. Daily NAVAll feed alone is not a historical backfill. Define and test correction provenance and preservation policy. |
-| Render deployment commit | NOT VERIFIED | Desired SHA is 3ca12c92a717da5bdda79911e793483d6a376ac9; Render deployment record has not been inspected. |
-| Supabase PostgreSQL live connectivity and migration state | NOT VERIFIED | No authenticated live database catalog or Alembic current-revision evidence available. |
-| End-to-end AMFI → backend → Supabase → dashboard/portfolio | NOT VERIFIED | Public Render health endpoint could not be retrieved by the available web reader; authenticated API and dashboard workflow not exercised. |
-| FastAPI startup deprecation | CODE CHANGE MADE — TEST PENDING | FastAPI lifespan now runs local/test bootstrap only. Production mode skips create_all; Render migration command remains authoritative. Verify CI and production startup. |
-| Rollback commit and procedure | PARTIAL / BLOCKED | Candidate code commit is known; last known-good production deployment commit and deploy ID are not verified. Do not label a code commit as production-good without Render evidence. |
+Dependencies are sequential. A later phase may have design notes prepared early, but implementation must not bypass unresolved upstream data, security or correctness gates.
 
-## Code-level observations requiring P0 resolution
-1. app/db.py defines schemes, ingestion snapshots, NAV observations, portfolios, transactions, and transaction audit records. It defines a unique constraint on (scheme_code, nav_date), plus indexes for NAV scheme/date, portfolio transaction date/scheme, and transaction audit lookup.
-2. The two checked-in migrations are 0001_schema_baseline and 0002_portfolio_ledger_audit. The baseline adopts Base.metadata.create_all; migration 0002 adds void columns and an audit table/index. Their actual state on Supabase is unknown.
-3. The inspected portfolio schema has no owner/user/tenant column or equivalent ownership mapping. API-key authentication is service-wide, not per-user portfolio isolation. Do not expose this backend as a multi-user service until explicit ownership and authorization design is implemented and tested.
-4. No RLS policies are defined in the inspected application migrations. Live Supabase RLS state must be inspected; do not assume RLS is enabled or disabled from application code alone.
-5. init_db() calls Base.metadata.create_all at application startup in addition to Alembic migrations in the Render start command. Review this dual schema-management path and keep migrations authoritative.
-6. render.yaml in this commit declares a Starter plan, while the previously observed service was described as Free. Verify actual Render service configuration; repository blueprint text is not proof of live service configuration.
-7. The dashboard contains NAV search/refresh and portfolio controls, but complete end-to-end behavior and ownership safeguards are not verified.
+## Standard end-to-end execution flow
 
-## Rollback record
-- Candidate reviewed source commit: 3ca12c92a717da5bdda79911e793483d6a376ac9.
-- Last known-good production commit: UNKNOWN — must be obtained from Render deployment history.
-- Last known-good Render deploy ID/timestamp: UNKNOWN.
-- Rollback procedure: use Render deployment history to redeploy the exact previously successful deployment/commit; verify /health, authenticated NAV status, and dashboard read paths. Do not run a database downgrade as part of application rollback. If a release included a schema migration, use a reviewed forward-fix or verified backup restore plan; never assume a code rollback reverses a migration.
-- Before any release, record the prior successful Render deploy ID, commit SHA, timestamp, and current Alembic revision here.
+```text
+Idea / user problem
+  → Phase and scope assignment
+  → Acceptance criteria + non-goals
+  → Inspect branch, code, schema, tests and deployment
+  → Design data flow, threat model and failure handling
+  → Implement smallest coherent change
+  → Unit + integration + PostgreSQL + migration + UI tests
+  → Diff review (correctness/security/performance/compatibility)
+  → Commit on authorised branch
+  → Push and verify remote SHA
+  → CI green on exact SHA
+  → Staging database migration and reconciliation
+  → Render deploy of approved SHA
+  → Production smoke tests and monitoring
+  → Update evidence log and rollback reference
+  → Phase sign-off
+```
 
-## P0 evidence log
-### 2026-11-11 — repository and code review
-- Remote branch ref confirmed at 3ca12c92a717da5bdda79911e793483d6a376ac9.
-- Prior CI run for this SHA: run ID 43020514070, job 130522253718; SQLite migration, Ruff F,B, and pytest passed; pytest reported 15 passed and 3 warnings.
-- CI does not prove PostgreSQL compatibility, Supabase connectivity, RLS, Render deployment, live AMFI ingestion, or end-to-end production behavior.
-- No local working-tree status, production database mutation, or production deployment was performed during this review.
+Mandatory order: **DEFINE → INSPECT → DESIGN → DEVELOP → TEST → REVIEW → COMMIT → PUSH → CI → DATABASE → DEPLOY → SMOKE TEST → RECORD → SIGN OFF**.
 
-## Follow-up implementation commits — 2026-11-11
-- `d2fd4a7`: add ORM model for append-only NAV correction provenance.
-- `05101ed`: add Alembic migration 0003 for NAV correction history; downgrade intentionally retains the audit table.
-- `2f54d97`: switch startup to FastAPI lifespan; production skips ORM create_all and relies on Alembic.
-- `cc2fd4e`: reject empty, oversized, HTML, and future-dated AMFI payloads.
-- `af037f2`: parser regression test for HTML error responses.
-- `779437b`: add isolated PostgreSQL 16 migration/test job to CI.
-- `e7e1c42`: preserve previously known ISIN values when a later AMFI feed has a missing marker.
-- `a19c637`: add NAV correction-history and idempotent-replay test.
-- `211a39f`: set Render blueprint environment to production so schema is migration-managed.
-- `308c127`: add read-only live AMFI source validation workflow.
-- `822735d`: document correction-history and single-operator tenancy boundary.
+## P0 — Infrastructure, security, NAV reliability, data integrity and portfolio import
 
-These commits are pushed to the authorised feature branch. CI results are pending. Supabase live catalog/RLS, Render deployment SHA, local working-tree status, and end-to-end production verification remain unverified. Do not sign off P0 or expose this API as a multi-user service.
+**Target outcome:** a dependable foundation. No advanced analytics are trusted until this phase passes.
+
+### Build scope
+1. **Repository and delivery controls**
+   - Confirm remote, branch, exact commit and PR state before every change.
+   - Add phase docs, code ownership/review conventions, CI and release evidence.
+   - Verify local working tree via actual local `git status`; remote GitHub cannot prove local cleanliness.
+2. **Runtime and secrets**
+   - Pin/verify Python runtime and dependencies.
+   - Validate production PostgreSQL URL and reject SQLite in production.
+   - Rotate exposed credentials; store only in Render/GitHub secret stores.
+   - Keep logs redacted; never print URLs, passwords, API keys, tokens or financial statement contents.
+3. **Database and security**
+   - Inspect live Supabase tables, columns, indexes, constraints, triggers, extensions, grants and RLS.
+   - Reconcile live schema against every Alembic migration.
+   - Use Alembic as the only production schema manager; no production `create_all`.
+   - Design user/tenant ownership and RLS before multi-user portfolio exposure. Shared API key is not user authorization.
+   - Backups, restore drill, least privilege, rate limits and audit.
+4. **AMFI pipeline**
+   - Fetch official source with timeouts, retries, content-type/body checks and bounded size.
+   - Preserve source hash, retrieval time, NAV effective date and parser version.
+   - Parse/normalise; validate scheme code, ISIN, name, positive finite Decimal NAV and date.
+   - Quality gate for minimum records, stale/future dates, duplicates, malformed rows, distribution anomalies and source format changes.
+   - Persist transactionally only after validation.
+   - Exact replay is idempotent; missing ISIN never fabricated; later missing marker must not erase a known identifier.
+   - NAV correction must preserve previous value/source in append-only revision history.
+   - Daily NAV feed is not a historical backfill; state coverage honestly.
+5. **Portfolio import and ledger**
+   - CSV upload preview, column mapping, duplicate detection, scheme resolution, row-level validation and reconciliation.
+   - User confirmation before atomic commit.
+   - Immutable transaction facts with audited void/correction, no hard delete.
+   - Decimal arithmetic, oversell prevention, ownership checks and missing-NAV-aware valuation.
+6. **Dashboard baseline**
+   - Home/data health, fund search, NAV status/history and portfolio import/valuation.
+   - Loading, empty, stale, partial, error and success states.
+
+### P0 acceptance criteria
+- [ ] Actual remote branch and local working tree status recorded.
+- [ ] Full live Supabase schema, indexes, constraints, grants and RLS inspected and documented.
+- [ ] PostgreSQL CI passes independently of SQLite.
+- [ ] Alembic upgrade from empty DB and prior supported revision passes on PostgreSQL.
+- [ ] No production startup schema mutation; migrations are authoritative.
+- [ ] Live AMFI response fetched and parser validated with timestamp, source hash and record counts.
+- [ ] Invalid/HTML/empty/stale/future/malformed feed is rejected without changing accepted data.
+- [ ] Exact duplicate replay creates no duplicate rows.
+- [ ] Missing ISIN and duplicate behavior verified against parser and DB integration tests.
+- [ ] NAV correction preserves previous values and source provenance.
+- [ ] Historical coverage limitation is explicit; no fabricated NAV history.
+- [ ] Portfolio import preview, reconciliation, atomic commit, duplicate handling and rollback tested.
+- [ ] Portfolio ownership/RLS isolation tests pass before multi-user access.
+- [ ] Render deploy commit exactly matches approved SHA; environment metadata verified without exposing secrets.
+- [ ] Production AMFI → API → Supabase → dashboard/portfolio read path smoke-tested.
+- [ ] Last known-good Render deploy ID/SHA and recovery procedure documented.
+- [ ] No unresolved critical/high security or data-integrity defects.
+
+### P0 do not
+- Never reset, truncate, drop or bulk rewrite production tables as a test.
+- Never run a destructive migration without explicit approval and verified backup/restore.
+- Never lower production AMFI minimum-record threshold to bypass a failed feed.
+- Never treat successful SQLite CI as PostgreSQL or production proof.
+- Never expose a shared service API key in browser code as multi-user security.
+- Never silently overwrite NAV correction history, guess scheme identity or hide missing data.
+- Never auto-commit imported statements without preview/reconciliation/user confirmation.
+- Never deploy an unverified SHA or merge to main without approval.
+
+### Current P0 evidence and blockers
+- Earlier code commit `3ca12c92a717da5bdda79911e793483d6a376ac9` passed SQLite migration, Ruff and 15 pytest tests (CI run `43020514070`, job `130522253718`). This does not establish PostgreSQL compatibility.
+- Subsequent branch commits listed in the prior evidence log include NAV correction provenance, lifespan migration, parser hardening, PostgreSQL CI, missing-ISIN preservation and live-source validation workflow. Their exact latest CI result and production state must be re-verified on current branch head before relying on them.
+- Current source review identified that portfolio tables lack user/tenant ownership. Do not enable multi-user use until isolation is designed and tested.
+- Live Supabase schema/RLS and Render deployment record remain unverified.
+- Last known-good production deployment SHA/deploy ID remains UNKNOWN until Render history is inspected.
+- Local working-tree cleanliness remains UNKNOWN unless a local Git status result is provided.
+- No destructive production operation is authorised.
+
+## P1 — Fund research, historical performance, rolling returns and risk metrics
+
+**Target outcome:** a reliable fund research workstation.
+
+### Build
+- Canonical fund identity: AMC, scheme code, ISIN, category, plan, option, benchmark, inception and lifecycle.
+- Fund facts: AUM, expense ratio, exit load, manager, minimums, factsheet/SID/KIM and publication/as-of dates.
+- Direct vs regular; growth vs IDCW; do not compare unlike variants as equivalent.
+- NAV history coverage, gaps, corrections and distribution caveats.
+- Absolute return, CAGR, XIRR when cashflows exist, calendar returns, rolling returns, benchmark-relative returns.
+- Volatility, downside deviation, Sharpe, Sortino, beta, alpha, tracking error, information ratio, max drawdown, recovery time, capture ratios and consistency.
+- Category/peer comparison with sample size, peer-universe definition and survivorship caveats.
+- Fund profile, compare view, watchlists, methodology drawer and exportable research brief.
+
+### Do not
+- Do not call NAV CAGR total return if IDCW/distributions are not included.
+- Do not compare different plans/options/benchmarks/periods without clear disclosure.
+- Do not calculate alpha/beta/Sharpe without benchmark alignment, risk-free assumption, frequency and adequate observations.
+- Do not interpolate missing NAV data or fabricate history.
+- Do not rank solely on trailing return or opaque composite scores.
+
+### Exit
+- Independent calculation fixtures and benchmark alignment tests pass.
+- Rolling-window, short-history, missing-observation and data-gap behavior is explicit.
+- Every metric shows period, source, as-of date, frequency, formula version, assumptions and coverage.
+
+## P2 — Holdings overlap, regression and quantitative research
+
+**Target outcome:** look-through intelligence that reveals hidden portfolio exposures.
+
+### Build
+- Dated AMC holdings/factsheet ingestion with provenance.
+- Security master and ISIN/ticker/issuer mapping with confidence and unmatched queue.
+- Stock, sector, market-cap, style and group exposure.
+- Fund-to-fund overlap, weighted overlap, concentration and top contributors.
+- Portfolio look-through and duplicate exposure.
+- Correlation/covariance matrices, rolling correlation, regression, factor sensitivity and residual diagnostics.
+- Scenario/backtest lab with explicit rebalance, costs, benchmark and data availability.
+
+### Do not
+- Do not compare holdings from different effective dates as simultaneous.
+- Do not map securities on name alone when ambiguous.
+- Do not imply regression proves causality.
+- Do not backtest with look-ahead/survivorship bias or unavailable historical holdings.
+- Do not show model fit without sample size, residuals and diagnostics.
+
+### Exit
+- Holdings freshness and identity-match confidence visible.
+- Overlap and regression calculations independently validated.
+- Look-ahead, stale holdings, unmatched securities and missing-data tests pass.
+
+## P3 — Macro intelligence and stress testing
+
+**Target outcome:** transparent understanding of macro exposures and possible portfolio sensitivity.
+
+### Build
+- RBI policy, rates/yields, inflation, liquidity, INR, crude, gold, global equity and bond indicators.
+- India/US policy calendar, release dates and source-linked event timeline.
+- Macro regime labels with explicit thresholds and uncertainty.
+- Portfolio exposure mapping to sectors, factors, duration, currency and geography.
+- Historical scenario replay and hypothetical stress tests.
+- Base/upside/downside ranges and impact journal.
+
+### Do not
+- Do not present correlation as causation.
+- Do not forecast central-bank or market outcomes with certainty.
+- Do not confuse release date with observation/effective date.
+- Do not label stress tests as predictions or turn headlines into unverified trade signals.
+
+### Exit
+- Source freshness/revision policy documented.
+- Each scenario lists shock, horizon, mapping, assumptions and limitations.
+- Deterministic scenario fixtures and alert tests pass.
+
+## P4 — Portfolio optimisation and Decision Centre
+
+**Target outcome:** evidence-led, user-approved portfolio change analysis.
+
+### Build
+- Current vs target allocation across funds, categories, AMCs, sectors, asset classes and risk.
+- ADD / HOLD / REDUCE / SWITCH / EXIT research cases with evidence and counter-evidence.
+- Portfolio constraints, minimum/maximum weights and concentration limits.
+- Risk-aware optimisers plus simple robust alternatives.
+- SIP contribution planning and allocation.
+- Rebalance preview with drift, units, cash impact, taxes, exit loads and minimums.
+- Decision log with thesis, source evidence, assumptions, user approval, review date and outcome.
+- What-if and opportunity-cost analysis.
+
+### Do not
+- Do not auto-trade.
+- Do not present optimiser output as certainty or advice.
+- Do not ignore tax, exit loads, lock-ins, liquidity, restrictions or user constraints.
+- Do not overwrite user targets or decisions without confirmation.
+
+### Exit
+- Deterministic calculations and infeasible-constraint handling tested.
+- Rebalance reconciles to portfolio/cash and shows all assumptions.
+- Decisions and approvals are auditable.
+
+## P5 — Tax, wealth projections, monitoring and reports
+
+**Target outcome:** explain after-tax outcomes and long-term scenarios with reproducible assumptions.
+
+### Build
+- Tax lots, holding periods, realised/unrealised gains and effective-dated tax rules.
+- Capital gains, tax harvesting candidates and exit-load schedules.
+- SIP step-up, goal planning, inflation-adjusted target and required contributions.
+- Deterministic projections and Monte Carlo ranges.
+- Wealth snapshots, cashflows, milestones and attribution.
+- Alerts for stale data, allocation drift, fund events, concentration, lock-ins and goal progress.
+- PDF/Excel/CSV reports with as-of dates and methodology.
+
+### Do not
+- Do not hardcode tax rules without effective dates and authoritative sources.
+- Do not describe projections or Monte Carlo percentiles as guaranteed.
+- Do not create noisy/panic alerts or rewrite historical snapshots/reports.
+
+### Exit
+- Tax fixtures reviewed against effective-dated rules.
+- Projection results reproducible from saved assumptions.
+- Alert thresholds configurable and exports reconcile to source data.
+
+## P6 — AI research assistant and production hardening
+
+**Target outcome:** a source-grounded research copilot and a secure, monitored, recoverable production product.
+
+### Build
+- Retrieval-grounded answers over verified metrics and official source documents.
+- Citations with source timestamp, document version and coverage/confidence.
+- Fund, portfolio and macro research briefs.
+- Natural-language analytics with visible filters/formulas and deterministic calculation services.
+- Explain what changed, why it matters, counter-evidence and uncertainty.
+- Threat model, tenant isolation, role-based access, audit, rate limiting and privacy controls.
+- Job queue/locks, retries, observability, backup/restore, disaster recovery and performance tests.
+- Accessibility, mobile/tablet/desktop QA, onboarding, help and product analytics.
+- Full regression and operational handover.
+
+### Do not
+- Do not let an LLM invent metrics or citations.
+- Do not let AI run arbitrary write SQL or modify portfolio records.
+- Do not send sensitive financial data to external models without explicit consent and approved controls.
+- Do not hide uncertainty, contradictory sources or missing evidence.
+
+### Exit
+- AI answers are grounded, cited and reproducible.
+- Security/privacy/tenant isolation tests pass.
+- Backup restore and failure recovery demonstrated.
+- Full regression, load, accessibility and device tests pass.
+- Operational ownership and support runbooks complete.
+
+## Global definition of done
+
+For every phase:
+- scope and non-goals are written
+- data contracts and failure modes reviewed
+- unit/integration/PostgreSQL tests pass
+- migration is reviewed and rehearsed where applicable
+- security/privacy and authorization reviewed
+- UI loading/empty/stale/partial/error/success states work
+- exact branch SHA and CI run recorded
+- production deploy SHA verified where applicable
+- smoke tests and reconciliation recorded
+- rollback target and recovery plan recorded
+- limitations and unresolved issues listed
+- explicit phase sign-off recorded
+
+## Release and rollback record
+
+- Authorised branch: `audit/production-foundation`.
+- Never merge to `main` without explicit approval.
+- Candidate commit from earlier P0 review: `3ca12c92a717da5bdda79911e793483d6a376ac9`.
+- Last known-good production commit: **UNKNOWN until Render deployment history is inspected**.
+- Last known-good Render deploy ID/time: **UNKNOWN**.
+- Rollback: redeploy exact last successful Render deployment; verify health, DB reachability, auth and core read endpoints. Do not run Alembic downgrade as routine rollback. Use forward-fix or an approved, tested backup restore for schema/data issues.
+
+## Evidence log
+
+### 2026-11-11
+- Earlier commit `3ca12c9`: CI run `43020514070`, job `130522253718`; SQLite migration, Ruff F/B and pytest passed (15 tests, 3 warnings).
+- Feature-branch follow-up commits listed in prior roadmap revision include NAV correction provenance, lifespan migration, AMFI payload hardening, PostgreSQL 16 CI, missing-ISIN preservation, live-source validation workflow and tenancy-boundary documentation. Verify exact latest SHA and CI before treating as passed.
+- Product/engineering documentation added: Product Blueprint, Engineering Playbook, Architecture and Data Model, UX and Design System.
+- P0 remains OPEN. Supabase live catalog/RLS, Render deployed SHA, local working-tree status, end-to-end production test and last known-good deployment remain unverified.
