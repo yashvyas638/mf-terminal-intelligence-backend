@@ -174,7 +174,12 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                 stream=True,
             )
             response.raise_for_status()
-            raw_payload = _read_bounded_amfi_response(response)
+            try:
+                raw_payload = _read_bounded_amfi_response(response)
+            finally:
+                close_response = getattr(response, "close", None)
+                if callable(close_response):
+                    close_response()
             try:
                 payload = raw_payload.decode("utf-8-sig", errors="strict")
             except UnicodeDecodeError:
