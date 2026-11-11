@@ -285,7 +285,18 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
             return {"status": "not_initialized", "scheme_master_count": count, "latest_snapshot": None}
         retrieved_at = snapshot.retrieved_at.replace(tzinfo=timezone.utc) if snapshot.retrieved_at.tzinfo is None else snapshot.retrieved_at
         age_hours = (datetime.now(timezone.utc) - retrieved_at).total_seconds() / 3600
-        return {"status": "ok", "scheme_master_count": count, "latest_snapshot": _snapshot_dict(snapshot), "retrieval_age_hours": round(age_hours, 2), "freshness_status": "FRESH_RETRIEVAL" if age_hours <= 36 else "STALE_RETRIEVAL", "note": "Retrieval freshness is not the same as NAV effective date."}
+        effective_age_days = (date.today() - snapshot.max_nav_date).days
+        return {
+            "status": "ok",
+            "scheme_master_count": count,
+            "latest_snapshot": _snapshot_dict(snapshot),
+            "retrieval_age_hours": round(age_hours, 2),
+            "freshness_status": "FRESH_RETRIEVAL" if age_hours <= 36 else "STALE_RETRIEVAL",
+            "effective_nav_age_days": effective_age_days,
+            "effective_nav_status": "FRESH_EFFECTIVE_DATE" if effective_age_days <= MAX_NAV_STALENESS_DAYS else "STALE_EFFECTIVE_DATE",
+            "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
+            "note": "Retrieval freshness and NAV effective-date freshness are separate measures.",
+        }
 
 
 @app.get("/v1/nav/schemes")
