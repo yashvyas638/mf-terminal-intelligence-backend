@@ -17,6 +17,8 @@ def database_url() -> str:
 
 
 _url = database_url()
+if os.getenv("ENVIRONMENT", "").lower() == "production" and _url.startswith("sqlite"):
+    raise RuntimeError("SQLite is not supported in production; configure a persistent PostgreSQL DATABASE_URL")
 _engine_args: dict[str, object] = {"pool_pre_ping": True}
 if _url.startswith("sqlite"):
     _engine_args["connect_args"] = {"check_same_thread": False}
