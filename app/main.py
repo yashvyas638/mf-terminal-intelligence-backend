@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import json
+import logging
 import os
 import secrets
 import threading
@@ -41,6 +42,8 @@ from app.db import (
 )
 from app.analytics import performance_metrics
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
+
+logger = logging.getLogger("mf_terminal.nav")
 
 APP_VERSION = "0.3.0"
 MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
@@ -150,6 +153,8 @@ def health() -> dict[str, Any]:
 @app.post("/v1/nav/refresh")
 def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
     require_api_key(x_api_key)
+    started_at = datetime.now(timezone.utc)
+    logger.info("nav_refresh_started source=%s", AMFI_NAV_URL)
     # Prevent duplicate work and uniqueness races within a service process. Deploy one worker;
     # distributed scheduling should invoke exactly one instance.
     if not _refresh_lock.acquire(blocking=False):
@@ -174,6 +179,12 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                 stream=True,
             )
             response.raise_for_status()
+            logger.info(
+                "nav_source_response status=%s content_type=%s content_length=%s",
+                response.status_code,
+                response.headers.get("Content-Type", "unknown"),
+                response.headers.get("Content-Length", "unknown"),
+            )
             try:
                 raw_payload = _read_bounded_amfi_response(response)
             finally:
@@ -185,16 +196,31 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             except UnicodeDecodeError:
                 raise HTTPException(502, "AMFI response is not valid UTF-8; existing data was not changed") from None
         except requests.RequestException as exc:
+            logger.exception("nav_source_request_failed error_type=%s", type(exc).__name__)
             raise HTTPException(502, f"AMFI source request failed: {type(exc).__name__}; existing data was not changed") from None
         try:
             records, report = parse_amfi_nav_text(payload)
         except ValueError as exc:
+            logger.warning("nav_source_validation_failed reason=%s", str(exc)[:240])
             raise HTTPException(502, f"AMFI payload validation failed: {exc}; existing data was not changed") from None
+        logger.info(
+            "nav_source_validated records=%s schemes=%s max_nav_date=%s invalid_rows=%s duplicates=%s quality=%s",
+            report["records_valid"], report["unique_scheme_codes"], report["max_nav_date"],
+            report["invalid_rows"], report["duplicate_rows_skipped"], report["quality_status"],
+        )
         if report["records_valid"] < MINIMUM_VALID_RECORDS:
+            logger.warning(
+                "nav_source_below_minimum valid_records=%s minimum=%s",
+                report["records_valid"], MINIMUM_VALID_RECORDS,
+            )
             raise HTTPException(502, f"AMFI payload had only {report['records_valid']} valid rows; minimum is {MINIMUM_VALID_RECORDS}; existing data was not changed")
         latest_nav_date = date.fromisoformat(report["max_nav_date"])
         nav_age_days = (date.today() - latest_nav_date).days
         if nav_age_days > MAX_NAV_STALENESS_DAYS:
+            logger.warning(
+                "nav_source_stale effective_age_days=%s maximum_allowed=%s",
+                nav_age_days, MAX_NAV_STALENESS_DAYS,
+            )
             raise HTTPException(
                 502,
                 f"AMFI NAV data is stale by {nav_age_days} days; maximum allowed is {MAX_NAV_STALENESS_DAYS}; existing data was not changed",
@@ -249,7 +275,17 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
                 db.commit()
             except Exception:
                 db.rollback()
+                logger.exception(
+                    "nav_database_transaction_failed records=%s payload_sha256=%s",
+                    len(records), report["payload_sha256"],
+                )
                 raise
+            elapsed_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+            logger.info(
+                "nav_refresh_committed snapshot_id=%s schemes=%s nav_inserted=%s nav_corrected=%s nav_unchanged=%s elapsed_ms=%s",
+                snapshot.id, report["unique_scheme_codes"], nav_rows_inserted,
+                nav_rows_updated, nav_rows_unchanged, elapsed_ms,
+            )
             return {
                 "status": "ingested",
                 "snapshot": _snapshot_dict(snapshot),
