@@ -356,3 +356,6 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Portfolio statement import now follows a two-step workflow: signed 10-minute preview token, row-level validation and buy/sell cash summary, then explicit atomic confirmation. The token is bound to portfolio ID, normalized transaction fingerprint and row count; stale, altered, missing or cross-portfolio tokens are rejected. The dashboard now exposes separate Preview and Confirm actions. Raw CSV remains transient and is not stored.
 
 - Extended migration 0007 to protect portfolio transaction facts from direct UPDATE/DELETE, allow one audited void metadata transition only, and make import fingerprint batches append-only. API tests cover blocked fact edits/deletes and successful one-time audited void.
+
+- Added a resolved `requirements.lock` from the green Python 3.12 CI environment and switched Render, CI and the live-source workflow to exact dependency pins. The next CI run validates installation from the lock itself.
+- Added [Final Release Runbook](docs/FINAL_RELEASE_RUNBOOK.md) covering backup/restore, Render DB-role verification, secret rotation, migration order, production smoke tests and rollback.
