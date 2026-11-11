@@ -126,6 +126,11 @@ def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
     assert preview.status_code == 200
     assert preview.json()["status"] == "PREVIEW_READY"
     assert preview.json()["row_count"] == 1
+    before_confirmation = client.get(
+        f"/v1/portfolios/{portfolio['id']}/transactions",
+        headers=headers,
+    )
+    assert before_confirmation.json()["count"] == 0
 
     response = client.post(
         f"/v1/portfolios/{portfolio['id']}/transactions/import",
