@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -119,3 +121,11 @@ def test_weak_server_api_key_configuration_fails_closed(monkeypatch):
     response = client.get("/v1/nav/status", headers={"X-API-Key": "short-secret"})
     assert response.status_code == 503
     assert "at least 32 characters" in response.json()["detail"]
+
+
+def test_production_startup_fails_fast_when_api_key_is_missing(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="Production API_KEY"):
+        with TestClient(app):
+            pass
