@@ -1306,8 +1306,11 @@ def refresh_fund_research_snapshots(
                 observations=int(metrics.get("observations", 0)),
                 metrics_json=json.dumps(compact_metrics, ensure_ascii=False, allow_nan=False),
                 return_1m=period.get("1M"),
+                return_3m=period.get("3M"),
+                return_6m=period.get("6M"),
                 return_1y=period.get("1Y"),
                 return_3y=period.get("3Y"),
+                return_5y=period.get("5Y"),
                 cagr=metrics.get("cagr"),
                 volatility=metrics.get("annualized_volatility"),
                 sharpe_ratio=metrics.get("sharpe_ratio"),
@@ -1403,7 +1406,7 @@ def fund_screener(
     option_type: str | None = Query(default=None, max_length=20),
     days: int = Query(default=1095, ge=365, le=3650),
     sort_by: Literal[
-        "return_1m", "return_1y", "return_3y", "cagr", "volatility",
+        "return_1m", "return_3m", "return_6m", "return_1y", "return_3y", "return_5y", "cagr", "volatility",
         "sharpe_ratio", "sortino_ratio", "max_drawdown",
         "positive_month_rate", "rolling_1y_positive_rate",
     ] = "return_1y",
@@ -1434,8 +1437,11 @@ def fund_screener(
 
     sort_columns = {
         "return_1m": FundResearchSnapshot.return_1m,
+        "return_3m": FundResearchSnapshot.return_3m,
+        "return_6m": FundResearchSnapshot.return_6m,
         "return_1y": FundResearchSnapshot.return_1y,
         "return_3y": FundResearchSnapshot.return_3y,
+        "return_5y": FundResearchSnapshot.return_5y,
         "cagr": FundResearchSnapshot.cagr,
         "volatility": FundResearchSnapshot.volatility,
         "sharpe_ratio": FundResearchSnapshot.sharpe_ratio,
