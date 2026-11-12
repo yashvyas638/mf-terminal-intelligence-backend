@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -137,3 +137,44 @@ def test_backfill_is_disabled_without_both_explicit_release_gates(factory):
         run_history_backfill_batch(session_factory=factory, source_contract_verified=True)
     with pytest.raises(RuntimeError, match="not been verified"):
         run_history_backfill_batch(session_factory=factory, enabled=True)
+
+
+def test_stale_running_checkpoint_is_recovered_after_worker_crash(factory):
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+    create_history_backfill_plan(
+        date(2026, 1, 1), date(2026, 1, 7), (1,),
+        session_factory=factory, now=now - timedelta(hours=1),
+    )
+    with factory.begin() as db:
+        checkpoint = db.execute(select(NavBackfillCheckpoint)).scalar_one()
+        checkpoint.status = "running"
+        checkpoint.attempts = 1
+        checkpoint.updated_at = now - timedelta(hours=1)
+
+    recovered = run_history_backfill_batch(
+        fetcher=lambda window, scheme_type: ([_record()], _report()),
+        session_factory=factory,
+        now_factory=lambda: now,
+        max_attempts=1,
+        enabled=True,
+        source_contract_verified=True,
+    )
+    assert recovered["selected"] == 0
+    with factory() as db:
+        checkpoint = db.execute(select(NavBackfillCheckpoint)).scalar_one()
+        assert checkpoint.status == "failed"
+        assert checkpoint.error_class == "StaleWorkerRecovery"
+
+    resumed = run_history_backfill_batch(
+        fetcher=lambda window, scheme_type: ([_record()], _report()),
+        session_factory=factory,
+        now_factory=lambda: now,
+        max_attempts=2,
+        enabled=True,
+        source_contract_verified=True,
+    )
+    assert resumed["completed"] == 1
+    with factory() as db:
+        checkpoint = db.execute(select(NavBackfillCheckpoint)).scalar_one()
+        assert checkpoint.status == "complete"
+        assert checkpoint.attempts == 2
