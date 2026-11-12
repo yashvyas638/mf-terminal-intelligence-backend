@@ -163,7 +163,7 @@ def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
     return result
 
 def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | None:
-    """Run one explicitly enabled, tightly bounded historical NAV batch."""
+    """Run an explicitly enabled, bounded sequence of historical NAV batches."""
     if os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() != "true":
         return None
     if os.getenv("AMFI_HISTORY_CONTRACT_VERIFIED", "").strip().lower() != "true":
@@ -183,28 +183,89 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     if not 1 <= limit <= 5:
         raise RuntimeError("Startup historical NAV batch limit must be between 1 and 5")
 
-    result = run_history_backfill_batch(
-        limit=limit,
-        enabled=True,
-        source_contract_verified=True,
+    total_raw = os.getenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", str(limit)).strip()
+    try:
+        max_windows = int(total_raw)
+    except ValueError as exc:
+        raise RuntimeError("Historical NAV max windows per start must be an integer") from exc
+    if not 1 <= max_windows <= 20:
+        raise RuntimeError("Historical NAV max windows per start must be between 1 and 20")
+
+    stale_raw = os.getenv("AMFI_HISTORY_STALE_AFTER_MINUTES", "30").strip()
+    try:
+        stale_after_minutes = int(stale_raw)
+    except ValueError as exc:
+        raise RuntimeError("Historical NAV stale-worker threshold must be an integer") from exc
+    if not 1 <= stale_after_minutes <= 240:
+        raise RuntimeError("Historical NAV stale-worker threshold must be between 1 and 240 minutes")
+
+    selected = completed = failed = 0
+    results: list[dict[str, Any]] = []
+    while selected < max_windows:
+        batch = run_history_backfill_batch(
+            limit=min(limit, max_windows - selected),
+            enabled=True,
+            source_contract_verified=True,
+            stale_after_minutes=stale_after_minutes,
+        )
+        results.extend(batch["results"])
+        selected += batch["selected"]
+        completed += batch["completed"]
+        failed += batch["failed"]
+        if batch["failed"] or batch["selected"] == 0 or batch["selected"] < min(
+            limit, max_windows - (selected - batch["selected"])
+        ):
+            break
+
+    status = (
+        "partial_failure" if failed else
+        "completed" if selected else
+        "idle"
     )
+    result = {
+        "status": status,
+        "selected": selected,
+        "completed": completed,
+        "failed": failed,
+        "results": results,
+        "max_attempts": 3,
+    }
     first_failure = next(
-        (item for item in result["results"] if item.get("status") == "failed"),
+        (item for item in results if item.get("status") == "failed"),
         {},
     )
     logger.warning(
         "amfi_history_backfill_batch_finished",
         extra={
-            "status": result["status"],
-            "selected": result["selected"],
-            "completed": result["completed"],
-            "failed": result["failed"],
+            "status": status,
+            "selected": selected,
+            "completed": completed,
+            "failed": failed,
             "batch_limit": limit,
+            "max_windows_per_start": max_windows,
             "first_error_class": first_failure.get("error_class"),
             "first_error_detail": first_failure.get("error_detail"),
         },
     )
     return result
+
+def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
+    """Consume and log the result of the non-blocking one-shot history worker."""
+    try:
+        result = task.result()
+        logger.warning(
+            "amfi_history_backfill_background_task_completed",
+            extra={
+                "status": result.get("status"),
+                "selected": result.get("selected"),
+                "completed": result.get("completed"),
+                "failed": result.get("failed"),
+            },
+        )
+    except asyncio.CancelledError:
+        logger.warning("amfi_history_backfill_background_task_cancelled")
+    except Exception:
+        logger.exception("amfi_history_backfill_background_task_failed")
 
 
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
@@ -249,7 +310,14 @@ async def lifespan(_: FastAPI):
             db.execute(text("SELECT 1"))
             _verify_trusted_database_role(db)
         _maybe_plan_historical_backfill_from_environment()
-        _maybe_run_historical_backfill_batch_from_environment()
+        if os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() == "true":
+            # Do not hold API readiness on AMFI's external HTTP response. The
+            # checkpoint is marked running before the worker leaves this thread;
+            # the normal service can become healthy while the bounded batch runs.
+            history_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_run_historical_backfill_batch_from_environment)
+            )
+            history_task.add_done_callback(_log_history_backfill_task_result)
     else:
         init_db()
     yield

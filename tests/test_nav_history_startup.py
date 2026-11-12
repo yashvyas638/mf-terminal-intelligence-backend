@@ -123,6 +123,7 @@ def test_history_batch_startup_hook_runs_only_bounded_batch(monkeypatch):
         "limit": 1,
         "enabled": True,
         "source_contract_verified": True,
+        "stale_after_minutes": 30,
     }]
 
 
@@ -160,3 +161,104 @@ def test_history_plan_startup_hook_supports_storage_optimized_hybrid_mode(monkey
         date(2025, 11, 1),
         (1, 2, 3),
     )]
+
+
+
+def test_history_background_task_does_not_block_async_startup():
+    import asyncio
+    import time
+
+    async def exercise():
+        started = asyncio.Event()
+        finished = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def slow_worker():
+            loop.call_soon_threadsafe(started.set)
+            time.sleep(0.25)
+            loop.call_soon_threadsafe(finished.set)
+            return {"status": "completed", "selected": 1, "completed": 1, "failed": 0}
+
+        task = asyncio.create_task(asyncio.to_thread(slow_worker))
+        task.add_done_callback(main._log_history_backfill_task_result)
+
+        # The event loop remains responsive while the synchronous AMFI worker runs.
+        await asyncio.wait_for(started.wait(), timeout=0.1)
+        assert not finished.is_set()
+        await asyncio.wait_for(finished.wait(), timeout=1)
+        assert (await task)["completed"] == 1
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("threshold", ["0", "241", "bad"])
+def test_history_batch_startup_hook_rejects_unsafe_stale_threshold(monkeypatch, threshold):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_STALE_AFTER_MINUTES", threshold)
+    with pytest.raises(RuntimeError, match="stale-worker threshold"):
+        main._maybe_run_historical_backfill_batch_from_environment()
+
+
+def test_history_batch_startup_hook_passes_configured_stale_threshold(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "3")
+    monkeypatch.setenv("AMFI_HISTORY_STALE_AFTER_MINUTES", "2")
+    calls = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        return {"status": "idle", "selected": 0, "completed": 0, "failed": 0, "results": []}
+
+    monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
+    main._maybe_run_historical_backfill_batch_from_environment()
+    assert calls == [{
+        "limit": 3,
+        "enabled": True,
+        "source_contract_verified": True,
+        "stale_after_minutes": 2,
+    }]
+
+
+
+def test_history_batch_startup_hook_caps_multi_batch_run_and_stops_when_queue_drains(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "3")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", "8")
+    calls = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        selected = 3 if len(calls) == 1 else 2
+        return {
+            "status": "completed",
+            "selected": selected,
+            "completed": selected,
+            "failed": 0,
+            "results": [{"status": "complete"}] * selected,
+            "max_attempts": 3,
+        }
+
+    monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
+    result = main._maybe_run_historical_backfill_batch_from_environment()
+
+    assert result["selected"] == 5
+    assert result["completed"] == 5
+    assert result["failed"] == 0
+    assert len(calls) == 2
+    assert [call["limit"] for call in calls] == [3, 3]
+
+
+@pytest.mark.parametrize("max_windows", ["0", "21", "bad"])
+def test_history_batch_startup_hook_rejects_unsafe_max_windows(monkeypatch, max_windows):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", max_windows)
+    with pytest.raises(RuntimeError, match="max windows per start"):
+        main._maybe_run_historical_backfill_batch_from_environment()
