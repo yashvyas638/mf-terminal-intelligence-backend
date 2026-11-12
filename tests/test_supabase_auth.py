@@ -51,6 +51,13 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
     )
     assert hidden_transactions.status_code == 404
 
+    hidden_rebalance = client.post(
+        f"/v1/portfolios/{portfolio_id}/rebalance/preview",
+        headers=user_b_headers,
+        json={"targets": [{"scheme_code": 999999, "target_percent": "100"}]},
+    )
+    assert hidden_rebalance.status_code == 404
+
     own_valuation = client.get(
         f"/v1/portfolios/{portfolio_id}/valuation",
         headers=user_a_headers,
