@@ -326,6 +326,7 @@ class PortfolioGoal(Base):
     __tablename__ = "portfolio_goals"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    linked_portfolio_id: Mapped[int | None] = mapped_column(ForeignKey("portfolios.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     target_amount_today: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False)
     target_date: Mapped[object] = mapped_column(Date, nullable=False)
