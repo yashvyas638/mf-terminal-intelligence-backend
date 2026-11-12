@@ -52,7 +52,11 @@ jobs:
                   "portfolioRiskResult", "stressScenarioName", "stressShockPct",
                   "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult",
                   "transactionForm", "transactionRows", "transactionCount",
-                  "transactionMessage", "addTransaction", "refreshTransactions", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
+                  "transactionMessage", "addTransaction", "refreshTransactions",
+                  "goalsWorkspace", "goalForm", "goalName", "goalTarget", "goalDate",
+                  "goalCurrent", "goalMonthly", "goalInflation", "goalReturnLow",
+                  "goalReturnBase", "goalReturnHigh", "createGoal", "goalCount",
+                  "goalList", "goalProjection", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
               },
               "app/static/research.html": {
                   "researchAuthForm", "authEmail", "authPassword", "signIn", "signUp",
