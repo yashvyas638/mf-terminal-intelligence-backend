@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
+from app.nav_ingest import parse_amfi_nav_text
 
 
 class _RoleResult:
@@ -1590,3 +1591,22 @@ def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch)
 
     with SessionLocal() as db:
         assert db.query(PortfolioGoal).filter_by(owner_user_id=identities["goal-user-one"]).count() == 0
+
+
+def test_nav_snapshot_persists_official_amc_and_category_metadata():
+    init_db()
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Test Asset Management Mutual Fund
+Open Ended Schemes(Equity Scheme - Large Cap Fund)
+999965;INF000A01001;-;Power Select Test Fund;10.1234;21-Oct-2026
+"""
+    records, report = parse_amfi_nav_text(payload)
+    main._persist_nav_snapshot(records, report, datetime.now(timezone.utc))
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, 999965)
+        assert scheme is not None
+        assert scheme.amc == "Test Asset Management Mutual Fund"
+        assert scheme.structure == "Open Ended"
+        assert scheme.category_group == "Equity Scheme"
+        assert scheme.category == "Large Cap Fund"
+        assert scheme.asset_class == "Equity"
