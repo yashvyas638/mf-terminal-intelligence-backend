@@ -84,6 +84,7 @@ MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
 MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 _research_snapshot_refresh_lock = threading.Lock()
+RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY = 734991200501
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
 
@@ -1445,36 +1446,64 @@ def refresh_fund_research_snapshots(
                 rolling_1y_positive_rate=rolling.get("positive_window_rate"),
             ))
 
-    with SessionLocal() as db:
-        statement = (
-            select(NavObservation.scheme_code, NavObservation.nav_date, NavObservation.nav_value)
-            .where(NavObservation.nav_date >= history_floor)
-            .order_by(NavObservation.scheme_code, NavObservation.nav_date)
-            .execution_options(stream_results=True, yield_per=10000)
-        )
-        result = db.execute(statement)
-        current_code: int | None = None
-        current_points: list[tuple[date, float]] = []
-        for scheme_code, nav_date, nav_value in result:
-            if current_code is not None and scheme_code != current_code:
-                append_scheme_snapshot(current_code, current_points)
-                current_points = []
-            current_code = scheme_code
-            current_points.append((nav_date, float(nav_value)))
-        if current_code is not None:
-            append_scheme_snapshot(current_code, current_points)
-
-        if not snapshot_rows:
-            raise HTTPException(409, "No NAV history is available to build research snapshots")
-
-        # Delete + insert is one transaction: readers see the old complete
-        # snapshot set until the replacement set commits successfully.
-        db.execute(delete(FundResearchSnapshot))
-        for offset in range(0, len(snapshot_rows), 2000):
-            db.add_all(snapshot_rows[offset:offset + 2000])
-            db.flush()
-        db.commit()
-
+    with SessionLocal() as lock_db:
+        use_postgres_lock = lock_db.get_bind().dialect.name == "postgresql"
+        if use_postgres_lock:
+            acquired = bool(
+                lock_db.execute(
+                    text("SELECT pg_try_advisory_lock(:lock_key)"),
+                    {"lock_key": RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY},
+                ).scalar_one()
+            )
+            lock_db.commit()
+            if not acquired:
+                logger.info("research_snapshot_refresh_skipped reason=distributed_lock_held")
+                return {"status": "in_progress"}
+        try:
+            with SessionLocal() as db:
+                statement = (
+                    select(NavObservation.scheme_code, NavObservation.nav_date, NavObservation.nav_value)
+                    .where(NavObservation.nav_date >= history_floor)
+                    .order_by(NavObservation.scheme_code, NavObservation.nav_date)
+                    .execution_options(stream_results=True, yield_per=10000)
+                )
+                result = db.execute(statement)
+                current_code: int | None = None
+                current_points: list[tuple[date, float]] = []
+                for scheme_code, nav_date, nav_value in result:
+                    if current_code is not None and scheme_code != current_code:
+                        append_scheme_snapshot(current_code, current_points)
+                        current_points = []
+                    current_code = scheme_code
+                    current_points.append((nav_date, float(nav_value)))
+                if current_code is not None:
+                    append_scheme_snapshot(current_code, current_points)
+        
+                if not snapshot_rows:
+                    raise HTTPException(409, "No NAV history is available to build research snapshots")
+        
+                # Delete + insert is one transaction: readers see the old complete
+                # snapshot set until the replacement set commits successfully.
+                db.execute(delete(FundResearchSnapshot))
+                for offset in range(0, len(snapshot_rows), 2000):
+                    db.add_all(snapshot_rows[offset:offset + 2000])
+                    db.flush()
+                db.commit()
+        finally:
+            if use_postgres_lock:
+                try:
+                    unlocked = bool(
+                        lock_db.execute(
+                            text("SELECT pg_advisory_unlock(:lock_key)"),
+                            {"lock_key": RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY},
+                        ).scalar_one()
+                    )
+                    lock_db.commit()
+                    if not unlocked:
+                        logger.warning("research_snapshot_refresh_lock_release_failed")
+                except Exception:
+                    lock_db.rollback()
+                    logger.exception("research_snapshot_refresh_lock_release_error")
     return {
         "status": "refreshed",
         "schemes_processed": schemes_processed,
@@ -1498,6 +1527,9 @@ def _refresh_research_snapshots_after_ingestion() -> dict[str, Any]:
         return {"status": "in_progress"}
     try:
         result = refresh_fund_research_snapshots(x_api_key=os.getenv("API_KEY"))
+        if result.get("status") == "in_progress":
+            logger.info("research_snapshot_refresh_after_nav_ingestion status=in_progress")
+            return {"status": "in_progress"}
         logger.info(
             "research_snapshot_refresh_after_nav_ingestion status=refreshed schemes=%s rows=%s",
             result.get("schemes_processed"),
