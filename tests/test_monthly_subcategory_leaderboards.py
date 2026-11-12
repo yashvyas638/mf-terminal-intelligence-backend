@@ -87,12 +87,12 @@ def test_monthly_leaderboard_returns_top_funds_for_each_subcategory(monkeypatch)
     # New category breakdown returns a top-N list within every canonical peer group.
     assert payload["category_count"] == 2
     assert [item["category"] for item in payload["categories"]] == [
-        "Dynamic Asset Allocation Fund",
         "Arbitrage Fund",
+        "Dynamic Asset Allocation Fund",
     ]
     assert [item["count"] for item in payload["categories"]] == [2, 2]
     assert [item["items"][0]["scheme_code"] for item in payload["categories"]] == [
-        codes[0],
         codes[2],
+        codes[0],
     ]
     assert [item["items"][0]["category_rank"] for item in payload["categories"]] == [1, 1]
