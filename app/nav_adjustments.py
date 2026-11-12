@@ -10,13 +10,11 @@ from typing import Any, Iterable
 
 NAV_ADJUSTMENT_REGISTRY_VERSION = "2026-11-12.2"
 
-# ICICI Prudential Overnight Fund completed a 10x unit consolidation effective
-# 17-Aug-2022. The AMC's February-2026 factsheet records NAV 100.3737 on
-# 29-Jul-2022 and 1004.3319 on 30-Aug-2022 for the Monthly IDCW plan, with the
-# same Rs.100 face value; its Direct Quarterly IDCW NAV similarly moves from
-# 100.8649 (17-May-2022) to 1011.5232 (18-Aug-2022). ValueResearch's plan
-# history records the corresponding NAV-level reset. The event applies across
-# the fund's 20 AMFI plan/option codes listed below.
+# ICICI Prudential Overnight Fund changed unit face value from Rs.100 to
+# Rs.1,000 effective 16-Aug-2022. The AMC notice states that existing unit
+# holdings were adjusted proportionately without changing holding value. Its
+# factsheet records the corresponding pre/post NAV levels. The event applies
+# across the fund's 20 AMFI plan/option codes listed below.
 _ICICI_OVERNIGHT_SCHEME_CODES = (
     *range(145535, 145551),
     *range(149408, 149412),
