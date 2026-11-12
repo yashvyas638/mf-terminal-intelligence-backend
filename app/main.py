@@ -25,7 +25,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, desc, func, or_, select, text, tuple_
+from sqlalchemy import case, delete, desc, func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -1659,6 +1659,42 @@ def fund_screener(
     }
     sort_column = sort_columns[sort_by]
     ordering = sort_column.desc().nullslast() if sort_order == "desc" else sort_column.asc().nullslast()
+    # AMFI publishes multiple spellings for the same plan/option class.
+    # Rank within the canonical group so "Growth", "Growth Option" and
+    # "GROWTH" do not become separate category leaderboards.
+    plan_label = func.lower(func.coalesce(Scheme.plan_type, ""))
+    option_label = func.lower(func.coalesce(Scheme.option_type, ""))
+    canonical_plan = case(
+        (plan_label.in_(("direct", "direct plan")), "direct"),
+        (plan_label.in_(("regular", "regular plan")), "regular"),
+        else_=plan_label,
+    )
+    growth_option = (
+        option_label.like("%growth%")
+        & ~option_label.like("%unclaimed%")
+        & ~option_label.like("%redemption%")
+        & ~option_label.like("%bonus%")
+        & ~option_label.like("%idcw%")
+        & ~option_label.like("%idwc%")
+        & ~option_label.like("%dividend%")
+    )
+    idcw_option = (
+        or_(
+            option_label.like("%idcw%"),
+            option_label.like("%idwc%"),
+            option_label.like("%dividend%"),
+            option_label.like("%income distribution%"),
+        )
+        & ~option_label.like("%unclaimed%")
+        & ~option_label.like("%redemption%")
+        & ~option_label.like("%bonus%")
+    )
+    canonical_option = case(
+        (growth_option, "growth"),
+        (idcw_option, "idcw"),
+        else_=option_label,
+    )
+
     category_ranked = (
         select(
             FundResearchSnapshot.scheme_code.label("scheme_code"),
@@ -1666,8 +1702,8 @@ def fund_screener(
                 partition_by=(
                     Scheme.category_group,
                     Scheme.category,
-                    Scheme.plan_type,
-                    Scheme.option_type,
+                    canonical_plan,
+                    canonical_option,
                 ),
                 order_by=ordering,
             ).label("category_rank"),
