@@ -388,14 +388,23 @@ def history_backfill_status(*, session_factory: Callable = SessionLocal) -> dict
             select(
                 NavBackfillCheckpoint.scheme_type,
                 NavBackfillCheckpoint.status,
+                NavBackfillCheckpoint.sampling_mode,
                 func.count(NavBackfillCheckpoint.id),
                 func.coalesce(func.sum(NavBackfillCheckpoint.records_valid), 0),
                 func.coalesce(func.sum(NavBackfillCheckpoint.inserted_rows), 0),
                 func.coalesce(func.sum(NavBackfillCheckpoint.updated_rows), 0),
                 func.coalesce(func.sum(NavBackfillCheckpoint.unchanged_rows), 0),
             )
-            .group_by(NavBackfillCheckpoint.scheme_type, NavBackfillCheckpoint.status)
-            .order_by(NavBackfillCheckpoint.scheme_type, NavBackfillCheckpoint.status)
+            .group_by(
+                NavBackfillCheckpoint.scheme_type,
+                NavBackfillCheckpoint.status,
+                NavBackfillCheckpoint.sampling_mode,
+            )
+            .order_by(
+                NavBackfillCheckpoint.scheme_type,
+                NavBackfillCheckpoint.status,
+                NavBackfillCheckpoint.sampling_mode,
+            )
         ).all()
     return {
         "status": "ok",
@@ -403,11 +412,12 @@ def history_backfill_status(*, session_factory: Callable = SessionLocal) -> dict
             {
                 "scheme_type": row[0],
                 "checkpoint_status": row[1],
-                "windows": row[2],
-                "records_valid": int(row[3]),
-                "inserted_rows": int(row[4]),
-                "updated_rows": int(row[5]),
-                "unchanged_rows": int(row[6]),
+                "sampling_mode": row[2],
+                "windows": row[3],
+                "records_valid": int(row[4]),
+                "inserted_rows": int(row[5]),
+                "updated_rows": int(row[6]),
+                "unchanged_rows": int(row[7]),
             }
             for row in rows
         ],
