@@ -161,3 +161,21 @@ Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
     assert records[0].category_group == "Life Cycle Funds"
     assert records[0].category == "Life Cycle Fund with Maturity of 10 Years"
     assert records[0].asset_class == "Life Cycle"
+
+
+
+def test_maps_official_other_scheme_subcategories_and_does_not_guess_retired_groups():
+    other, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Other Schemes - Fund of Funds (Domestic))\n"
+        "120590;INF109K01480;-;Domestic Fund of Funds;23.4567;21-Oct-2026\n"
+    )
+    retired, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Solution Oriented Scheme)\n"
+        "120591;INF109K01480;-;Retirement Goal Fund;23.4567;21-Oct-2026\n"
+    )
+    assert other[0].category_group == "Other Schemes"
+    assert other[0].category == "Fund of Funds (Domestic)"
+    assert other[0].asset_class == "Other"
+    assert retired[0].category_group is None
+    assert retired[0].category is None
+    assert retired[0].asset_class is None
