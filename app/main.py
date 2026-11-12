@@ -64,6 +64,7 @@ from app.nav_history_backfill import (
     create_history_backfill_plan,
     create_storage_optimized_history_plan,
     run_history_backfill_batch,
+    history_backfill_status,
 )
 from app.scheme_metadata import refresh_scheme_metadata
 from app.fund_taxonomy import (
@@ -263,6 +264,35 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     )
     return result
 
+def _maybe_refresh_research_after_history_completion() -> dict[str, Any]:
+    """Refresh ranking snapshots only after all non-paused history work is settled."""
+    status = history_backfill_status()
+    blocking = [
+        group for group in status.get("groups", [])
+        if group.get("checkpoint_status") in {"pending", "failed", "running"}
+    ]
+    if blocking:
+        logger.info(
+            "research_snapshot_refresh_deferred_history_incomplete blocking_groups=%s",
+            len(blocking),
+        )
+        return {"status": "deferred", "blocking_groups": len(blocking)}
+    return _refresh_research_snapshots_after_ingestion()
+
+
+def _log_research_refresh_task_result(task: asyncio.Task[Any]) -> None:
+    try:
+        result = task.result()
+        logger.warning(
+            "research_snapshot_refresh_after_history status=%s schemes=%s rows=%s",
+            result.get("status"),
+            result.get("schemes_processed"),
+            result.get("snapshot_rows_written"),
+        )
+    except Exception:
+        logger.exception("research_snapshot_refresh_after_history_failed")
+
+
 def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
     """Consume and log the result of the non-blocking one-shot history worker."""
     try:
@@ -276,6 +306,11 @@ def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
                 "failed": result.get("failed"),
             },
         )
+        if result.get("status") in {"completed", "idle"} and not result.get("failed"):
+            refresh_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_refresh_research_after_history_completion)
+            )
+            refresh_task.add_done_callback(_log_research_refresh_task_result)
     except asyncio.CancelledError:
         logger.warning("amfi_history_backfill_background_task_cancelled")
     except Exception:
