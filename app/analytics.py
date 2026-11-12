@@ -158,6 +158,96 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
     }
 
 
+def benchmark_comparison_metrics(
+    fund_points: Iterable[tuple[date, float]],
+    benchmark_points: Iterable[tuple[date, float]],
+    risk_free_rate: float = 0.06,
+    minimum_risk_observations: int = 30,
+) -> dict:
+    """Compare fund NAV with benchmark TRI on exact common dates only.
+
+    No forward-fill or interpolation is performed. Risk statistics use adjacent
+    common-date pairs no more than seven calendar days apart so long missing-data
+    gaps are not mislabeled as daily returns.
+    """
+    fund = dict(_clean_series(fund_points))
+    benchmark = dict(_clean_series(benchmark_points))
+    common_dates = sorted(set(fund).intersection(benchmark))
+    if len(common_dates) < 2:
+        return {
+            "status": "INSUFFICIENT_DATA",
+            "common_observations": len(common_dates),
+            "alpha_annualized": None,
+            "beta": None,
+            "tracking_error": None,
+            "information_ratio": None,
+        }
+
+    first_date, last_date = common_dates[0], common_dates[-1]
+    elapsed_days = (last_date - first_date).days
+    fund_total = fund[last_date] / fund[first_date] - 1.0
+    benchmark_total = benchmark[last_date] / benchmark[first_date] - 1.0
+    years = elapsed_days / 365.25
+    fund_cagr = (fund[last_date] / fund[first_date]) ** (1 / years) - 1 if years > 0 else None
+    benchmark_cagr = (benchmark[last_date] / benchmark[first_date]) ** (1 / years) - 1 if years > 0 else None
+
+    fund_returns = []
+    benchmark_returns = []
+    for previous_date, current_date in zip(common_dates, common_dates[1:]):
+        if (current_date - previous_date).days > 7:
+            continue
+        fund_returns.append(fund[current_date] / fund[previous_date] - 1.0)
+        benchmark_returns.append(benchmark[current_date] / benchmark[previous_date] - 1.0)
+
+    beta = alpha = tracking_error = information_ratio = None
+    risk_status = "INSUFFICIENT_DAILY_OBSERVATIONS"
+    if len(fund_returns) >= minimum_risk_observations:
+        mean_fund = sum(fund_returns) / len(fund_returns)
+        mean_benchmark = sum(benchmark_returns) / len(benchmark_returns)
+        variance_benchmark = sum((value - mean_benchmark) ** 2 for value in benchmark_returns) / (len(benchmark_returns) - 1)
+        covariance = sum(
+            (fund_return - mean_fund) * (benchmark_return - mean_benchmark)
+            for fund_return, benchmark_return in zip(fund_returns, benchmark_returns)
+        ) / (len(fund_returns) - 1)
+        if variance_benchmark > 0:
+            beta = covariance / variance_benchmark
+            daily_rf = (1 + risk_free_rate) ** (1 / 252) - 1
+            alpha = (mean_fund - daily_rf - beta * (mean_benchmark - daily_rf)) * 252
+
+        active_returns = [fund_return - benchmark_return for fund_return, benchmark_return in zip(fund_returns, benchmark_returns)]
+        mean_active = sum(active_returns) / len(active_returns)
+        active_variance = sum((value - mean_active) ** 2 for value in active_returns) / (len(active_returns) - 1)
+        tracking_error = math.sqrt(active_variance) * math.sqrt(252)
+        information_ratio = mean_active * 252 / tracking_error if tracking_error > 0 else None
+        risk_status = "OK"
+
+    return {
+        "status": "OK",
+        "risk_statistics_status": risk_status,
+        "common_observations": len(common_dates),
+        "risk_return_observations": len(fund_returns),
+        "start_date": first_date.isoformat(),
+        "end_date": last_date.isoformat(),
+        "fund_total_return": fund_total,
+        "benchmark_total_return": benchmark_total,
+        "active_total_return_percentage_points": fund_total - benchmark_total,
+        "relative_wealth_return": (1 + fund_total) / (1 + benchmark_total) - 1 if benchmark_total > -1 else None,
+        "fund_cagr": fund_cagr,
+        "benchmark_cagr": benchmark_cagr,
+        "alpha_annualized": alpha,
+        "beta": beta,
+        "tracking_error": tracking_error,
+        "information_ratio": information_ratio,
+        "risk_free_rate_assumption": risk_free_rate,
+        "methodology": (
+            "Fund NAV and benchmark TRI are joined on exact common dates. No forward-fill "
+            "or interpolation. Daily risk statistics exclude adjacent common observations "
+            "more than seven calendar days apart and require at least "
+            f"{minimum_risk_observations} paired returns."
+        ),
+    }
+
+
 def xirr(cashflows: list[tuple[date, float]]) -> float | None:
     """Annualized money-weighted return using a bracketed bisection solver."""
     flows = sorted(cashflows, key=lambda x: x[0])
