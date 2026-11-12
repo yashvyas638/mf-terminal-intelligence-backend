@@ -8,6 +8,7 @@ from app.nav_history_api import (
     HistoryBackfillRunRequest,
     _execution_gates,
     _require_operator_key,
+    HistoryBackfillPlanRequest,
     run_nav_history_backfill,
 )
 
