@@ -604,6 +604,17 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
     rebuilt = client.post("/v1/analytics/screener/refresh", headers=headers)
     assert rebuilt.status_code == 200, rebuilt.text
 
+    evidence = client.get(
+        f"/v1/analytics/research/{scheme_code}/evidence?days=365",
+        headers=headers,
+    )
+    assert evidence.status_code == 200, evidence.text
+    evidence_json = evidence.json()
+    assert evidence_json["generation_status"] == "EVIDENCE_ONLY_NO_LLM_GENERATION"
+    assert any(item["evidence_type"] == "SOURCE_FACT" for item in evidence_json["evidence"])
+    assert any(source["source_type"] == "OFFICIAL_NAV_SOURCE" for source in evidence_json["sources"])
+    assert evidence_json["data_gaps"]
+
     screener = client.get(
         "/v1/analytics/screener?plan_type=Direct&option_type=Growth&limit=10",
         headers=headers,
