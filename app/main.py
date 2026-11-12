@@ -3257,7 +3257,6 @@ def portfolio_holdings_lookthrough(
             ).scalars().all()
             for row in rows:
                 exposure = market_value * Decimal(row.weight_pct) / Decimal("100")
-                security_key = ("ISIN:" if row.is_isin else "NAME:") + row.security_id.upper()
                 # Only ISINs are stable cross-fund identifiers. Name-derived
                 # fallback IDs are disclosure-local to avoid false issuer matches.
                 security_key = (
