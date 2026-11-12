@@ -75,7 +75,12 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
     isin_header = pick("isin", "securityisin")
     name_header = pick("nameofinstrument", "nameofsecurity", "securityname", "instrumentname", "issuername", "issuer")
     weight_header = pick("tonetassets", "percenttonetassets", "percentageofnetassets", "netassetpercentage", "percenttonav", "weightpercentage")
-    market_header = pick("marketvalue", "marketvalueinr", "marketvaluerupees", "marketvalueinlakhs")
+    market_header = pick(
+        "marketvalueinr", "marketvalueinrupees", "marketvalueinrs",
+        "marketvalueinlakhs", "marketvaluerupeesinlakhs", "marketvaluersinlakhs",
+    )
+    market_header_key = _header_key(market_header) if market_header else ""
+    market_multiplier = Decimal("100000") if "lakhs" in market_header_key else Decimal("1")
     asset_header = pick("assettype", "instrumenttype", "typeofinstrument", "securitytype")
     sector_header = pick("sector", "industry", "industrysector")
 
@@ -96,7 +101,7 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
         try:
             security_id, is_isin = _security_id(row.get(isin_header) or "" if isin_header else "", name)
             weight = _decimal_value(row.get(weight_header) or "", "% to Net Assets", required=True)
-            market_value = _decimal_value(row.get(market_header) or "", "market value") if market_header else None
+            market_value = _decimal_value(row.get(market_header) or "", "market value") * market_multiplier if market_header else None
         except ValueError as exc:
             raise ValueError(f"invalid holdings CSV row {row_number}: {exc}") from exc
         assert weight is not None
