@@ -1011,13 +1011,23 @@ def list_fund_watchlist() -> dict[str, Any]:
         codes = [item.scheme_code for item, _ in rows]
         latest_by_code: dict[int, NavObservation] = {}
         if codes:
-            latest_rows = db.execute(
-                select(NavObservation)
+            latest_dates = (
+                select(
+                    NavObservation.scheme_code.label("scheme_code"),
+                    func.max(NavObservation.nav_date).label("latest_date"),
+                )
                 .where(NavObservation.scheme_code.in_(codes))
-                .order_by(NavObservation.scheme_code, desc(NavObservation.nav_date))
+                .group_by(NavObservation.scheme_code)
+                .subquery()
+            )
+            latest_rows = db.execute(
+                select(NavObservation).join(
+                    latest_dates,
+                    (NavObservation.scheme_code == latest_dates.c.scheme_code)
+                    & (NavObservation.nav_date == latest_dates.c.latest_date),
+                )
             ).scalars().all()
-            for nav in latest_rows:
-                latest_by_code.setdefault(nav.scheme_code, nav)
+            latest_by_code = {nav.scheme_code: nav for nav in latest_rows}
         return {
             "count": len(rows),
             "items": [
@@ -1046,6 +1056,13 @@ def add_fund_to_watchlist(payload: WatchlistCreate) -> dict[str, Any]:
     with SessionLocal() as db:
         if db.get(Scheme, payload.scheme_code) is None:
             raise HTTPException(404, "Scheme code not found")
+        current_count = db.execute(
+            select(func.count()).select_from(FundWatchlistItem).where(
+                FundWatchlistItem.owner_user_id == user_id
+            )
+        ).scalar_one()
+        if current_count >= 500:
+            raise HTTPException(409, "A watchlist can contain at most 500 funds")
         item = FundWatchlistItem(
             owner_user_id=user_id,
             scheme_code=payload.scheme_code,
