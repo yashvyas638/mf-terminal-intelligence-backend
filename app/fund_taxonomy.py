@@ -128,6 +128,7 @@ def classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, s
 
 def canonical_subcategory(group: str | None, category: str | None) -> str | None:
     """Sanitize persisted category text before it reaches APIs or facets."""
+    group = canonical_group(group)
     if group not in SUBCATEGORIES_BY_GROUP or not category:
         return None
     key = _key(category)
@@ -140,8 +141,10 @@ def canonical_subcategory(group: str | None, category: str | None) -> str | None
     return candidate if candidate in SUBCATEGORIES_BY_GROUP[group] else None
 
 def canonical_group(group: str | None) -> str | None:
-    return group if group in VALID_SCHEME_GROUPS else None
+    if not group:
+        return None
+    return group if group in VALID_SCHEME_GROUPS else _GROUP_ALIASES.get(_key(group))
 
 def canonical_asset_class(group: str | None, asset_class: str | None) -> str | None:
-    expected = SCHEME_GROUP_ASSET_CLASS.get(group or "")
+    expected = SCHEME_GROUP_ASSET_CLASS.get(canonical_group(group) or "")
     return expected if expected and asset_class == expected else None
