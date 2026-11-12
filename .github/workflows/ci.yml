@@ -49,7 +49,7 @@ jobs:
                   "portfolioTotalGain", "portfolioXirr", "portfolioValuationDate",
                   "portfolioValuationStatus", "holdingCount", "holdingRows",
                   "transactionForm", "transactionRows", "transactionCount",
-                  "transactionMessage", "addTransaction", "refreshTransactions",
+                  "transactionMessage", "addTransaction", "refreshTransactions", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
               },
               "app/static/research.html": {
                   "researchAuthForm", "authEmail", "authPassword", "signIn", "signUp",
@@ -63,7 +63,35 @@ jobs:
               missing = sorted(required - present)
               if missing:
                   raise SystemExit(f"{filename} is missing required DOM ids: {missing}")
-          print("Dashboard and Research Terminal DOM contracts passed.")
+          from html.parser import HTMLParser
+
+          class StructureCheck(HTMLParser):
+              VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+              def __init__(self):
+                  super().__init__()
+                  self.stack = []
+                  self.ancestors = {}
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  node_id = attrs.get("id")
+                  if node_id:
+                      self.ancestors[node_id] = list(self.stack)
+                  if tag not in self.VOID:
+                      self.stack.append((tag, attrs))
+              def handle_endtag(self, tag):
+                  for index in range(len(self.stack) - 1, -1, -1):
+                      if self.stack[index][0] == tag:
+                          del self.stack[index:]
+                          break
+
+          parser = StructureCheck()
+          parser.feed(Path("app/static/dashboard.html").read_text(encoding="utf-8"))
+          portfolio_ancestors = parser.ancestors.get("portfolioOverview", [])
+          if any(attrs.get("class", "").find("filebox") >= 0 for _, attrs in portfolio_ancestors):
+              raise SystemExit("Portfolio overview must not be nested inside an import/rebalance filebox.")
+          if any(attrs.get("class", "").find("formgrid") >= 0 for _, attrs in portfolio_ancestors):
+              raise SystemExit("Portfolio overview must be outside the portfolio setup form grid.")
+          print("Dashboard and Research Terminal DOM contracts and layout passed.")
           PY
       - name: Test SQLite
         run: python -m pytest -q
