@@ -338,7 +338,7 @@ def portfolio_risk_metrics(
     for start_date, end_date, daily_return in daily_returns:
         if start_date != previous_end:
             if len(segment_points) > 1:
-                drawdowns.append(max_drawdown(segment_points))
+                drawdowns.append(max_drawdown([value for _, value in segment_points]))
             segment_index = 100.0
             segment_points = [(start_date, segment_index)]
         segment_index *= 1 + daily_return
