@@ -20,7 +20,7 @@ def test_screener_sorts_and_returns_every_displayed_period(monkeypatch, sort_by,
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     now = datetime.now(timezone.utc)
-    scheme_code = 99123456
+    scheme_code = 99123456 + {"return_3m": 1, "return_6m": 2, "return_5y": 3}[sort_by]
 
     with SessionLocal() as db:
         if db.get(Scheme, scheme_code) is None:
@@ -72,7 +72,7 @@ def test_screener_sorts_and_returns_every_displayed_period(monkeypatch, sort_by,
         db.commit()
 
     response = TestClient(app).get(
-        f"/v1/analytics/screener?days=3650&sort_by={sort_by}",
+        f"/v1/analytics/screener?days=3650&sort_by={sort_by}&q={scheme_code}",
         headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
     )
     assert response.status_code == 200, response.text
