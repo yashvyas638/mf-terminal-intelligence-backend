@@ -1,6 +1,5 @@
 from datetime import date
 from decimal import Decimal
-import pytest
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 def test_parses_official_amfi_six_column_feed_excerpt():
