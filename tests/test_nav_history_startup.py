@@ -220,7 +220,7 @@ def test_history_batch_startup_hook_passes_configured_stale_threshold(monkeypatc
         "limit": 3,
         "enabled": True,
         "source_contract_verified": True,
-        "stale_after_minutes": 2,
+        "stale_after_minutes": 15,
     }]
 
 
