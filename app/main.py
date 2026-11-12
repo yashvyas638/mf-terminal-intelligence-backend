@@ -1620,20 +1620,33 @@ def monthly_fund_leaderboard(
         raise HTTPException(422, "Monthly leaderboard only includes completed calendar months")
     previous_month = (selected_start.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
-    with SessionLocal() as db:
-        query = (
-            select(FundResearchSnapshot, Scheme)
-            .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
-            .where(
-                FundResearchSnapshot.window_days == 365,
-                Scheme.plan_type == plan_type,
-                Scheme.option_type == option_type,
-            )
+    query = (
+        select(FundResearchSnapshot, Scheme)
+        .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+        .where(
+            FundResearchSnapshot.window_days == 365,
+            Scheme.plan_type == plan_type,
+            Scheme.option_type == option_type,
         )
-        if category_group:
-            query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
-        if sub_category:
-            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, sub_category)))
+    )
+    if category_group:
+        query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+    if sub_category:
+        query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, sub_category)))
+
+    with SessionLocal() as db:
+        latest_refresh = db.execute(
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(FundResearchSnapshot.window_days == 365)
+        ).scalar_one()
+    if latest_refresh is None:
+        bootstrap = _refresh_research_snapshots_after_ingestion()
+        if bootstrap.get("status") != "refreshed":
+            raise HTTPException(
+                503,
+                "Monthly fund rankings are being prepared from accepted NAV history. Please retry shortly.",
+            )
+
+    with SessionLocal() as db:
         latest_refresh = db.execute(
             select(func.max(FundResearchSnapshot.refreshed_at)).where(FundResearchSnapshot.window_days == 365)
         ).scalar_one()
