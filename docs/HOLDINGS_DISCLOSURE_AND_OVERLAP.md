@@ -47,4 +47,4 @@ Non-ISIN rows and negative exposures are excluded. No fuzzy security-name matchi
 
 ## Current implementation boundary
 
-The database schema, immutable disclosure importer, ISIN-aware parser, source hash validation, holdings retrieval endpoint, overlap endpoint, freshness/coverage warnings, Research Terminal overlap workspace and fixture/API tests are implemented. No real production holdings disclosures have yet been imported; overlap will correctly return unavailable until dated official files are loaded.
+The database schema, immutable disclosure importer, ISIN-aware parser, source hash validation, human verification gate, holdings retrieval endpoint, overlap endpoint, freshness/coverage warnings, Research Terminal overlap workspace and fixture/API tests are implemented. No real production holdings disclosures have yet been imported; overlap will correctly return unavailable until dated official files are loaded and verified.
