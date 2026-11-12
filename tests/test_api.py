@@ -1180,4 +1180,4 @@ def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkey
 
     with SessionLocal() as db:
         assert db.query(FundHoldingDisclosure).filter_by(scheme_code=scheme_a).count() == 2
-        assert db.query(FundHolding).count() == 7
+        assert db.query(FundHolding).count() == 9
