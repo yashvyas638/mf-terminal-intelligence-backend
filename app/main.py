@@ -159,6 +159,10 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
         enabled=True,
         source_contract_verified=True,
     )
+    first_failure = next(
+        (item for item in result["results"] if item.get("status") == "failed"),
+        {},
+    )
     logger.warning(
         "amfi_history_backfill_batch_finished",
         extra={
@@ -167,6 +171,8 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
             "completed": result["completed"],
             "failed": result["failed"],
             "batch_limit": limit,
+            "first_error_class": first_failure.get("error_class"),
+            "first_error_detail": first_failure.get("error_detail"),
         },
     )
     return result
