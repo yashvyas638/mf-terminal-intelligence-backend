@@ -1417,8 +1417,7 @@ def rebalance_preview(
     """Create a non-executable target-allocation preview from stored NAVs."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
-        if db.get(Portfolio, portfolio_id) is None:
-            raise HTTPException(404, "Portfolio not found")
+        _require_portfolio_owner(db, portfolio_id)
         transactions = db.execute(
             select(PortfolioTransaction)
             .where(PortfolioTransaction.portfolio_id == portfolio_id, PortfolioTransaction.voided_at.is_(None))
