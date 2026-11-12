@@ -1758,6 +1758,33 @@ def import_fund_holdings_csv(
         }
 
 
+@app.post("/v1/holdings/disclosures/{disclosure_id}/verify")
+def verify_fund_holdings_disclosure(
+    disclosure_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Approve a disclosure only after an operator checks the linked official source file."""
+    require_operator_api_key(x_api_key)
+    with SessionLocal() as db:
+        disclosure = db.get(FundHoldingDisclosure, disclosure_id)
+        if disclosure is None:
+            raise HTTPException(404, "Holdings disclosure not found")
+        if disclosure.verification_status == "REJECTED":
+            raise HTTPException(409, "A rejected holdings disclosure cannot be verified")
+        disclosure.verification_status = "VERIFIED"
+        disclosure.verified_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "disclosure_id": disclosure.id,
+            "scheme_code": disclosure.scheme_code,
+            "as_of_date": disclosure.as_of_date.isoformat(),
+            "verification_status": disclosure.verification_status,
+            "verified_at": disclosure.verified_at.isoformat(),
+            "source_document_url": disclosure.source_document_url,
+            "source_sha256": disclosure.source_sha256,
+        }
+
+
 @app.get("/v1/holdings/{scheme_code}")
 def get_fund_holdings(
     scheme_code: int,
@@ -1791,6 +1818,8 @@ def get_fund_holdings(
             "scheme_code": scheme_code,
             "scheme_name": scheme.scheme_name,
             "disclosure_id": disclosure.id,
+            "verification_status": disclosure.verification_status,
+            "verified_at": disclosure.verified_at.isoformat() if disclosure.verified_at else None,
             "as_of_date": disclosure.as_of_date.isoformat(),
             "retrieved_at": disclosure.retrieved_at.isoformat(),
             "source_document_url": disclosure.source_document_url,
