@@ -125,12 +125,12 @@ Open Ended Schemes ( Growth )
 
 def test_maps_debt_and_hybrid_headers_without_using_scheme_marketing_names():
     debt, _ = parse_amfi_nav_text(
-        "Open Ended Schemes(Debt Scheme - Short Duration Fund)\\n"
-        "120586;INF109K01480;-;Power Select Opportunity Fund;123.4567;21-Oct-2026\\n"
+        "Open Ended Schemes(Debt Scheme - Short Duration Fund)\n"
+        "120586;INF109K01480;-;Power Select Opportunity Fund;123.4567;21-Oct-2026\n"
     )
     hybrid, _ = parse_amfi_nav_text(
-        "Open Ended Schemes(Hybrid Scheme - Aggressive Hybrid Fund)\\n"
-        "120587;INF109K01498;-;PowerUp Growth Fund;23.4567;21-Oct-2026\\n"
+        "Open Ended Schemes(Hybrid Scheme - Aggressive Hybrid Fund)\n"
+        "120587;INF109K01498;-;PowerUp Growth Fund;23.4567;21-Oct-2026\n"
     )
     assert debt[0].category_group == "Debt Scheme"
     assert debt[0].category == "Short Duration Fund"
