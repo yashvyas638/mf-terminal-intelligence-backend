@@ -166,3 +166,86 @@ jobs:
         run: alembic upgrade head
       - name: Test PostgreSQL
         run: python -m pytest -q
+
+  validate-amfi-history-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+      - run: pip install -r requirements.lock
+      - name: Live read-only AMFI historical response contract check
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          import requests
+
+          from app.nav_backfill import HistoryWindow
+          from app.nav_history import parse_amfi_history_text
+          from app.nav_history_source import build_amfi_history_url
+
+          end_date = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
+          start_date = end_date - timedelta(days=6)
+          window = HistoryWindow(start_date, end_date)
+          url = build_amfi_history_url(window, 1)
+
+          response = requests.get(
+              url,
+              timeout=(10, 75),
+              headers={
+                  "User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0",
+                  "Accept": "text/plain, application/octet-stream;q=0.9, */*;q=0.5",
+              },
+          )
+          response.raise_for_status()
+          if len(response.content) > 30_000_000:
+              raise SystemExit("AMFI historical response exceeded 30 MB safety limit")
+          payload = response.content.decode("utf-8-sig", errors="strict")
+          if not payload.strip() or "<html" in payload[:512].lower():
+              raise SystemExit("AMFI historical endpoint returned empty or HTML content")
+
+          lines = [line for line in payload.splitlines() if line.strip()]
+          header_present = any(
+              line.lower().startswith("scheme code;") and "scheme name" in line.lower()
+              for line in lines[:10]
+          )
+          # The archive header is optional in observed public wire specs.
+          # Add the known eight-column labels only for parser validation when
+          # the real response omits a header; never alter or persist source data.
+          parser_payload = payload if header_present else (
+              "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
+              "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;Sale Price;Date\\n"
+              + payload
+          )
+          records, report = parse_amfi_history_text(parser_payload)
+          if report["records_valid"] < 1000:
+              raise SystemExit(
+                  f"AMFI returned only {report['records_valid']} valid rows; possible stub response"
+              )
+          if any(row.nav_date < start_date or row.nav_date > end_date for row in records):
+              raise SystemExit("AMFI historical response contains dates outside requested range")
+
+          print(json.dumps({
+              "source": url,
+              "http_status": response.status_code,
+              "requested_start_date": start_date.isoformat(),
+              "requested_end_date": end_date.isoformat(),
+              "bytes_received": len(response.content),
+              "header_present_in_source": header_present,
+              "records_valid": report["records_valid"],
+              "unique_scheme_codes": report["unique_scheme_codes"],
+              "min_nav_date": report["min_nav_date"],
+              "max_nav_date": report["max_nav_date"],
+              "invalid_rows": report["invalid_rows"],
+              "duplicate_rows_skipped": report["duplicate_rows_skipped"],
+              "payload_sha256": hashlib.sha256(response.content).hexdigest(),
+              "database_writes": 0,
+          }, indent=2))
+          PY
