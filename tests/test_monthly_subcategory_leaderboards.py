@@ -15,10 +15,10 @@ def test_monthly_leaderboard_returns_top_funds_for_each_subcategory(monkeypatch)
     now = datetime.now(timezone.utc)
     codes = (99877101, 99877102, 99877103, 99877104)
     records = (
-        ("Monthly Flexi Leader A", "Flexi Cap Fund", 0.05, 0.03),
-        ("Monthly Flexi Leader B", "Flexi Cap Fund", 0.03, 0.04),
-        ("Monthly Large Leader A", "Large Cap Fund", 0.045, 0.02),
-        ("Monthly Large Leader B", "Large Cap Fund", 0.015, 0.01),
+        ("Monthly Flexi Leader A", "Dynamic Asset Allocation Fund", 0.05, 0.03),
+        ("Monthly Flexi Leader B", "Dynamic Asset Allocation Fund", 0.03, 0.04),
+        ("Monthly Large Leader A", "Arbitrage Fund", 0.045, 0.02),
+        ("Monthly Large Leader B", "Arbitrage Fund", 0.015, 0.01),
     )
 
     with SessionLocal() as db:
@@ -40,9 +40,9 @@ def test_monthly_leaderboard_returns_top_funds_for_each_subcategory(monkeypatch)
                 isin_dividend_reinvestment=None,
                 first_seen_at=now,
                 last_seen_at=now,
-                category_group="Equity Scheme",
+                category_group="Hybrid Scheme",
                 category=category,
-                asset_class="Equity",
+                asset_class="Hybrid",
                 plan_type="Direct Plan",
                 option_type="Growth Option",
             ))
@@ -73,7 +73,7 @@ def test_monthly_leaderboard_returns_top_funds_for_each_subcategory(monkeypatch)
         db.commit()
 
     response = TestClient(app).get(
-        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Equity+Scheme&plan_type=Direct&option_type=Growth&limit=1",
+        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Hybrid+Scheme&plan_type=Direct&option_type=Growth&limit=1",
         headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
     )
     assert response.status_code == 200, response.text
@@ -87,8 +87,8 @@ def test_monthly_leaderboard_returns_top_funds_for_each_subcategory(monkeypatch)
     # New category breakdown returns a top-N list within every canonical peer group.
     assert payload["category_count"] == 2
     assert [item["category"] for item in payload["categories"]] == [
-        "Flexi Cap Fund",
-        "Large Cap Fund",
+        "Dynamic Asset Allocation Fund",
+        "Arbitrage Fund",
     ]
     assert [item["count"] for item in payload["categories"]] == [2, 2]
     assert [item["items"][0]["scheme_code"] for item in payload["categories"]] == [
