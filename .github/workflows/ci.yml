@@ -33,6 +33,37 @@ jobs:
           node --check app/static/dashboard.js
           node --check app/static/research.js
           node --check app/static/fund-detail.js
+      - name: Validate authentication and portfolio DOM contracts
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          contracts = {
+              "app/static/dashboard.html": {
+                  "authForm", "authEmail", "authPassword", "signIn", "signUp",
+                  "resetPassword", "signOut", "passwordRecoveryPanel", "saveNewPassword",
+                  "newPassword", "portfolioOverview", "portfolioCurrentValue",
+                  "portfolioCostBasis", "portfolioRealized", "portfolioUnrealized",
+                  "portfolioTotalGain", "portfolioXirr", "portfolioValuationDate",
+                  "portfolioValuationStatus", "holdingCount", "holdingRows",
+                  "transactionForm", "transactionRows", "transactionCount",
+                  "transactionMessage", "addTransaction", "refreshTransactions",
+              },
+              "app/static/research.html": {
+                  "researchAuthForm", "authEmail", "authPassword", "signIn", "signUp",
+                  "resetPassword", "signOut", "researchRecoveryPanel", "newPassword",
+                  "saveNewPassword", "authStatus", "notice", "fundRows",
+              },
+          }
+          for filename, required in contracts.items():
+              source = Path(filename).read_text(encoding="utf-8")
+              present = set(re.findall(r'\\bid=["\\']([^"\\']+)["\\']', source))
+              missing = sorted(required - present)
+              if missing:
+                  raise SystemExit(f"{filename} is missing required DOM ids: {missing}")
+          print("Dashboard and Research Terminal DOM contracts passed.")
+          PY
       - name: Test SQLite
         run: python -m pytest -q
         env:
