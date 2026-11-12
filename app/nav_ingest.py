@@ -58,7 +58,7 @@ def _classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, 
         group, asset = "Debt Scheme", "Debt"
     elif any(token in key for token in ("hybrid", "balanced")):
         group, asset = "Hybrid Scheme", "Hybrid"
-    elif any(token in key for token in ("other", "index", "etf", "exchange traded", "fund of funds", "fof", "life cycle", "solution oriented")):
+    elif any(token in key for token in ("other", "index", "etf", "exchange traded", "fund of funds", "fof", "life cycle", "solution oriented", "capital protection", "children", "retirement")):
         group, asset = "Other Scheme", "Other"
     else:
         return None, None, None
@@ -108,7 +108,8 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
                 if group:
                     current_category_group, current_category, current_asset_class = group, sub, asset
                     metadata_present = True
-                    continue
+                # An unrecognized section heading must never become an AMC name.
+                continue
             # AMFI AMC headers are plain text, usually ending in "Mutual Fund".
             if not line.startswith(("(", "<")) and len(line) <= 200:
                 current_amc = line
