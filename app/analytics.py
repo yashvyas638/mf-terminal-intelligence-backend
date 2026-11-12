@@ -135,11 +135,31 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
     downside_dev = math.sqrt(sum(x * x for x in downside) / len(downside)) * math.sqrt(252)
     sharpe = ((sum(excess) / len(excess)) * 252 / volatility) if volatility > 0 else None
     sortino = ((sum(excess) / len(excess)) * 252 / downside_dev) if downside_dev > 0 else None
-    periods = {}
-    for label, days in (("1M", 30), ("3M", 90), ("6M", 182), ("1Y", 365), ("3Y", 365 * 3), ("5Y", 365 * 5)):
+    periods: dict[str, float | None] = {}
+    period_base_date_gaps: dict[str, int | None] = {}
+    period_specs = (
+        ("1M", 30, 15),
+        ("3M", 90, 20),
+        ("6M", 182, 35),
+        ("1Y", 365, 45),
+        ("3Y", 365 * 3, 45),
+        ("5Y", 365 * 5, 45),
+    )
+    for label, days, max_base_gap_days in period_specs:
         target = dates[-1].toordinal() - days
         eligible = [(d, v) for d, v in rows if d.toordinal() <= target]
-        periods[label] = (values[-1] / eligible[-1][1] - 1) if eligible else None
+        if not eligible:
+            periods[label] = None
+            period_base_date_gaps[label] = None
+            continue
+        base_date, base_value = eligible[-1]
+        base_date_gap_days = target - base_date.toordinal()
+        period_base_date_gaps[label] = base_date_gap_days
+        periods[label] = (
+            values[-1] / base_value - 1
+            if base_date_gap_days <= max_base_gap_days
+            else None
+        )
     monthly: dict[str, tuple[date, float]] = {}
     for d, v in rows:
         key = d.strftime("%Y-%m")
@@ -155,6 +175,7 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
         "total_return": total_return, "cagr": cagr, "annualized_volatility": volatility,
         "max_drawdown": max_drawdown(values), "drawdown_profile": drawdown_profile(rows), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
         "risk_free_rate_assumption": risk_free_rate, "period_returns": periods,
+        "period_base_date_gaps_days": period_base_date_gaps,
         "monthly_returns": monthly_returns,
     }
 
