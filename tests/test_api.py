@@ -737,6 +737,7 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
     for path in (
         f"/v1/portfolios/{portfolio_id}/transactions",
         f"/v1/portfolios/{portfolio_id}/valuation",
+        f"/v1/portfolios/{portfolio_id}/risk",
     ):
         response = client.get(path, headers=user_two)
         assert response.status_code == 404, (path, response.text)
@@ -754,6 +755,13 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
         },
     )
     assert blocked_write.status_code == 404
+
+    blocked_stress = client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=user_two,
+        json={"scenario_name": "Unauthorized shock", "shocks": [{"scheme_code": 999991, "shock_pct": "-10"}]},
+    )
+    assert blocked_stress.status_code == 404
 
     own_empty_transactions = client.get(
         f"/v1/portfolios/{portfolio_id}/transactions", headers=user_one
@@ -1196,3 +1204,117 @@ def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkey
     with SessionLocal() as db:
         assert db.query(FundHoldingDisclosure).filter_by(scheme_code=scheme_a).count() == 2
         assert db.query(FundHolding).count() == 9
+
+def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    user_id = "00000000-0000-0000-0000-000000000044"
+
+    class AuthResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id": user_id}
+
+    monkeypatch.setattr(main.requests, "get", lambda url, headers, timeout: AuthResponse())
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer portfolio-risk-user"}
+
+    created = client.post("/v1/portfolios", headers=headers, json={"name": "Risk Test Portfolio"})
+    assert created.status_code == 201, created.text
+    portfolio_id = created.json()["id"]
+    scheme_code = 87654324
+    now = datetime.now(timezone.utc)
+    as_of = date(2026, 11, 10)
+
+    with SessionLocal() as db:
+        db.add(Scheme(
+            scheme_code=scheme_code,
+            scheme_name="Portfolio Risk Growth Fund",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+            plan_type="Direct",
+            option_type="Growth",
+        ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/nav",
+            retrieved_at=now,
+            payload_sha256="c" * 64,
+            records_valid=100,
+            unique_scheme_codes=1,
+            min_nav_date=as_of - timedelta(days=99),
+            max_nav_date=as_of,
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add(PortfolioTransaction(
+            portfolio_id=portfolio_id,
+            scheme_code=scheme_code,
+            transaction_type="BUY",
+            transaction_date=as_of - timedelta(days=90),
+            units=Decimal("10"),
+            nav=Decimal("100"),
+            amount=Decimal("1000"),
+            charges=Decimal("0"),
+            notes="Risk test seed",
+            created_at=now,
+            voided_at=None,
+            void_reason=None,
+        ))
+        nav_rows = []
+        value = 100.0
+        for index in range(100):
+            observed_date = as_of - timedelta(days=99 - index)
+            daily_return = 0.001 if index % 8 else -0.015
+            value *= 1 + daily_return
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_code,
+                nav_date=observed_date,
+                nav_value=Decimal(str(round(value, 8))),
+                source_snapshot_id=snapshot.id,
+            ))
+        db.add_all(nav_rows)
+        db.commit()
+
+    risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
+    assert risk.status_code == 200, risk.text
+    risk_json = risk.json()
+    assert risk_json["status"] == "OK"
+    assert risk_json["holdings_count"] == 1
+    assert risk_json["metrics"]["daily_return_observations"] >= 30
+    assert risk_json["metrics"]["annualized_volatility"] > 0
+    assert risk_json["metrics"]["historical_var_95"] > 0
+    assert risk_json["metrics"]["max_drawdown"] < 0
+
+    stress = client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=headers,
+        json={
+            "scenario_name": "Broad 10 percent drawdown",
+            "shocks": [{"scheme_code": scheme_code, "shock_pct": "-10"}],
+        },
+    )
+    assert stress.status_code == 200, stress.text
+    stress_json = stress.json()
+    assert stress_json["scenario_type"] == "USER_DEFINED_SENSITIVITY_NOT_FORECAST"
+    assert float(stress_json["estimated_portfolio_impact"]) == pytest.approx(
+        -float(stress_json["base_portfolio_value"]) * 0.10
+    )
+    assert float(stress_json["stressed_portfolio_value"]) == pytest.approx(
+        float(stress_json["base_portfolio_value"]) * 0.90
+    )
+
+    incomplete = client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=headers,
+        json={"scenario_name": "Missing shock", "shocks": []},
+    )
+    assert incomplete.status_code == 422
