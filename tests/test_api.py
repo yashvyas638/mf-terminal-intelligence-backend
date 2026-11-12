@@ -1363,6 +1363,26 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         float(stress_json["base_portfolio_value"]) * 0.90
     )
 
+    saved_report = client.post(
+        f"/v1/portfolios/{portfolio_id}/reports?days=365",
+        headers=headers,
+    )
+    assert saved_report.status_code == 201, saved_report.text
+    report_id = saved_report.json()["report_id"]
+    report_list = client.get(f"/v1/portfolios/{portfolio_id}/reports", headers=headers)
+    assert report_list.status_code == 200
+    assert report_list.json()["count"] == 1
+    report_detail = client.get(f"/v1/reports/{report_id}", headers=headers)
+    assert report_detail.status_code == 200
+    assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
+    assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
+    pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF")
+    with SessionLocal() as db:
+        assert db.query(PortfolioReportSnapshot).filter_by(id=report_id).count() == 1
+
     incomplete = client.post(
         f"/v1/portfolios/{portfolio_id}/stress",
         headers=headers,
