@@ -62,3 +62,21 @@ The migration changes permissions only. It does not touch portfolio
 transactions, NAV observations, source snapshots, correction history or
 scheme master data. Do not merge to `main` or deploy until the exact SHA,
 CI and Render connection role are verified and the user approves.
+
+## Connected Supabase verification (2026-11-12, read-only)
+
+Project mf-terminal-intelligence was inspected using read-only project/table/advisor queries and SQL SELECT statements. No DDL, data mutation or production migration was executed.
+
+Observed:
+- Alembic database revision: 0007_append_only_audit.
+- Data present: 14,206 schemes, 22,305 NAV observations and 4 ingestion snapshots; portfolio and transaction tables are currently empty.
+- RLS is disabled on all 9 public tables, and there are no RLS policies.
+- Effective privilege checks (has_table_privilege) returned false for both anon and authenticated on SELECT and INSERT for every public table. The expanded table ACL check also found no PUBLIC table grants. service_role has the expected server-side table privileges.
+- SQL Editor reports current_user = postgres. This is not evidence of the Render backend connection identity; Render remains unverified.
+- The schemes table does not yet have research classification columns.
+- Supabase security advisor flags prevent_financial_audit_mutation() for a mutable search_path. A safe function-search-path hardening migration is being added to the synchronized research branch; it has not been applied to production.
+
+Interpretation:
+- The RLS-disabled finding is a critical hardening gap and must be resolved deliberately. However, the direct privilege checks did not confirm that anon or authenticated currently have table SELECT/INSERT access. Do not describe this as confirmed anonymous table access.
+- Enabling RLS without policies could block access for roles that do not bypass RLS. Design and test the intended server-side role path and any future user policies before changing production.
+- Re-run grants, RLS, policy, sequence and function checks after the approved permission migration.
