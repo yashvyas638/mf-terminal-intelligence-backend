@@ -643,6 +643,8 @@ def list_schemes(
                     else or_(
                         Scheme.scheme_name.ilike(f"%{term}%"),
                         Scheme.amc.ilike(f"%{term}%"),
+                        Scheme.isin_growth.ilike(f"%{term}%"),
+                        Scheme.isin_dividend_reinvestment.ilike(f"%{term}%"),
                     )
                 )
         for column, value in (
