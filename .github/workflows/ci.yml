@@ -212,6 +212,12 @@ jobs:
               raise SystemExit("AMFI historical endpoint returned empty or HTML content")
 
           lines = [line for line in payload.splitlines() if line.strip()]
+          print(json.dumps({
+              "response_url": response.url,
+              "content_type": response.headers.get("Content-Type"),
+              "content_length": len(response.content),
+              "first_nonempty_lines": lines[:12],
+          }, indent=2))
           header_present = any(
               line.lower().startswith("scheme code;") and "scheme name" in line.lower()
               for line in lines[:10]
