@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Iterable
 
-NAV_ADJUSTMENT_REGISTRY_VERSION = "2026-11-12.2"
+NAV_ADJUSTMENT_REGISTRY_VERSION = "2026-11-12.3"
 
 # ICICI Prudential Overnight Fund changed unit face value from Rs.100 to
 # Rs.1,000 effective 16-Aug-2022. The AMC notice states that existing unit
