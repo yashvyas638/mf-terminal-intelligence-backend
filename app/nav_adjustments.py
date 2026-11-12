@@ -25,18 +25,20 @@ _ICICI_OVERNIGHT_SCHEME_CODES = (
 _VERIFIED_EVENTS: tuple[dict[str, Any], ...] = (
     {
         "scheme_codes": frozenset(_ICICI_OVERNIGHT_SCHEME_CODES),
-        "effective_date": date(2022, 8, 17),
+        "effective_date": date(2022, 8, 16),
         "factor": 10.0,
         "action": "unit_consolidation",
         "source_urls": (
-            "https://digitalfactsheet.icicipruamc.com/fact/pdf/fund-factsheet-for-february-2026.pdf",
-            "https://www.valueresearchonline.com/funds/38261/icici-prudential-overnight-fund-direct-plan/",
+            "https://fundsindia.com/blog/wp-content/uploads/2022/08/Attachment74998attachmentsChange-in-FV-Overnight-Fund.pdf",
+            "https://www.icicipruamc.com/blob/sebi-repo/Advertisements/2026/February/Filing%20date%2010-02-2026/Release%20date%2006-02-2026/Advertisements/Annexure%203-%20Big%20Factsheet.pdf",
         ),
         "source_note": (
-            "ICICI Prudential AMC factsheet records the pre/post NAV level "
-            "change across Overnight Fund options; ValueResearch history "
-            "corroborates the 17-Aug-2022 level reset. Pre-event NAVs are "
-            "expressed in post-consolidation units by multiplying by 10."
+            "ICICI Prudential AMC's notice changes unit face value from "
+            "Rs.100 to Rs.1,000 effective 16-Aug-2022 and states that existing "
+            "unit holdings are adjusted proportionately without changing "
+            "holding value. The AMC factsheet records the corresponding "
+            "pre/post NAV levels. Pre-event NAVs are expressed in post-change "
+            "units by multiplying by 10."
         ),
     },
 )
