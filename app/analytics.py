@@ -32,12 +32,12 @@ def max_drawdown(values: list[float]) -> float | None:
 
 
 def drawdown_profile(points: Iterable[tuple[date, float]]) -> dict:
-    """Describe the worst peak-to-trough loss and recovery using observed NAV dates.
+    """Describe the worst peak-to-trough loss and recovery using observed NAV dates."""
+    return _drawdown_profile_from_rows(_clean_series(points))
 
-    Durations are calendar days between actual observations. An unrecovered
-    drawdown is reported as open; no interpolation or assumed recovery is used.
-    """
-    rows = _clean_series(points)
+
+def _drawdown_profile_from_rows(rows: list[tuple[date, float]]) -> dict:
+    """Compute a drawdown profile from an already cleaned, date-sorted series."""
     if len(rows) < 2:
         return {"status": "INSUFFICIENT_DATA"}
 
@@ -125,6 +125,14 @@ def performance_metrics(
 ) -> dict:
     rows = _clean_series(points)
     baseline_rows = _clean_series(period_baseline_points) if period_baseline_points is not None else rows
+    return _performance_metrics_from_rows(rows, baseline_rows, risk_free_rate)
+
+
+def _performance_metrics_from_rows(
+    rows: list[tuple[date, float]],
+    baseline_rows: list[tuple[date, float]],
+    risk_free_rate: float,
+) -> dict:
     if len(rows) < 2:
         return {"observations": len(rows), "status": "INSUFFICIENT_DATA"}
     dates = [r[0] for r in rows]
@@ -167,7 +175,7 @@ def performance_metrics(
         "end_date": dates[-1].isoformat(), "span_days": span_days,
         "start_nav": values[0], "latest_nav": values[-1],
         "total_return": total_return, "cagr": cagr, "annualized_volatility": volatility,
-        "max_drawdown": max_drawdown(values), "drawdown_profile": drawdown_profile(rows), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
+        "max_drawdown": max_drawdown(values), "drawdown_profile": _drawdown_profile_from_rows(rows), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
         "risk_free_rate_assumption": risk_free_rate, "period_returns": periods,
         "monthly_returns": monthly_returns,
     }
@@ -593,13 +601,18 @@ def rolling_return_series(
     window_days: int = 365,
     max_base_gap_days: int = 7,
 ) -> dict:
-    """Calculate rolling NAV returns using real observations only.
+    """Calculate rolling NAV returns using real observations only."""
+    return _rolling_return_series_from_rows(
+        _clean_series(points), window_days, max_base_gap_days
+    )
 
-    Each endpoint uses the latest observation on/before the target start date,
-    provided it is no more than max_base_gap_days earlier. No interpolation is
-    performed. Monthly endpoint sampling reduces redundant daily windows.
-    """
-    rows = _clean_series(points)
+
+def _rolling_return_series_from_rows(
+    rows: list[tuple[date, float]],
+    window_days: int,
+    max_base_gap_days: int,
+) -> dict:
+    """Calculate rolling returns from an already cleaned, date-sorted series."""
     if window_days < 30 or max_base_gap_days < 0:
         raise ValueError("invalid rolling-return window configuration")
     if len(rows) < 2:
@@ -667,19 +680,20 @@ def research_metrics(
 ) -> dict:
     """Combine NAV metrics with rolling diagnostics and optional out-of-window baselines."""
     rows = _clean_series(points)
-    base = performance_metrics(
-        rows,
-        risk_free_rate=risk_free_rate,
-        period_baseline_points=period_baseline_points,
+    baseline_rows = (
+        _clean_series(period_baseline_points)
+        if period_baseline_points is not None
+        else rows
     )
+    base = _performance_metrics_from_rows(rows, baseline_rows, risk_free_rate)
     if base.get("status") != "OK":
         return {
             **base,
-            "rolling_1y": rolling_return_series(rows, 365),
-            "rolling_3y": rolling_return_series(rows, 365 * 3),
+            "rolling_1y": _rolling_return_series_from_rows(rows, 365, 7),
+            "rolling_3y": _rolling_return_series_from_rows(rows, 365 * 3, 7),
         }
-    rolling_1y = rolling_return_series(rows, 365)
-    rolling_3y = rolling_return_series(rows, 365 * 3)
+    rolling_1y = _rolling_return_series_from_rows(rows, 365, 7)
+    rolling_3y = _rolling_return_series_from_rows(rows, 365 * 3, 7)
     monthly_returns = base.get("monthly_returns", [])
     positive_months = sum(item["return"] > 0 for item in monthly_returns)
     base.update({
