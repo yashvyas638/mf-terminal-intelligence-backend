@@ -1,8 +1,8 @@
 """Bounded HTTP adapter for AMFI historical NAV downloads.
 
-The request shape remains a candidate contract until a live response has been
-compared with AMFI's own History form. Keep backfill execution disabled until
-that verification is recorded by an operator.
+The URL shape is based on independently observed AMFI portal requests. Keep
+this adapter out of scheduled/production ingestion until a live response has
+been checked against the official History form and its selected type/date range.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _amfi_date(value: date) -> str:
 
 
 def build_amfi_history_url(window: HistoryWindow, scheme_type: int) -> str:
-    """Build a bounded candidate URL for one AMFI scheme type."""
+    """Build a bounded all-AMC history URL for one AMFI scheme type."""
     if not isinstance(window, HistoryWindow):
         raise TypeError("window must be a HistoryWindow")
     if window.day_count > AMFI_MAX_HISTORY_WINDOW_DAYS:
@@ -51,9 +51,9 @@ def _read_response(response: Any, max_bytes: int = MAX_HISTORY_RESPONSE_BYTES) -
             if "exceeds" in str(exc):
                 raise
     chunks: list[bytes] = []
+    total = 0
     iterator = getattr(response, "iter_content", None)
     if callable(iterator):
-        total = 0
         for chunk in iterator(chunk_size=64 * 1024):
             if not chunk:
                 continue
@@ -75,7 +75,7 @@ def fetch_amfi_history_window(
     max_attempts: int = 3,
     timeout: tuple[int, int] = (8, 60),
 ) -> tuple[list[Any], dict[str, Any]]:
-    """Fetch and strictly validate one history window; never persists data."""
+    """Fetch and strictly validate one AMFI history window; never persists data."""
     if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 5:
         raise ValueError("max_attempts must be an integer between 1 and 5")
     url = build_amfi_history_url(window, scheme_type)
@@ -98,10 +98,7 @@ def fetch_amfi_history_window(
             if status in TRANSIENT_STATUSES:
                 raise requests.HTTPError(f"transient AMFI history HTTP status {status}", response=response)
             response.raise_for_status()
-            raw = _read_response(response)
-            if not raw:
-                raise ValueError("AMFI history response is empty")
-            payload = raw.decode("utf-8-sig", errors="strict")
+            payload = _read_response(response).decode("utf-8-sig")
             records, report = parse_amfi_history_text(payload)
             outside = [
                 record for record in records
@@ -115,7 +112,7 @@ def fetch_amfi_history_window(
                 "requested_start_date": window.start_date.isoformat(),
                 "requested_end_date": window.end_date.isoformat(),
                 "http_status": status,
-                "bytes_received": len(raw),
+                "bytes_received": len(payload.encode("utf-8")),
                 "attempt": attempt,
             })
             return records, report
@@ -133,6 +130,7 @@ def fetch_amfi_history_window(
                 close = getattr(response, "close", None)
                 if callable(close):
                     close()
+
         time.sleep(min(2 ** (attempt - 1), 8))
 
     raise requests.RequestException(
