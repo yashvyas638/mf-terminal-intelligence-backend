@@ -74,6 +74,7 @@ APP_VERSION = "0.3.0"
 MINIMUM_VALID_RECORDS = int(os.getenv("MINIMUM_VALID_RECORDS", "1000"))
 MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
+_research_snapshot_refresh_lock = threading.Lock()
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
@@ -1040,6 +1041,8 @@ def _refresh_research_snapshots_after_ingestion() -> dict[str, Any]:
     A research snapshot failure must not undo accepted NAV rows. Surface a safe
     status to the operator so the rebuild can be retried independently.
     """
+    if not _research_snapshot_refresh_lock.acquire(blocking=False):
+        return {"status": "in_progress"}
     try:
         result = refresh_fund_research_snapshots(x_api_key=os.getenv("API_KEY"))
         logger.info(
@@ -1060,6 +1063,8 @@ def _refresh_research_snapshots_after_ingestion() -> dict[str, Any]:
             exc_info=True,
         )
         return {"status": "deferred", "error_type": type(exc).__name__}
+    finally:
+        _research_snapshot_refresh_lock.release()
 
 
 @app.get("/v1/analytics/screener")
@@ -1087,6 +1092,20 @@ def fund_screener(
     require_api_key(x_api_key)
     if days not in {365, 1095, 1825, 3650}:
         raise HTTPException(422, "days must be one of 365, 1095, 1825 or 3650")
+
+    # Bootstrap the shared ranking cache on the first authenticated research visit.
+    # This is idempotent and only runs when no precomputed snapshot exists.
+    with SessionLocal() as db:
+        has_research_snapshots = db.execute(
+            select(func.max(FundResearchSnapshot.refreshed_at))
+        ).scalar_one()
+    if has_research_snapshots is None:
+        bootstrap = _refresh_research_snapshots_after_ingestion()
+        if bootstrap.get("status") != "refreshed":
+            raise HTTPException(
+                503,
+                "Fund rankings are being prepared from accepted NAV history. Please retry shortly.",
+            )
 
     sort_columns = {
         "return_1m": FundResearchSnapshot.return_1m,
