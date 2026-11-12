@@ -85,6 +85,7 @@ MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 _research_snapshot_refresh_lock = threading.Lock()
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
+RESEARCH_SNAPSHOT_LOCK_KEY = 0x4D46545245534541
 
 
 def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
@@ -1446,6 +1447,18 @@ def refresh_fund_research_snapshots(
             ))
 
     with SessionLocal() as db:
+        # A process-local threading lock cannot coordinate Render instances.
+        # Hold a transaction-scoped PostgreSQL advisory lock on this same
+        # connection for the entire streamed read + atomic snapshot replacement.
+        if db.get_bind().dialect.name == "postgresql":
+            lock_acquired = db.execute(
+                text("SELECT pg_try_advisory_xact_lock(:lock_key)"),
+                {"lock_key": RESEARCH_SNAPSHOT_LOCK_KEY},
+            ).scalar_one()
+            if not lock_acquired:
+                logger.info("research_snapshot_refresh_skipped reason=another_instance_refreshing")
+                return {"status": "in_progress", "reason": "another_instance_refreshing"}
+
         statement = (
             select(NavObservation.scheme_code, NavObservation.nav_date, NavObservation.nav_value)
             .where(NavObservation.nav_date >= history_floor)
@@ -1498,6 +1511,10 @@ def _refresh_research_snapshots_after_ingestion() -> dict[str, Any]:
         return {"status": "in_progress"}
     try:
         result = refresh_fund_research_snapshots(x_api_key=os.getenv("API_KEY"))
+        if result.get("status") != "refreshed":
+            status = result.get("status", "deferred")
+            logger.info("research_snapshot_refresh_after_nav_ingestion status=%s", status)
+            return {"status": status, "reason": result.get("reason")}
         logger.info(
             "research_snapshot_refresh_after_nav_ingestion status=refreshed schemes=%s rows=%s",
             result.get("schemes_processed"),
