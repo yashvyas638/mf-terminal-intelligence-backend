@@ -91,6 +91,48 @@ class NavObservationRevision(Base):
     __table_args__ = (Index("ix_nav_revision_code_date", "scheme_code", "nav_date", "corrected_at"),)
 
 
+class NavBackfillCheckpoint(Base):
+    """Durable state for one bounded AMFI historical NAV request window."""
+
+    __tablename__ = "nav_backfill_checkpoints"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    window_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    scheme_type: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_date: Mapped[object] = mapped_column(Date, nullable=False)
+    end_date: Mapped[object] = mapped_column(Date, nullable=False)
+    source_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    payload_sha256: Mapped[str | None] = mapped_column(String(64))
+    records_valid: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    inserted_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unchanged_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    invalid_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_class: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("scheme_type IN (1, 2, 3)", name="ck_nav_backfill_scheme_type"),
+        CheckConstraint("end_date >= start_date", name="ck_nav_backfill_date_range"),
+        CheckConstraint("status IN ('pending', 'running', 'complete', 'failed', 'paused')", name="ck_nav_backfill_status"),
+        CheckConstraint("attempts >= 0", name="ck_nav_backfill_attempts_nonnegative"),
+        CheckConstraint(
+            "records_valid >= 0 AND inserted_rows >= 0 AND updated_rows >= 0 "
+            "AND unchanged_rows >= 0 AND duplicate_rows >= 0 AND invalid_rows >= 0",
+            name="ck_nav_backfill_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "(status = 'complete' AND completed_at IS NOT NULL) OR "
+            "(status <> 'complete' AND completed_at IS NULL)",
+            name="ck_nav_backfill_completion_consistent",
+        ),
+        Index("ix_nav_backfill_status_dates", "status", "start_date", "end_date"),
+        Index("ix_nav_backfill_type_dates", "scheme_type", "start_date", "end_date"),
+    )
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
