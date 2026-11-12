@@ -57,6 +57,7 @@ from app.db import (
 from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
+from app.holdings_risk import security_concentration_metrics
 from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
@@ -3310,6 +3311,11 @@ def portfolio_holdings_lookthrough(
             ),
         })
     sector_rows.sort(key=lambda item: Decimal(item["lookthrough_value"]), reverse=True)
+    concentration = security_concentration_metrics(
+        security_rows,
+        portfolio_value=total_value,
+        valuation_complete=valuation_complete,
+    )
 
     return {
         "portfolio_id": portfolio_id,
@@ -3345,6 +3351,7 @@ def portfolio_holdings_lookthrough(
         },
         "top_securities": security_rows[:50],
         "sector_exposure": sector_rows,
+        "security_concentration": concentration,
         "sources": source_rows,
         "methodology": (
             "Current scheme market value is multiplied by the constituent weight in the latest "
