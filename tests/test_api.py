@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
+from app.db import FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
 from app.main import app
 
 
@@ -755,3 +755,78 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
     )
     assert own_empty_transactions.status_code == 200
     assert own_empty_transactions.json()["count"] == 0
+
+def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypatch):
+    """Each account can save/remove the same scheme without seeing another account's list."""
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    scheme_code = 999980
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Watchlist Isolation Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+            db.commit()
+
+    identities = {
+        "watchlist-user-one": "00000000-0000-0000-0000-000000000011",
+        "watchlist-user-two": "00000000-0000-0000-0000-000000000022",
+    }
+
+    class AuthResponse:
+        status_code = 200
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+        def json(self):
+            return {"id": self.user_id}
+
+    monkeypatch.setattr(
+        main.requests,
+        "get",
+        lambda url, headers, timeout: AuthResponse(
+            identities[headers["Authorization"].removeprefix("Bearer ")]
+        ),
+    )
+
+    client = TestClient(app)
+    user_one = {"Authorization": "Bearer watchlist-user-one"}
+    user_two = {"Authorization": "Bearer watchlist-user-two"}
+
+    assert client.get("/v1/watchlist").status_code == 401
+
+    added = client.post("/v1/watchlist", headers=user_one, json={"scheme_code": scheme_code})
+    assert added.status_code == 201
+    duplicate = client.post("/v1/watchlist", headers=user_one, json={"scheme_code": scheme_code})
+    assert duplicate.status_code == 409
+
+    assert client.get("/v1/watchlist", headers=user_two).json()["items"] == []
+    blocked_remove = client.delete(f"/v1/watchlist/{scheme_code}", headers=user_two)
+    assert blocked_remove.status_code == 404
+    assert client.get("/v1/watchlist", headers=user_one).json()["count"] == 1
+
+    second_added = client.post("/v1/watchlist", headers=user_two, json={"scheme_code": scheme_code})
+    assert second_added.status_code == 201
+    assert client.get("/v1/watchlist", headers=user_one).json()["count"] == 1
+    assert client.get("/v1/watchlist", headers=user_two).json()["count"] == 1
+
+    removed_one = client.delete(f"/v1/watchlist/{scheme_code}", headers=user_one)
+    assert removed_one.status_code == 200
+    assert client.get("/v1/watchlist", headers=user_one).json()["count"] == 0
+    assert client.get("/v1/watchlist", headers=user_two).json()["count"] == 1
+
+    with SessionLocal() as db:
+        rows = db.query(FundWatchlistItem).all()
+        assert len(rows) == 1
+        assert rows[0].owner_user_id == identities["watchlist-user-two"]
