@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, audit/production-foundation, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified, fix/0009-production-trigger-reconciliation]
+    branches: [main, audit/production-foundation, feature/auth-onboarding-and-session-fixes, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified, fix/0009-production-trigger-reconciliation]
   pull_request:
     branches: [main, audit/production-foundation]
   workflow_dispatch:
