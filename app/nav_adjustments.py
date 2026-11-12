@@ -94,7 +94,7 @@ def detect_nav_discontinuities(
     """Find unverified NAV level jumps; never auto-adjust a source observation."""
     rows = list(points)
     flags: list[dict[str, Any]] = []
-    for (previous_date, previous_value), (observed_date, value) in zip(rows, rows[1:]):
+    for (previous_date, previous_value), (observed_date, value) in zip(rows, rows[1:], strict=False):
         gap_days = (observed_date - previous_date).days
         if gap_days <= 0 or gap_days > max_gap_days or previous_value <= 0:
             continue
@@ -144,7 +144,7 @@ def apply_nav_quality_gates(
     window_rows = list(window_points)
     gap_days = [
         (current_date - previous_date).days
-        for (previous_date, _), (current_date, _) in zip(window_rows, window_rows[1:])
+        for (previous_date, _), (current_date, _) in zip(window_rows, window_rows[1:], strict=False)
     ]
     long_gaps = [gap for gap in gap_days if gap > 7]
     mixed_frequency_risk = bool(long_gaps)
