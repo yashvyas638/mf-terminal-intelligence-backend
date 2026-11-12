@@ -1,11 +1,11 @@
 """Align research snapshot windows to 1M, 1Y, 3Y and 5Y.
 
-Revision ID: 0024_research_snapshot_window_horizons
+Revision ID: 0024_research_windows
 Revises: 0023_screener_period_returns
 """
 from alembic import op
 
-revision = "0024_research_snapshot_window_horizons"
+revision = "0024_research_windows"
 down_revision = "0023_screener_period_returns"
 branch_labels = None
 depends_on = None
