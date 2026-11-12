@@ -1086,6 +1086,18 @@ def fund_screener(
             ],
         }
 
+class PortfolioCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    currency: str = Field(default="INR", pattern="^[A-Z]{3}$")
+
+    @model_validator(mode="after")
+    def normalize_name(self) -> "PortfolioCreate":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("portfolio name cannot be blank")
+        return self
+
+
 class WatchlistCreate(BaseModel):
     scheme_code: int = Field(gt=0)
 
