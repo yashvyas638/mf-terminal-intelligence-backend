@@ -8,7 +8,6 @@ from app.nav_history_api import (
     HistoryBackfillRunRequest,
     _execution_gates,
     _require_operator_key,
-    HistoryBackfillPlanRequest,
     run_nav_history_backfill,
 )
 
@@ -47,6 +46,13 @@ def test_plan_payload_rejects_invalid_range_duplicate_and_boolean_types():
             end_date=date(2026, 1, 2),
             scheme_types=[True],
         )
+
+
+def test_backfill_plan_defaults_to_seven_day_windows():
+    payload = HistoryBackfillPlanRequest(
+        start_date=date(2026, 1, 1), end_date=date(2026, 1, 31)
+    )
+    assert payload.max_window_days == 7
 
 
 def test_execution_gates_default_closed(monkeypatch):
