@@ -351,6 +351,32 @@ def _maybe_refresh_research_after_history_completion() -> dict[str, Any]:
     return _refresh_research_snapshots_after_ingestion()
 
 
+async def _retry_research_snapshot_refresh_after_lock_release() -> None:
+    """Retry a deferred refresh after a rolling deployment releases its DB lock."""
+    retry_delays = (15, 30, 60, 120, 240)
+    for attempt, delay_seconds in enumerate(retry_delays, start=1):
+        await asyncio.sleep(delay_seconds)
+        try:
+            result = await asyncio.to_thread(_maybe_refresh_research_after_history_completion)
+        except Exception:
+            logger.exception(
+                "research_snapshot_refresh_retry_failed attempt=%s",
+                attempt,
+            )
+            continue
+        status = result.get("status")
+        logger.info(
+            "research_snapshot_refresh_retry attempt=%s status=%s",
+            attempt,
+            status,
+        )
+        if status == "refreshed":
+            return
+        if status not in {"in_progress", "deferred"}:
+            return
+    logger.warning("research_snapshot_refresh_retry_exhausted")
+
+
 def _log_research_refresh_task_result(task: asyncio.Task[Any]) -> None:
     try:
         result = task.result()
@@ -360,6 +386,8 @@ def _log_research_refresh_task_result(task: asyncio.Task[Any]) -> None:
             result.get("schemes_processed"),
             result.get("snapshot_rows_written"),
         )
+        if result.get("status") in {"in_progress", "deferred"}:
+            asyncio.create_task(_retry_research_snapshot_refresh_after_lock_release())
     except Exception:
         logger.exception("research_snapshot_refresh_after_history_failed")
 
