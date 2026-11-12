@@ -378,3 +378,11 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Branch-only verification: current tip CI run includes SQLite and PostgreSQL 16 migrations/tests, Ruff and dashboard JavaScript syntax. Production remains unverified until the actual Render request and Supabase persistence flow is inspected and run.
 
 - Added secret-safe NAV refresh lifecycle diagnostics: request start, upstream response metadata, parser/quality totals, stale/minimum-record gates, transaction rollback errors and successful snapshot commit/counts. No credentials, DB URLs or raw NAV feed are logged. Regression test verifies API key absence from captured logs.
+
+
+## 2026-11-12 — Research branch synchronized with production foundation
+
+- Rebased the research implementation onto the latest `audit/production-foundation` tip using a clean integration branch. Preserved the NAV-only research API, analytics, AMFI plan/option parser metadata, responsive research UI and additive migration `0008_scheme_classification`.
+- Carried forward the production startup database-role guard: query PostgreSQL `current_user` and fail closed for Supabase `anon`/`authenticated` roles. Regression tests cover both rejected roles and a trusted server-side role.
+- Foundation CI passed both SQLite and PostgreSQL jobs on commit `cac21e0e4daba3680e2bee99481e93b099d83031`. The integrated branch requires its own complete CI before review.
+- P0 remains open. No production migration, Supabase write, Render deploy or merge to `main` is authorised by this work.
