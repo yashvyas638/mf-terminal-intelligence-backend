@@ -152,14 +152,32 @@ def test_mixed_frequency_window_suppresses_daily_risk_statistics_only():
 
 
 
-def test_unclaimed_overnight_subplan_is_not_given_the_verified_face_value_adjustment():
+def test_verified_adjustment_covers_all_sixteen_standard_icici_overnight_codes():
     points = [
         (date(2022, 7, 29), 100.0),
         (date(2022, 8, 30), 1000.0),
     ]
 
-    adjusted, applied = apply_verified_nav_adjustments(149411, points)
+    for scheme_code in range(145535, 145551):
+        adjusted, applied = apply_verified_nav_adjustments(scheme_code, points)
 
-    assert adjusted == points
-    assert applied == []
-    assert len(detect_nav_discontinuities(adjusted)) == 1
+        assert adjusted[0][1] == pytest.approx(1000.0)
+        assert adjusted[1][1] == pytest.approx(1000.0)
+        assert len(applied) == 1
+        assert detect_nav_discontinuities(adjusted) == []
+
+
+def test_all_four_unclaimed_overnight_subplans_are_excluded_and_flagged():
+    points = [
+        (date(2022, 7, 29), 100.0),
+        (date(2022, 8, 30), 1000.0),
+    ]
+
+    for scheme_code in range(149408, 149412):
+        adjusted, applied = apply_verified_nav_adjustments(scheme_code, points)
+
+        assert adjusted == points
+        assert applied == []
+        flags = detect_nav_discontinuities(adjusted)
+        assert len(flags) == 1
+        assert flags[0]["type"] == "unverified_nav_level_discontinuity"
