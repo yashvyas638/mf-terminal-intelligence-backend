@@ -6,7 +6,7 @@ been checked against the official History form and its selected type/date range.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 import time
 from typing import Any
 from urllib.parse import urlencode
