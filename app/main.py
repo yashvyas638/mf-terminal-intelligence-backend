@@ -1072,20 +1072,32 @@ def fund_screener(
     }
     sort_column = sort_columns[sort_by]
     ordering = sort_column.desc().nullslast() if sort_order == "desc" else sort_column.asc().nullslast()
-    category_rank = func.rank().over(
-        partition_by=(
-            Scheme.category_group,
-            Scheme.category,
-            Scheme.plan_type,
-            Scheme.option_type,
-        ),
-        order_by=ordering,
-    ).label("category_rank")
+    category_ranked = (
+        select(
+            FundResearchSnapshot.scheme_code.label("scheme_code"),
+            func.rank().over(
+                partition_by=(
+                    Scheme.category_group,
+                    Scheme.category,
+                    Scheme.plan_type,
+                    Scheme.option_type,
+                ),
+                order_by=ordering,
+            ).label("category_rank"),
+        )
+        .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+        .where(
+            FundResearchSnapshot.window_days == days,
+            FundResearchSnapshot.observations >= min_observations,
+        )
+        .subquery()
+    )
 
     with SessionLocal() as db:
         query = (
-            select(FundResearchSnapshot, Scheme, category_rank)
+            select(FundResearchSnapshot, Scheme, category_ranked.c.category_rank)
             .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+            .join(category_ranked, category_ranked.c.scheme_code == Scheme.scheme_code)
             .where(
                 FundResearchSnapshot.window_days == days,
                 FundResearchSnapshot.observations >= min_observations,
