@@ -65,7 +65,7 @@ function benchmarkComparisonPanel(result) {
 }
 
 window.renderFundDetail = async function(code, days) {
-  const [research, history, benchmark] = await Promise.all([
+  const [research, history, benchmark, evidence] = await Promise.all([
     api("/v1/analytics/research/" + encodeURIComponent(code) + "?days=" + days),
     api("/v1/nav/history/" + encodeURIComponent(code) + "?days=" + days),
     api("/v1/analytics/research/" + encodeURIComponent(code) + "/benchmark?days=" + days).catch(error => ({
@@ -132,7 +132,7 @@ window.renderFundDetail = async function(code, days) {
     '<div class="panel"><h3>Rolling 3Y returns</h3><div class="muted">Windows: ' + (rolling3y.observations ?? 0) + ' · Positive: ' + (rolling3y.positive_windows ?? 0) + ' · Negative/zero: ' + (rolling3y.negative_or_zero_windows ?? 0) + '</div>' +
     '<div class="tablewrap"><table style="min-width:500px"><thead><tr><th>Start</th><th>End</th><th>Total return</th><th>Annualised</th></tr></thead><tbody>' + rollingRows(rolling3y) + '</tbody></table></div></div>' +
     benchmarkComparisonPanel(benchmark) +
-    evidencePackPanel(arguments[3]) +
+    evidencePackPanel(evidence) +
     '<div class="notice">Data limitations: ' + (research.data_limitations || []).map(esc).join(" ") + ' AMC, category, AUM, expense ratio, holdings and manager history are not supplied by the current AMFI NAV source.</div>';
   $("addProfileWatchlist").onclick = () => addToWatchlist(Number(scheme.scheme_code)).catch(error => note(error.message, true));
   $("backToScreener").onclick = () => activate("screener");
