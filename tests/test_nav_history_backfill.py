@@ -258,13 +258,24 @@ def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint
 
 def test_month_end_batch_persists_only_latest_observation_per_scheme_month(factory):
     create_storage_optimized_history_plan(
-        date(2021, 11, 12),
+        date(2021, 10, 1),
         date(2026, 11, 11),
         date(2021, 11, 19),
         date(2025, 11, 1),
         (1,),
         session_factory=factory,
     )
+    # Isolate the month-end sampler test from the full-resolution baseline batch.
+    with factory.begin() as db:
+        baseline = db.execute(
+            select(NavBackfillCheckpoint).where(
+                NavBackfillCheckpoint.sampling_mode == "daily",
+                NavBackfillCheckpoint.start_date < date(2021, 11, 19),
+            )
+        ).scalars().all()
+        for checkpoint in baseline:
+            checkpoint.status = "complete"
+            checkpoint.completed_at = datetime(2026, 11, 12, tzinfo=timezone.utc)
     source_records = [
         SimpleNamespace(
             scheme_code=119551,
