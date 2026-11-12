@@ -432,19 +432,19 @@ def test_research_refresh_waits_for_hybrid_five_year_baseline(monkeypatch):
 
 
 
-def test_history_completion_callback_schedules_exactly_one_refresh(monkeypatch):
+def test_history_completion_callback_schedules_exactly_one_refresh_retry(monkeypatch):
     import asyncio
 
     calls = []
 
-    async def fake_to_thread(function):
-        calls.append(function())
+    async def fake_refresh_retry():
+        calls.append("scheduled")
+        return {"status": "refreshed", "snapshot_rows_written": 4}
 
-    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
     monkeypatch.setattr(
         main,
-        "_maybe_refresh_research_after_history_completion",
-        lambda: {"status": "refreshed", "snapshot_rows_written": 4},
+        "_refresh_research_snapshots_with_lock_retry",
+        fake_refresh_retry,
     )
 
     async def exercise():
@@ -461,4 +461,51 @@ def test_history_completion_callback_schedules_exactly_one_refresh(monkeypatch):
         await asyncio.sleep(0)
 
     asyncio.run(exercise())
-    assert calls == [{"status": "refreshed", "snapshot_rows_written": 4}]
+    assert calls == ["scheduled"]
+
+
+def test_snapshot_refresh_retries_lock_contention_until_peer_commit(monkeypatch):
+    import asyncio
+
+    results = iter([
+        {"status": "in_progress"},
+        {"status": "in_progress"},
+        {"status": "refreshed", "snapshot_rows_written": 4},
+    ])
+    calls = []
+    sleeps = []
+
+    def fake_refresh():
+        calls.append("attempt")
+        return next(results)
+
+    async def fake_to_thread(function):
+        return function()
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(main, "_maybe_refresh_research_after_history_completion", fake_refresh)
+
+    result = asyncio.run(main._refresh_research_snapshots_with_lock_retry())
+
+    assert result == {"status": "refreshed", "snapshot_rows_written": 4}
+    assert calls == ["attempt", "attempt", "attempt"]
+    assert sleeps == [5, 10]
+
+
+def test_history_refresh_skips_rebuild_when_current_four_window_snapshots_exist(monkeypatch):
+    monkeypatch.setattr(main, "history_backfill_status", lambda: {"groups": []})
+    monkeypatch.setattr(main, "_hybrid_baseline_buffer_complete", lambda: True)
+    monkeypatch.setattr(main, "_research_snapshots_are_current", lambda: True)
+    monkeypatch.setattr(
+        main,
+        "_refresh_research_snapshots_after_ingestion",
+        lambda: pytest.fail("already-current snapshots must not be rebuilt"),
+    )
+
+    assert main._maybe_refresh_research_after_history_completion() == {
+        "status": "already_current",
+    }
