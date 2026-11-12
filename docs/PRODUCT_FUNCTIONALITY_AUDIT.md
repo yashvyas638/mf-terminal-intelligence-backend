@@ -32,7 +32,7 @@ The repository currently contains a useful backend foundation and a small dashbo
 | Fund profile | Basic NAV/ISIN/performance detail | Factsheet, AUM, expense ratio, manager, benchmark, exit load, documents and history coverage |
 | Research | NAV-derived CAGR/volatility/drawdown and ratios | Verified full historical NAV, rolling/calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
-| Portfolio | Create/list, valuation, statement import | Holdings table, cashflows, XIRR, allocation, gain/loss, transaction UI and multi-portfolio dashboard |
+| Portfolio | Create/list, valuation, statement import, manual BUY/SELL entry and transaction-history UI (added in current auth/product PR; end-to-end pending) | Holdings-level allocation/gain-loss presentation, cashflow/XIRR dashboard, multi-portfolio overview and audited void UI |
 | Rebalance | Target weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
 | Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
 | Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
@@ -52,4 +52,4 @@ The repository currently contains a useful backend foundation and a small dashbo
 
 - CI success proves tests in CI only; it does not prove live Supabase Auth settings, SMTP delivery or real browser sign-up.
 - Setting Render environment variables triggers a deployment but does not prove the resulting deployment is live.
-- No test account was created and no production portfolio/NAV records were modified for this audit.
+- No test account was created and no production portfolio/NAV records were modified for this audit.\n- Research Terminal authentication now validates email/password before calling Supabase; sign-in supports Enter, sign-up confirmation messaging, password reset/update and auth-event workspace hydration. The main dashboard clears private portfolio UI state on sign-out.\n- Portfolio Lab now includes manual BUY/SELL transaction entry with units × NAV amount calculation and transaction-history display. These new browser workflows require CI on the latest branch SHA and live browser verification; they are not yet production-verified.
