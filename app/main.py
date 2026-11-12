@@ -311,10 +311,24 @@ async def lifespan(_: FastAPI):
             db.execute(text("SELECT 1"))
             _verify_trusted_database_role(db)
         _maybe_plan_historical_backfill_from_environment()
-        if os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() == "true":
+        history_requested = (
+            os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() == "true"
+        )
+        metadata_requested = (
+            os.getenv("AMFI_SCHEME_METADATA_REFRESH_ON_START", "").strip().lower() == "true"
+        )
+        if history_requested and metadata_requested:
+            raise RuntimeError(
+                "Run either historical NAV backfill or scheme metadata refresh on a deployment, not both"
+            )
+        if metadata_requested:
+            metadata_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_refresh_scheme_metadata_from_environment)
+            )
+            metadata_task.add_done_callback(_log_scheme_metadata_task_result)
+        if history_requested:
             # Do not hold API readiness on AMFI's external HTTP response. The
-            # checkpoint is marked running before the worker leaves this thread;
-            # the normal service can become healthy while the bounded batch runs.
+            # bounded checkpoint worker runs in a background thread.
             history_task = asyncio.create_task(
                 asyncio.to_thread(_maybe_run_historical_backfill_batch_from_environment)
             )
