@@ -47,6 +47,7 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
     seen: dict[tuple[int, date], Decimal] = {}
     lines = payload.lstrip("\ufeff").splitlines()
     candidates = 0
+    header_seen = False
 
     for line_number, raw in enumerate(lines, start=1):
         line = raw.strip()
@@ -59,6 +60,7 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
             header = ";".join(parts).lower()
             if "scheme name" not in header or "net asset value" not in header or "date" not in header:
                 raise ValueError("unrecognised AMFI historical header")
+            header_seen = True
             continue
         if len(parts) < 8:
             if parts[0] and parts[0][0].isdigit():
@@ -97,6 +99,8 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
 
     if not records:
         raise ValueError("AMFI historical response contained no valid NAV records")
+    if not header_seen:
+        raise ValueError("AMFI historical response is missing the recognised eight-column header")
     dates = [record.nav_date for record in records]
     report = {
         "source_url": AMFI_HISTORY_URL,
@@ -110,6 +114,7 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
         "duplicate_rows_skipped": sum(item["type"] == "duplicate_scheme_date" for item in issues),
         "invalid_rows": sum(item["type"] == "invalid_nav_row" for item in issues),
         "issues_sample": issues[:25],
+        "header_verified": header_seen,
         "quality_status": "PASS_WITH_WARNINGS" if issues else "PASS",
     }
     return records, report
