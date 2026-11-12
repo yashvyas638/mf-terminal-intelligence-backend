@@ -121,6 +121,7 @@ Mandatory order: **DEFINE → INSPECT → DESIGN → DEVELOP → TEST → REVIEW
 - Never deploy an unverified SHA or merge to main without approval.
 
 ### Current P0 evidence and blockers
+- 2026-11-12: Added a production startup guard that queries `current_user` and rejects Supabase `anon`/`authenticated` roles. Unit coverage is included. Commit `cac21e0e4daba3680e2bee99481e93b099d83031`; CI run `43142960810` passed both SQLite and PostgreSQL jobs. This is code-level defence only; the actual Render connection role still must be verified privately.
 - Earlier code commit `3ca12c92a717da5bdda79911e793483d6a376ac9` passed SQLite migration, Ruff and 15 pytest tests (CI run `43020514070`, job `130522253718`). This does not establish PostgreSQL compatibility.
 - Subsequent branch commits listed in the prior evidence log include NAV correction provenance, lifespan migration, parser hardening, PostgreSQL CI, missing-ISIN preservation and live-source validation workflow. Their exact latest CI result and production state must be re-verified on current branch head before relying on them.
 - Current source review identified that portfolio tables lack user/tenant ownership. Do not enable multi-user use until isolation is designed and tested.
