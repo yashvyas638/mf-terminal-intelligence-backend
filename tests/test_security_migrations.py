@@ -53,6 +53,7 @@ def test_supabase_client_roles_have_only_rls_scoped_read_access():
             "benchmark_indices", "benchmark_observations",
             "benchmark_observation_revisions", "scheme_benchmark_assignments",
             "fund_holding_disclosures", "fund_holdings",
+            "portfolio_goals",
         }.issubset(rls_tables)
 
         sequences = connection.execute(text(
