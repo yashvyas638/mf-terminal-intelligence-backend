@@ -3,7 +3,18 @@ from decimal import Decimal
 
 import pytest
 
-from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, max_drawdown, performance_metrics, portfolio_risk_metrics, project_financial_goal, rolling_return_series, research_metrics, research_snapshot_metrics, xirr
+from app.analytics import (
+    benchmark_comparison_metrics,
+    fifo_capital_gains,
+    max_drawdown,
+    performance_metrics,
+    portfolio_risk_metrics,
+    project_financial_goal,
+    rolling_return_series,
+    research_metrics,
+    research_snapshot_metrics,
+    xirr,
+)
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
