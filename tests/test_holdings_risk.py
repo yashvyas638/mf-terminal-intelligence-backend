@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 import pytest
 
 from app.holdings_risk import security_concentration_metrics
