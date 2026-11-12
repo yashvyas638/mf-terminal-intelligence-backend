@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.analytics import benchmark_comparison_metrics, max_drawdown, performance_metrics, portfolio_risk_metrics, rolling_return_series, research_metrics, xirr
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, max_drawdown, performance_metrics, portfolio_risk_metrics, rolling_return_series, research_metrics, xirr
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
@@ -190,3 +190,52 @@ def test_portfolio_risk_returns_insufficient_history_for_short_series():
     result = portfolio_risk_metrics([(1.0, points)])
     assert result["status"] == "INSUFFICIENT_HISTORY"
     assert result["annualized_volatility"] is None
+
+def test_fifo_capital_gains_matches_redemptions_to_acquisition_lots():
+    transactions = [
+        {
+            "id": 1, "scheme_code": 120001, "transaction_type": "BUY",
+            "transaction_date": date(2024, 1, 1), "units": "5",
+            "amount": "500", "charges": "5",
+        },
+        {
+            "id": 2, "scheme_code": 120001, "transaction_type": "BUY",
+            "transaction_date": date(2025, 1, 1), "units": "5",
+            "amount": "600", "charges": "5",
+        },
+        {
+            "id": 3, "scheme_code": 120001, "transaction_type": "SELL",
+            "transaction_date": date(2025, 6, 1), "units": "6",
+            "amount": "720", "charges": "6",
+        },
+    ]
+    result = fifo_capital_gains(
+        transactions,
+        {120001: Decimal("130")},
+    )
+    assert result["realized_lot_count"] == 2
+    assert result["open_lot_count"] == 1
+    assert result["realized_gain_loss"] == "88.00"
+    assert result["unrealized_gain_loss"] == "36.00"
+    assert result["realized_lots"][0]["units"] == "5"
+    assert result["realized_lots"][0]["holding_period_days"] == 517
+    assert result["realized_lots"][1]["units"] == "1"
+    assert result["open_lots"][0]["units"] == "4"
+    assert result["tax_status"] == "TAX_RULES_NOT_APPLIED"
+
+
+def test_fifo_capital_gains_rejects_redemptions_exceeding_available_lots():
+    transactions = [
+        {
+            "id": 1, "scheme_code": 120002, "transaction_type": "BUY",
+            "transaction_date": date(2025, 1, 1), "units": "2",
+            "amount": "200", "charges": "0",
+        },
+        {
+            "id": 2, "scheme_code": 120002, "transaction_type": "SELL",
+            "transaction_date": date(2025, 2, 1), "units": "3",
+            "amount": "330", "charges": "0",
+        },
+    ]
+    with pytest.raises(ValueError, match="exceeds FIFO lots"):
+        fifo_capital_gains(transactions, {})
