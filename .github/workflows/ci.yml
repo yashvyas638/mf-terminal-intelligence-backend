@@ -58,7 +58,7 @@ jobs:
           }
           for filename, required in contracts.items():
               source = Path(filename).read_text(encoding="utf-8")
-              present = set(re.findall(r'\\bid=["\\']([^"\\']+)["\\']', source))
+              present = set(re.findall(r'id="([^"]+)"', source))
               missing = sorted(required - present)
               if missing:
                   raise SystemExit(f"{filename} is missing required DOM ids: {missing}")
