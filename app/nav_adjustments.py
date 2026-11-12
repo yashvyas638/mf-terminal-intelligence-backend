@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any, Iterable
 
-NAV_ADJUSTMENT_REGISTRY_VERSION = "2026-11-12.1"
+NAV_ADJUSTMENT_REGISTRY_VERSION = "2026-11-12.2"
 
 # ICICI Prudential Overnight Fund completed a 10x unit consolidation effective
 # 17-Aug-2022. The AMC's February-2026 factsheet records NAV 100.3737 on
