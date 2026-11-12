@@ -248,6 +248,129 @@ def benchmark_comparison_metrics(
     }
 
 
+def portfolio_risk_metrics(
+    weighted_series: Iterable[tuple[float, Iterable[tuple[date, float]]]],
+    risk_free_rate: float = 0.06,
+    minimum_observations: int = 30,
+) -> dict:
+    """Historical portfolio risk from exact common NAV dates and current-value weights."""
+    series = []
+    for weight, points in weighted_series:
+        if weight <= 0:
+            continue
+        cleaned = _clean_series(points)
+        if len(cleaned) < 2:
+            return {
+                "status": "INSUFFICIENT_HISTORY",
+                "common_observations": 0,
+                "annualized_volatility": None,
+                "historical_var_95": None,
+                "historical_cvar_95": None,
+                "max_drawdown": None,
+            }
+        series.append((weight, dict(cleaned)))
+    if not series:
+        return {
+            "status": "NO_ACTIVE_HOLDINGS",
+            "common_observations": 0,
+            "annualized_volatility": None,
+            "historical_var_95": None,
+            "historical_cvar_95": None,
+            "max_drawdown": None,
+        }
+
+    total_weight = sum(weight for weight, _ in series)
+    normalized = [(weight / total_weight, values) for weight, values in series]
+    common_dates = sorted(set.intersection(*(set(values) for _, values in normalized)))
+    if len(common_dates) < 2:
+        return {
+            "status": "INSUFFICIENT_COMMON_DATES",
+            "common_observations": len(common_dates),
+            "annualized_volatility": None,
+            "historical_var_95": None,
+            "historical_cvar_95": None,
+            "max_drawdown": None,
+        }
+
+    daily_returns: list[tuple[date, float]] = []
+    for previous_date, current_date in zip(common_dates, common_dates[1:], strict=False):
+        if (current_date - previous_date).days > 7:
+            continue
+        portfolio_return = sum(
+            weight * (values[current_date] / values[previous_date] - 1.0)
+            for weight, values in normalized
+        )
+        daily_returns.append((current_date, portfolio_return))
+
+    if len(daily_returns) < minimum_observations:
+        return {
+            "status": "INSUFFICIENT_HISTORY",
+            "common_observations": len(common_dates),
+            "daily_return_observations": len(daily_returns),
+            "annualized_volatility": None,
+            "historical_var_95": None,
+            "historical_cvar_95": None,
+            "max_drawdown": None,
+            "methodology": "Exact common NAV dates only; no interpolation or forward-fill.",
+        }
+
+    returns = [value for _, value in daily_returns]
+    mean_return = sum(returns) / len(returns)
+    variance = sum((value - mean_return) ** 2 for value in returns) / (len(returns) - 1)
+    daily_volatility = math.sqrt(variance)
+    annualized_volatility = daily_volatility * math.sqrt(252)
+    daily_rf = (1 + risk_free_rate) ** (1 / 252) - 1
+    sharpe = ((mean_return - daily_rf) * 252 / annualized_volatility) if annualized_volatility > 0 else None
+    downside = [min(value, 0.0) for value in returns]
+    downside_deviation = math.sqrt(sum(value * value for value in downside) / len(downside)) * math.sqrt(252)
+
+    sorted_returns = sorted(returns)
+    tail_index = max(0, math.ceil(0.05 * len(sorted_returns)) - 1)
+    var_threshold = sorted_returns[tail_index]
+    tail_returns = [value for value in returns if value <= var_threshold]
+    historical_var_95 = max(0.0, -var_threshold)
+    historical_cvar_95 = max(0.0, -sum(tail_returns) / len(tail_returns))
+
+    portfolio_index = 100.0
+    indexed_points = [(daily_returns[0][0], portfolio_index)]
+    for observed_date, daily_return in daily_returns:
+        portfolio_index *= 1 + daily_return
+        indexed_points.append((observed_date, portfolio_index))
+
+    def worst_horizon(days: int) -> float | None:
+        if len(returns) < days:
+            return None
+        compounded = [
+            math.prod(1 + value for value in returns[index:index + days]) - 1
+            for index in range(len(returns) - days + 1)
+        ]
+        return min(compounded)
+
+    return {
+        "status": "OK",
+        "common_observations": len(common_dates),
+        "daily_return_observations": len(daily_returns),
+        "start_date": daily_returns[0][0].isoformat(),
+        "end_date": daily_returns[-1][0].isoformat(),
+        "annualized_volatility": annualized_volatility,
+        "downside_deviation": downside_deviation,
+        "sharpe_ratio": sharpe,
+        "historical_var_95": historical_var_95,
+        "historical_cvar_95": historical_cvar_95,
+        "max_drawdown": max_drawdown(indexed_points),
+        "worst_1d_return": min(returns),
+        "worst_5d_return": worst_horizon(5),
+        "worst_21d_return": worst_horizon(21),
+        "risk_free_rate_assumption": risk_free_rate,
+        "methodology": (
+            "Historical NAV returns are combined using current portfolio market-value weights, "
+            "held constant over the lookback. Exact common dates only; no interpolation or "
+            "forward-fill. Daily return pairs more than seven calendar days apart are excluded. "
+            "Historical VaR/CVaR use the empirical lower 5% tail and are not forecasts."
+        ),
+    }
+
+
 def xirr(cashflows: list[tuple[date, float]]) -> float | None:
     """Annualized money-weighted return using a bracketed bisection solver."""
     flows = sorted(cashflows, key=lambda x: x[0])
