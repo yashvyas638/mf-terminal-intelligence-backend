@@ -196,7 +196,7 @@ jobs:
               transient_statuses = {429, 500, 502, 503, 504}
               for attempt in range(1, 4):
                   try:
-                      response = get_with_retries(url, **kwargs)
+                      response = requests.get(url, **kwargs)
                       if response.status_code in transient_statuses and attempt < 3:
                           response.close()
                           time.sleep(min(2 ** (attempt - 1), 8))
