@@ -1451,7 +1451,7 @@ def refresh_fund_research_snapshots(
         if use_postgres_lock:
             acquired = bool(
                 lock_db.execute(
-                    text("SELECT pg_try_advisory_lock(:lock_key)"),
+                    text("SELECT pg_try_advisory_xact_lock(:lock_key)"),
                     {"lock_key": RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY},
                 ).scalar_one()
             )
