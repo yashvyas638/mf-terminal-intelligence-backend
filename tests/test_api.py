@@ -694,6 +694,20 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             first_seen_at=now,
             last_seen_at=now,
         ),
+        Scheme(
+            scheme_code=999974,
+            scheme_name="Equity With Invalid Stored Subcategory",
+            amc="Explorer AMC",
+            category_group="Equity Scheme",
+            category="PowerUp",
+            asset_class="Equity",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
     ]
     with SessionLocal() as db:
         for scheme in fixtures:
@@ -710,6 +724,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "Flexi Cap Fund" in facets.json()["sub_categories"]
     assert "Power Select" not in facets.json()["categories"]
     assert "PowerUp" not in facets.json()["sub_categories"]
+    assert "Life Cycle Funds" in {"Life Cycle Funds", "Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Schemes"}
     assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
@@ -740,6 +755,16 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert unclassified.json()["items"][0]["category_group"] is None
     assert unclassified.json()["items"][0]["category"] is None
     assert unclassified.json()["items"][0]["asset_class"] is None
+
+    invalid_subcategory = client.get(
+        "/v1/nav/schemes",
+        params={"q": "999974"},
+        headers=headers,
+    )
+    assert invalid_subcategory.status_code == 200
+    assert invalid_subcategory.json()["items"][0]["category_group"] == "Equity Scheme"
+    assert invalid_subcategory.json()["items"][0]["category"] is None
+    assert invalid_subcategory.json()["items"][0]["asset_class"] == "Equity"
 
 
 def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatch):
