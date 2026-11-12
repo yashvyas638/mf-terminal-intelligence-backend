@@ -132,6 +132,8 @@ def _performance_metrics_from_rows(
     rows: list[tuple[date, float]],
     baseline_rows: list[tuple[date, float]],
     risk_free_rate: float,
+    *,
+    include_drawdown_profile: bool = True,
 ) -> dict:
     if len(rows) < 2:
         return {"observations": len(rows), "status": "INSUFFICIENT_DATA"}
@@ -152,16 +154,17 @@ def _performance_metrics_from_rows(
     sharpe = ((sum(excess) / len(excess)) * 252 / volatility) if volatility > 0 else None
     sortino = ((sum(excess) / len(excess)) * 252 / downside_dev) if downside_dev > 0 else None
     periods = {}
+    baseline_dates = [observed_date for observed_date, _ in baseline_rows]
     for label, days in (("1M", 30), ("3M", 90), ("6M", 182), ("1Y", 365), ("3Y", 365 * 3), ("5Y", 365 * 5)):
         target_date = dates[-1] - timedelta(days=days)
-        eligible = [(d, v) for d, v in baseline_rows if d <= target_date]
+        baseline_index = bisect_right(baseline_dates, target_date) - 1
         # Never silently substitute a materially older NAV for the requested
         # period baseline. Weekends and holidays are fine; long data gaps are not.
         max_baseline_gap_days = 35 if label in {"3Y", "5Y"} else 7
-        if not eligible or (target_date - eligible[-1][0]).days > max_baseline_gap_days:
+        if baseline_index < 0 or (target_date - baseline_dates[baseline_index]).days > max_baseline_gap_days:
             periods[label] = None
         else:
-            periods[label] = values[-1] / eligible[-1][1] - 1
+            periods[label] = values[-1] / baseline_rows[baseline_index][1] - 1
     monthly: dict[str, tuple[date, float]] = {}
     for d, v in rows:
         key = d.strftime("%Y-%m")
@@ -170,15 +173,18 @@ def _performance_metrics_from_rows(
     monthly_returns = []
     for i in range(1, len(month_rows)):
         monthly_returns.append({"month": month_rows[i][0], "return": month_rows[i][1][1] / month_rows[i-1][1][1] - 1})
-    return {
+    result = {
         "status": "OK", "observations": len(rows), "start_date": dates[0].isoformat(),
         "end_date": dates[-1].isoformat(), "span_days": span_days,
         "start_nav": values[0], "latest_nav": values[-1],
         "total_return": total_return, "cagr": cagr, "annualized_volatility": volatility,
-        "max_drawdown": max_drawdown(values), "drawdown_profile": _drawdown_profile_from_rows(rows), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
+        "max_drawdown": max_drawdown(values), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
         "risk_free_rate_assumption": risk_free_rate, "period_returns": periods,
         "monthly_returns": monthly_returns,
     }
+    if include_drawdown_profile:
+        result["drawdown_profile"] = _drawdown_profile_from_rows(rows)
+    return result
 
 
 def benchmark_comparison_metrics(
@@ -671,6 +677,35 @@ def _rolling_return_series_from_rows(
             f"{max_base_gap_days} days. No interpolation."
         ),
     }
+
+
+def research_snapshot_metrics(
+    rows: list[tuple[date, float]],
+    period_baseline_rows: list[tuple[date, float]],
+    risk_free_rate: float = 0.06,
+) -> dict:
+    """Compute only the fields persisted by the screener snapshot builder.
+
+    Inputs must already be finite, positive, unique and ordered by NAV date.
+    The database stream guarantees that ordering, so avoid sorting/copying each
+    scheme series four times during a full-universe snapshot rebuild.
+    """
+    base = _performance_metrics_from_rows(
+        rows,
+        period_baseline_rows,
+        risk_free_rate,
+        include_drawdown_profile=False,
+    )
+    rolling_1y = _rolling_return_series_from_rows(rows, 365, 7)
+    if base.get("status") != "OK":
+        return {**base, "rolling_1y": rolling_1y}
+    monthly_returns = base.get("monthly_returns", [])
+    positive_months = sum(item["return"] > 0 for item in monthly_returns)
+    base.update({
+        "positive_month_rate": positive_months / len(monthly_returns) if monthly_returns else None,
+        "rolling_1y": rolling_1y,
+    })
+    return base
 
 
 def research_metrics(
