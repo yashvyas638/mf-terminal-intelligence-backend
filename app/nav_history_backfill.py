@@ -273,7 +273,7 @@ def run_history_backfill_batch(
     if not isinstance(stale_after_minutes, int) or isinstance(stale_after_minutes, bool) or not 1 <= stale_after_minutes <= 240:
         raise ValueError("stale_after_minutes must be between 1 and 240")
 
-    selected: list[tuple[int, HistoryWindow, int]] = []
+    selected: list[tuple[int, HistoryWindow, int, str]] = []
     with session_factory.begin() as db:
         # Recover checkpoints left in running state after a process crash. A
         # running request is never reclaimed until its lease-age threshold.
@@ -316,13 +316,29 @@ def run_history_backfill_batch(
                 row.id,
                 HistoryWindow(row.start_date, row.end_date),
                 row.scheme_type,
+                row.sampling_mode or "daily",
             ))
 
     results = []
     completed = failed = 0
-    for checkpoint_id, window, scheme_type in selected:
+    for checkpoint_id, window, scheme_type, sampling_mode in selected:
         try:
             records, report = fetcher(window, scheme_type)
+            report = dict(report)
+            if sampling_mode == "month_end":
+                source_records_valid = len(records)
+                records = retain_month_end_records(records)
+                if not records:
+                    raise ValueError("AMFI month-end window contained no valid scheme NAV observations")
+                report["source_records_valid"] = source_records_valid
+                report["records_discarded_by_sampling"] = source_records_valid - len(records)
+                report["records_valid"] = len(records)
+                report["unique_scheme_codes"] = len({record.scheme_code for record in records})
+                report["min_nav_date"] = min(record.nav_date for record in records).isoformat()
+                report["max_nav_date"] = max(record.nav_date for record in records).isoformat()
+            elif sampling_mode != "daily":
+                raise ValueError(f"unsupported historical NAV sampling mode: {sampling_mode}")
+            report["sampling_mode"] = sampling_mode
             persisted = persist_historical_nav_window(
                 checkpoint_id, records, report, now_factory(), session_factory=session_factory
             )
@@ -330,6 +346,7 @@ def run_history_backfill_batch(
             results.append({
                 "checkpoint_id": checkpoint_id,
                 "scheme_type": scheme_type,
+                "sampling_mode": sampling_mode,
                 "status": "complete",
                 **persisted,
             })
@@ -348,6 +365,7 @@ def run_history_backfill_batch(
             results.append({
                 "checkpoint_id": checkpoint_id,
                 "scheme_type": scheme_type,
+                "sampling_mode": sampling_mode,
                 "status": "failed",
                 "error_class": type(exc).__name__,
                 "error_detail": error_detail,
