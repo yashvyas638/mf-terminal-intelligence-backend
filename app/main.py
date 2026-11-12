@@ -3169,6 +3169,184 @@ def rebalance_preview(
         }
 
 
+@app.get("/v1/portfolios/{portfolio_id}/lookthrough")
+def portfolio_holdings_lookthrough(
+    portfolio_id: int,
+    max_disclosure_age_days: int = Query(default=180, ge=30, le=730),
+) -> dict[str, Any]:
+    """Aggregate verified constituent and sector exposures across owned fund holdings."""
+    owner_id = require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    as_of = datetime.now(timezone.utc).date()
+    total_value = Decimal(str(valuation.get("current_value") or "0"))
+    valuation_complete = valuation.get("valuation_status") == "COMPLETE"
+    security_totals: dict[str, dict[str, Any]] = {}
+    sector_totals: dict[str, Decimal] = {}
+    source_rows = []
+    missing_codes = []
+    stale_codes = []
+    covered_value = Decimal("0")
+    fresh_covered_value = Decimal("0")
+    stale_covered_value = Decimal("0")
+    holdings_with_value = [
+        item for item in valuation.get("holdings", [])
+        if item.get("market_value") is not None and Decimal(str(item.get("market_value"))) > 0
+    ]
+
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        for holding in holdings_with_value:
+            scheme_code = int(holding["scheme_code"])
+            market_value = Decimal(str(holding["market_value"]))
+            disclosure = db.execute(
+                select(FundHoldingDisclosure)
+                .where(
+                    FundHoldingDisclosure.scheme_code == scheme_code,
+                    FundHoldingDisclosure.verification_status == "VERIFIED",
+                    FundHoldingDisclosure.as_of_date <= as_of,
+                )
+                .order_by(
+                    desc(FundHoldingDisclosure.as_of_date),
+                    desc(FundHoldingDisclosure.retrieved_at),
+                    desc(FundHoldingDisclosure.id),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if disclosure is None:
+                missing_codes.append(scheme_code)
+                continue
+
+            age_days = (as_of - disclosure.as_of_date).days
+            is_stale = age_days > max_disclosure_age_days
+            if is_stale:
+                stale_codes.append(scheme_code)
+                stale_covered_value += market_value
+            else:
+                fresh_covered_value += market_value
+            covered_value += market_value
+
+            source_rows.append({
+                "scheme_code": scheme_code,
+                "scheme_name": holding["scheme_name"],
+                "disclosure_id": disclosure.id,
+                "as_of_date": disclosure.as_of_date.isoformat(),
+                "age_days": age_days,
+                "freshness": "STALE" if is_stale else "FRESH",
+                "source_document_url": disclosure.source_document_url,
+                "source_sha256": disclosure.source_sha256,
+                "row_count": disclosure.row_count,
+            })
+
+            rows = db.execute(
+                select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            ).scalars().all()
+            for row in rows:
+                exposure = market_value * Decimal(row.weight_pct) / Decimal("100")
+                security_key = ("ISIN:" if row.is_isin else "NAME:") + row.security_id.upper()
+                aggregate = security_totals.setdefault(
+                    security_key,
+                    {
+                        "security_id": row.security_id,
+                        "security_name": row.security_name,
+                        "is_isin": row.is_isin,
+                        "asset_type": row.asset_type,
+                        "sector": row.sector or "Unclassified",
+                        "lookthrough_value": Decimal("0"),
+                        "scheme_codes": set(),
+                        "source_disclosure_ids": set(),
+                    },
+                )
+                aggregate["lookthrough_value"] += exposure
+                aggregate["scheme_codes"].add(scheme_code)
+                aggregate["source_disclosure_ids"].add(disclosure.id)
+                sector_key = row.sector or "Unclassified"
+                sector_totals[sector_key] = sector_totals.get(sector_key, Decimal("0")) + exposure
+
+    security_rows = []
+    for item in security_totals.values():
+        exposure_value = item["lookthrough_value"]
+        security_rows.append({
+            "security_id": item["security_id"],
+            "security_name": item["security_name"],
+            "is_isin": item["is_isin"],
+            "asset_type": item["asset_type"],
+            "sector": item["sector"],
+            "lookthrough_value": str(exposure_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "portfolio_weight_pct": (
+                float((exposure_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+            "scheme_count": len(item["scheme_codes"]),
+            "scheme_codes": sorted(item["scheme_codes"]),
+            "source_disclosure_ids": sorted(item["source_disclosure_ids"]),
+        })
+    security_rows.sort(
+        key=lambda item: (Decimal(item["lookthrough_value"]), item["security_name"].casefold()),
+        reverse=True,
+    )
+
+    sector_rows = []
+    for sector, exposure_value in sector_totals.items():
+        sector_rows.append({
+            "sector": sector,
+            "lookthrough_value": str(exposure_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "portfolio_weight_pct": (
+                float((exposure_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+        })
+    sector_rows.sort(key=lambda item: Decimal(item["lookthrough_value"]), reverse=True)
+
+    return {
+        "portfolio_id": portfolio_id,
+        "portfolio_name": valuation["portfolio_name"],
+        "as_of_date": as_of.isoformat(),
+        "valuation_date": valuation.get("valuation_date"),
+        "valuation_status": valuation.get("valuation_status"),
+        "valuation_freshness": valuation.get("valuation_freshness"),
+        "portfolio_value": str(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "disclosure_max_age_days": max_disclosure_age_days,
+        "coverage": {
+            "status": (
+                "INCOMPLETE_PORTFOLIO_VALUATION" if not valuation_complete
+                else "PARTIAL_MISSING_DISCLOSURES" if missing_codes
+                else "PARTIAL_STALE_DISCLOSURES" if stale_codes
+                else "COMPLETE"
+            ),
+            "covered_market_value": str(covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "fresh_covered_market_value": str(fresh_covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stale_covered_market_value": str(stale_covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "missing_disclosure_scheme_codes": sorted(missing_codes),
+            "stale_disclosure_scheme_codes": sorted(stale_codes),
+            "covered_weight_pct": (
+                float((covered_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+            "fresh_covered_weight_pct": (
+                float((fresh_covered_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+        },
+        "top_securities": security_rows[:50],
+        "sector_exposure": sector_rows,
+        "sources": source_rows,
+        "methodology": (
+            "Current scheme market value is multiplied by the constituent weight in the latest "
+            "VERIFIED disclosure on or before the as-of date. Same securities are aggregated by "
+            "ISIN where available; non-ISIN rows are grouped by normalized source security ID. "
+            "No holdings are inferred for missing disclosures. Stale disclosures are included "
+            "but explicitly separated from fresh coverage."
+        ),
+        "limitations": [
+            "This is a disclosure look-through, not live underlying security valuation.",
+            "Fund portfolio weights may not total 100% because of cash, derivatives, rounding or disclosure conventions.",
+            "Unverified disclosures are never used.",
+            "Portfolio weight percentages are withheld when portfolio NAV valuation is incomplete.",
+            "Security names and sector classifications are source-reported and may differ across AMCs.",
+        ],
+    }
+
+
 @app.get("/v1/portfolios/{portfolio_id}/tax-lots")
 def portfolio_fifo_tax_lots(
     portfolio_id: int,
