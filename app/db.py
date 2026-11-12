@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from sqlalchemy import CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -317,4 +317,45 @@ class SchemeBenchmarkAssignment(Base):
         CheckConstraint("verification_status IN ('PENDING', 'VERIFIED', 'REJECTED')", name="ck_scheme_benchmark_verification_status"),
         UniqueConstraint("scheme_code", "tier", "valid_from", name="uq_scheme_benchmark_tier_start"),
         Index("ix_scheme_benchmark_active", "scheme_code", "verification_status", "valid_from", "valid_to"),
+    )
+
+
+class FundHoldingDisclosure(Base):
+    """Immutable source snapshot for one scheme's dated portfolio disclosure."""
+
+    __tablename__ = "fund_holding_disclosures"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheme_code: Mapped[int] = mapped_column(ForeignKey("schemes.scheme_code", ondelete="CASCADE"), nullable=False)
+    as_of_date: Mapped[object] = mapped_column(Date, nullable=False)
+    source_document_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_weight_pct: Mapped[object] = mapped_column(Numeric(14, 8), nullable=False)
+    supersedes_disclosure_id: Mapped[int | None] = mapped_column(ForeignKey("fund_holding_disclosures.id"))
+    __table_args__ = (
+        UniqueConstraint("scheme_code", "as_of_date", "source_sha256", name="uq_holding_disclosure_source"),
+        CheckConstraint("row_count > 0", name="ck_holding_disclosure_row_count"),
+        Index("ix_holding_disclosure_scheme_date", "scheme_code", "as_of_date", "retrieved_at"),
+    )
+
+
+class FundHolding(Base):
+    """Normalized security exposure from one immutable portfolio disclosure."""
+
+    __tablename__ = "fund_holdings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    disclosure_id: Mapped[int] = mapped_column(ForeignKey("fund_holding_disclosures.id", ondelete="CASCADE"), nullable=False)
+    security_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    security_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    is_isin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    asset_type: Mapped[str | None] = mapped_column(String(80))
+    sector: Mapped[str | None] = mapped_column(String(120))
+    weight_pct: Mapped[object] = mapped_column(Numeric(14, 8), nullable=False)
+    market_value_inr: Mapped[object | None] = mapped_column(Numeric(24, 2))
+    __table_args__ = (
+        UniqueConstraint("disclosure_id", "security_id", name="uq_holding_disclosure_security"),
+        CheckConstraint("weight_pct BETWEEN -1000 AND 1000", name="ck_fund_holding_weight_bounds"),
+        Index("ix_fund_holding_disclosure_security", "disclosure_id", "security_id"),
+        Index("ix_fund_holding_security", "security_id", "is_isin"),
     )
