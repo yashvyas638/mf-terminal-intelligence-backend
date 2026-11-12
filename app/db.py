@@ -309,6 +309,7 @@ class SchemeBenchmarkAssignment(Base):
     source_document_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     source_document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     __table_args__ = (
         CheckConstraint("tier IN (1, 2)", name="ck_scheme_benchmark_tier"),
