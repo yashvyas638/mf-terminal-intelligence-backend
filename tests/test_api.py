@@ -57,6 +57,8 @@ def test_invalid_key_is_rejected(monkeypatch):
 
 
 def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999991
@@ -140,6 +142,8 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
 
 
 def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999992
@@ -228,6 +232,8 @@ def test_production_startup_fails_fast_when_api_key_is_missing(monkeypatch):
 
 
 def test_portfolio_valuation_uses_average_cost_and_decimal_arithmetic(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999993
@@ -299,6 +305,8 @@ def test_portfolio_valuation_uses_average_cost_and_decimal_arithmetic(monkeypatc
 
 
 def test_portfolio_rejects_blank_names_and_future_transactions(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     client = TestClient(app)
@@ -345,6 +353,8 @@ def test_health_reports_service_identity_and_database_readiness():
 
 
 def test_transaction_can_be_voided_once_with_audited_reason(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     now = datetime.now(timezone.utc)
@@ -415,6 +425,8 @@ def test_statement_fingerprint_preserves_same_day_row_order():
 
 
 def test_stale_nav_is_disclosed_in_valuation_and_blocks_rebalance(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     now = datetime.now(timezone.utc)
