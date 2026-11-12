@@ -60,6 +60,7 @@ from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
 from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
+from app.nav_history_backfill import create_history_backfill_plan
 from app.fund_taxonomy import (
     canonical_asset_class,
     canonical_group,
@@ -76,6 +77,48 @@ MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 _research_snapshot_refresh_lock = threading.Lock()
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
+
+
+def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
+    """Create idempotent history checkpoints only when an operator opts in via deploy env."""
+    if os.getenv("AMFI_HISTORY_PLAN_ON_START", "").strip().lower() != "true":
+        return None
+    if os.getenv("AMFI_HISTORY_CONTRACT_VERIFIED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "Historical backfill planning requires AMFI_HISTORY_CONTRACT_VERIFIED=true"
+        )
+
+    start_raw = os.getenv("AMFI_HISTORY_BACKFILL_START_DATE", "").strip()
+    end_raw = os.getenv("AMFI_HISTORY_BACKFILL_END_DATE", "").strip()
+    if not start_raw or not end_raw:
+        raise RuntimeError(
+            "Historical backfill planning requires AMFI_HISTORY_BACKFILL_START_DATE "
+            "and AMFI_HISTORY_BACKFILL_END_DATE"
+        )
+    try:
+        start_date = date.fromisoformat(start_raw)
+        end_date = date.fromisoformat(end_raw)
+    except ValueError as exc:
+        raise RuntimeError("Historical backfill planning dates must use YYYY-MM-DD") from exc
+    if end_date < start_date:
+        raise RuntimeError("Historical backfill end date must be on or after start date")
+
+    result = create_history_backfill_plan(
+        start_date,
+        end_date,
+        (1, 2, 3),
+        max_window_days=7,
+    )
+    logger.info(
+        "amfi_history_backfill_plan_created",
+        extra={
+            "checkpoints_created": result["checkpoints_created"],
+            "checkpoints_already_present": result["checkpoints_already_present"],
+            "windows_per_scheme_type": result["windows_per_scheme_type"],
+            "network_requests_made": result["network_requests_made"],
+        },
+    )
+    return result
 
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
     """Expose only allow-listed SEBI taxonomy, including the sub-category."""
@@ -118,6 +161,7 @@ async def lifespan(_: FastAPI):
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
             _verify_trusted_database_role(db)
+        _maybe_plan_historical_backfill_from_environment()
     else:
         init_db()
     yield
