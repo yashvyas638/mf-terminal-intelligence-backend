@@ -15,7 +15,9 @@ scheme/date records which prior disclosure it supersedes.
 ## Parser safeguards
 
 - Reject empty or oversized CSV files and more than 20,000 rows.
-- Require security name and percent-to-net-assets columns.
+- Require security name and percent-to-net-assets columns. Accepts common AMC labels and
+  SEBI Format 4C labels including `Name of the instrument`, `% to NAV`, and
+  `Mkt value (Rs in lakhs)`; lakh-denominated market values are converted to INR.
 - Reject duplicate/ambiguous normalized headers, extra row values, invalid
   ISINs, non-finite weights, unsupported numeric bounds and precision loss.
 - A blank optional market value remains null; it is not coerced to zero.
@@ -64,15 +66,37 @@ for top-N and HHI is positive observed disclosed exposure, not total portfolio
 value. Partial disclosure coverage can hide additional concentration, so these
 figures are not a complete risk measure.
 
-## Remaining validation gates
+## Verification completed
 
-1. Capture and retain real official AMC/AMFI disclosure CSV fixtures for
-   representative equity, debt, hybrid, ETF and cash-heavy schemes.
-2. Reconcile reported weight totals, market values and disclosure dates against
-   each original factsheet/portfolio statement.
-3. Validate parser behavior across differing AMC column conventions.
-4. Add route-level tests for owner isolation, stale/missing disclosure coverage,
-   non-ISIN separation and portfolio valuation gaps.
-5. Add security-level risk indicators only after disclosure coverage and source
-   identity are adequate; no security price or volatility is inferred from a
-   monthly holdings disclosure.
+- Route-level portfolio ownership isolation includes the look-through endpoint:
+  a different authenticated user receives not-found rather than portfolio data.
+- Portfolio integration tests exercise verified holdings, coverage, security
+  concentration, identity basis and freshness split.
+- Pure calculation tests cover partial valuation denominator behavior, empty
+  disclosures, negative exposures and fresh/stale concentration splits.
+- Parser regression tests include SEBI Format 4C headers and the rupees-in-lakhs
+  scale conversion.
+
+## Remaining release/data gates
+
+1. Add and reconcile real official AMC/AMFI downloadable spreadsheet fixtures
+   across equity, debt, hybrid, ETF and cash-heavy schemes. Current tests use
+   deterministic synthetic fixtures; they do not claim live source validation.
+2. Extend the ingestion pipeline to read the original XLS/XLSX files directly;
+   the current endpoint accepts CSV text, so a spreadsheet must be converted
+   to CSV before import.
+3. Add an operator workflow for discovery/download, provenance capture,
+   verification and scheduled refresh of AMC/AMFI source files.
+4. Add security-level market-price history only from a licensed/reliable source
+   with corporate-action adjustment and explicit coverage. Monthly holdings
+   disclosures alone cannot produce live security volatility or VaR.
+  
+## Official reference
+
+SEBI Master Circular for Mutual Funds dated 20 March 2026, Chapter 6, clause
+6.1.1 requires monthly scheme portfolio disclosure with ISIN within 10 calendar
+days of month-end; debt schemes have fortnightly disclosure including yield
+within 5 calendar days. The prescribed portfolio format is Format 4C.
+Official sources:
+- AMFI portfolio disclosure portal: https://www.amfiindia.com/online-center/portfolio-disclosure
+- SEBI Master Circular: https://www.sebi.gov.in/sebi_data/attachdocs/mar-2026/1774024028162.pdf
