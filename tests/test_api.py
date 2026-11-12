@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
+from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
@@ -57,6 +57,8 @@ def test_invalid_key_is_rejected(monkeypatch):
 
 
 def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999991
@@ -140,6 +142,8 @@ def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(m
 
 
 def test_statement_import_is_atomic_and_does_not_store_raw_csv(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999992
@@ -228,6 +232,8 @@ def test_production_startup_fails_fast_when_api_key_is_missing(monkeypatch):
 
 
 def test_portfolio_valuation_uses_average_cost_and_decimal_arithmetic(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     scheme_code = 999993
@@ -299,6 +305,8 @@ def test_portfolio_valuation_uses_average_cost_and_decimal_arithmetic(monkeypatc
 
 
 def test_portfolio_rejects_blank_names_and_future_transactions(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     client = TestClient(app)
@@ -345,6 +353,8 @@ def test_health_reports_service_identity_and_database_readiness():
 
 
 def test_transaction_can_be_voided_once_with_audited_reason(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     now = datetime.now(timezone.utc)
@@ -415,6 +425,8 @@ def test_statement_fingerprint_preserves_same_day_row_order():
 
 
 def test_stale_nav_is_disclosed_in_valuation_and_blocks_rebalance(monkeypatch):
+    # These fixtures intentionally exercise the legacy operator path outside production.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     now = datetime.now(timezone.utc)
@@ -1715,3 +1727,77 @@ Open Ended Schemes(Equity Scheme - Large Cap Fund)
         assert scheme.category_group == "Equity Scheme"
         assert scheme.category == "Large Cap Fund"
         assert scheme.asset_class == "Equity"
+
+
+
+def test_production_portfolio_owner_guard_rejects_operator_key_without_user(monkeypatch):
+    """A valid shared operator key must not become a wildcard for private portfolios."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    init_db()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        portfolio = Portfolio(
+            owner_user_id="00000000-0000-0000-0000-000000000001",
+            name="Private production portfolio",
+            currency="INR",
+            created_at=now,
+        )
+        db.add(portfolio)
+        db.commit()
+        db.refresh(portfolio)
+        portfolio_id = portfolio.id
+
+        token = main._authenticated_user_id.set(None)
+        try:
+            with pytest.raises(main.HTTPException) as exc:
+                main._require_portfolio_owner(db, portfolio_id)
+            assert exc.value.status_code == 401
+        finally:
+            main._authenticated_user_id.reset(token)
+
+        token = main._authenticated_user_id.set("00000000-0000-0000-0000-000000000002")
+        try:
+            with pytest.raises(main.HTTPException) as exc:
+                main._require_portfolio_owner(db, portfolio_id)
+            assert exc.value.status_code == 404
+        finally:
+            main._authenticated_user_id.reset(token)
+
+
+
+def test_production_operator_api_key_cannot_read_or_mutate_personal_portfolios(monkeypatch):
+    """The operator key remains useful for operations, never as a personal-data identity."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    with SessionLocal() as db:
+        portfolio = Portfolio(
+            owner_user_id="00000000-0000-0000-0000-000000000003",
+            name="Private account",
+            currency="INR",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(portfolio)
+        db.commit()
+        db.refresh(portfolio)
+        portfolio_id = portfolio.id
+
+    client = TestClient(app)
+    operator = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    assert client.get("/v1/portfolios", headers=operator).status_code == 401
+    assert client.post("/v1/portfolios", headers=operator, json={"name": "Operator portfolio"}).status_code == 401
+    assert client.get(
+        f"/v1/portfolios/{portfolio_id}/transactions", headers=operator
+    ).status_code == 401
+    assert client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        headers=operator,
+        json={
+            "scheme_code": 999991,
+            "transaction_type": "BUY",
+            "transaction_date": "2026-01-01",
+            "units": "1",
+            "nav": "100",
+            "amount": "100",
+        },
+    ).status_code == 401
