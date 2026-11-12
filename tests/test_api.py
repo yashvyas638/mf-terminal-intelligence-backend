@@ -647,7 +647,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             asset_class="Equity",
             plan_type="Direct",
             option_type="Growth",
-            isin_growth=None,
+            isin_growth="INF000X01001",
             isin_dividend_reinvestment=None,
             first_seen_at=now,
             last_seen_at=now,
@@ -671,7 +671,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             scheme_name="Explorer Debt Direct Growth",
             amc="Explorer AMC",
             category_group="Debt Scheme",
-            category="Short Duration Fund",
+            category="Short Term Fund",
             asset_class="Debt",
             plan_type="Direct",
             option_type="Growth",
@@ -687,6 +687,48 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             category_group="Power Select",
             category="PowerUp",
             asset_class="B",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999974,
+            scheme_name="Equity With Invalid Stored Subcategory",
+            amc="Explorer AMC",
+            category_group="Equity Scheme",
+            category="PowerUp",
+            asset_class="Equity",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999975,
+            scheme_name="Life Cycle Ten Year Fund",
+            amc="Explorer AMC",
+            category_group="Life Cycle Funds",
+            category="Life Cycle Fund with Maturity of 10 Years",
+            asset_class=None,
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999976,
+            scheme_name="Legacy Other Scheme FoF",
+            amc="Legacy AMC",
+            category_group="Other Scheme",
+            category="FoF Domestic",
+            asset_class="Other",
             plan_type="Direct",
             option_type="Growth",
             isin_growth=None,
@@ -710,6 +752,10 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "Flexi Cap Fund" in facets.json()["sub_categories"]
     assert "Power Select" not in facets.json()["categories"]
     assert "PowerUp" not in facets.json()["sub_categories"]
+    assert "Life Cycle Funds" in facets.json()["categories"]
+    assert "Life Cycle" not in facets.json()["asset_classes"]
+    assert "Life Cycle Fund with Maturity of 10 Years" in facets.json()["sub_categories"]
+    assert "FoFs (Overseas/Domestic)" in facets.json()["sub_categories"]
     assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
@@ -720,6 +766,15 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert filtered.status_code == 200
     assert filtered.json()["total_matching"] == 1
     assert filtered.json()["items"][0]["scheme_code"] == 999970
+    legacy_other = client.get(
+        "/v1/nav/schemes",
+        params={"category_group": "Other Schemes", "sub_category": "FoFs (Overseas/Domestic)"},
+        headers=headers,
+    )
+    assert legacy_other.status_code == 200
+    assert legacy_other.json()["total_matching"] == 1
+    assert legacy_other.json()["items"][0]["category_group"] == "Other Schemes"
+    assert legacy_other.json()["items"][0]["category"] == "FoFs (Overseas/Domestic)"
 
     page = client.get(
         "/v1/nav/schemes",
@@ -727,9 +782,17 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
         headers=headers,
     )
     assert page.status_code == 200
-    assert page.json()["total_matching"] == 3
+    assert page.json()["total_matching"] == 5  # scheme-name and AMC matches, including two additional taxonomy fixtures
     assert len(page.json()["items"]) == 2
     assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
+    isin_search = client.get(
+        "/v1/nav/schemes",
+        params={"q": "INF000X01001"},
+        headers=headers,
+    )
+    assert isin_search.status_code == 200
+    assert isin_search.json()["total_matching"] == 1
+    assert isin_search.json()["items"][0]["scheme_code"] == 999970
 
     unclassified = client.get(
         "/v1/nav/schemes",
@@ -740,6 +803,16 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert unclassified.json()["items"][0]["category_group"] is None
     assert unclassified.json()["items"][0]["category"] is None
     assert unclassified.json()["items"][0]["asset_class"] is None
+
+    invalid_subcategory = client.get(
+        "/v1/nav/schemes",
+        params={"q": "999974"},
+        headers=headers,
+    )
+    assert invalid_subcategory.status_code == 200
+    assert invalid_subcategory.json()["items"][0]["category_group"] == "Equity Scheme"
+    assert invalid_subcategory.json()["items"][0]["category"] is None
+    assert invalid_subcategory.json()["items"][0]["asset_class"] == "Equity"
 
 
 def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatch):

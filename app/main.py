@@ -60,6 +60,13 @@ from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
 from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
+from app.fund_taxonomy import (
+    canonical_asset_class,
+    canonical_group,
+    canonical_subcategory,
+    scheme_group_filter_values,
+    subcategory_filter_values,
+)
 
 logger = logging.getLogger("mf_terminal.nav")
 
@@ -69,17 +76,13 @@ MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
-VALID_SCHEME_GROUPS = frozenset({"Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Scheme"})
-VALID_ASSET_CLASSES = frozenset({"Equity", "Debt", "Hybrid", "Other"})
-
-
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
-    """Expose only canonical AMFI/SEBI taxonomy, never stale free-text labels."""
-    group = scheme.category_group if scheme.category_group in VALID_SCHEME_GROUPS else None
+    """Expose only allow-listed SEBI taxonomy, including the sub-category."""
+    group = canonical_group(scheme.category_group)
     return {
         "category_group": group,
-        "category": scheme.category if group else None,
-        "asset_class": scheme.asset_class if group and scheme.asset_class in VALID_ASSET_CLASSES else None,
+        "category": canonical_subcategory(group, scheme.category),
+        "asset_class": canonical_asset_class(group, scheme.asset_class),
     }
 
 
@@ -574,7 +577,7 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
 def nav_scheme_facets(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, list[str]]:
-    """Return canonical AMFI/SEBI classification facets, never marketing labels."""
+    """Return only SEBI-allow-listed groups, sub-categories and asset classes."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
         def values(column: Any) -> list[str]:
@@ -582,22 +585,38 @@ def nav_scheme_facets(
                 select(column).where(column.is_not(None), column != "").distinct().order_by(column)
             ).scalars().all()
             return [str(value) for value in rows if str(value).strip()]
-        allowed_groups = {"Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Scheme"}
-        allowed_assets = {"Equity", "Debt", "Hybrid", "Other"}
-        subcategory_rows = db.execute(
-            select(Scheme.category)
-            .where(Scheme.category_group.in_(allowed_groups), Scheme.category.is_not(None), Scheme.category != "")
-            .distinct().order_by(Scheme.category)
-        ).scalars().all()
+
+        group_rows = db.execute(
+            select(Scheme.category_group, Scheme.asset_class).distinct()
+        ).all()
+        valid_groups = {
+            normalized
+            for group, _asset in group_rows
+            if (normalized := canonical_group(group)) is not None
+        }
+        category_rows = db.execute(
+            select(Scheme.category_group, Scheme.category)
+            .where(Scheme.category_group.is_not(None), Scheme.category.is_not(None), Scheme.category != "")
+            .distinct()
+        ).all()
+        valid_subcategories = sorted({
+            category
+            for group, raw_category in category_rows
+            if (category := canonical_subcategory(group, raw_category)) is not None
+        })
+        valid_assets = sorted({
+            asset
+            for group, asset in group_rows
+            if canonical_asset_class(group, asset) is not None
+        })
         return {
             "amcs": values(Scheme.amc),
-            "categories": [value for value in values(Scheme.category_group) if value in allowed_groups],
-            "sub_categories": [str(value) for value in subcategory_rows if str(value).strip()],
-            "asset_classes": [value for value in values(Scheme.asset_class) if value in allowed_assets],
+            "categories": sorted(valid_groups),
+            "sub_categories": valid_subcategories,
+            "asset_classes": valid_assets,
             "plan_types": values(Scheme.plan_type),
             "option_types": values(Scheme.option_type),
         }
-
 
 @app.get("/v1/nav/schemes")
 def list_schemes(
@@ -626,18 +645,23 @@ def list_schemes(
                     else or_(
                         Scheme.scheme_name.ilike(f"%{term}%"),
                         Scheme.amc.ilike(f"%{term}%"),
+                        Scheme.isin_growth.ilike(f"%{term}%"),
+                        Scheme.isin_dividend_reinvestment.ilike(f"%{term}%"),
                     )
                 )
         for column, value in (
             (Scheme.amc, amc),
-            (Scheme.category_group, category_group),
-            (Scheme.category, sub_category or category),
             (Scheme.asset_class, asset_class),
             (Scheme.plan_type, plan_type),
             (Scheme.option_type, option_type),
         ):
             if value and value.strip():
                 query = query.where(column.ilike(value.strip()[:120]))
+        if category_group:
+            query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+        selected_subcategory = sub_category or category
+        if selected_subcategory:
+            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, selected_subcategory)))
         total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
         latest_id = (
             select(NavObservation.id)
@@ -1058,11 +1082,18 @@ def fund_screener(
             if term.isdigit():
                 query = query.where(Scheme.scheme_code == int(term))
             else:
-                query = query.where(Scheme.scheme_name.ilike(f"%{term}%"))
+                pattern = f"%{term}%"
+                query = query.where(or_(
+                    Scheme.scheme_name.ilike(pattern),
+                    Scheme.amc.ilike(pattern),
+                    Scheme.isin_growth.ilike(pattern),
+                    Scheme.isin_dividend_reinvestment.ilike(pattern),
+                ))
         if category_group:
-            query = query.where(Scheme.category_group == category_group)
-        if sub_category or category:
-            query = query.where(Scheme.category == (sub_category or category))
+            query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+        selected_subcategory = sub_category or category
+        if selected_subcategory:
+            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, selected_subcategory)))
         if asset_class:
             query = query.where(Scheme.asset_class == asset_class)
         if plan_type:

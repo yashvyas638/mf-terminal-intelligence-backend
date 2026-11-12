@@ -27,11 +27,14 @@ The repository has a useful backend foundation, but it is not yet the complete M
 ## Fund Explorer classification contract
 
 - The AMFI `NAVAll.txt` file is a grouped feed, not a flat table. The parser now carries AMC and scheme-section headers forward to each scheme row.
-- Scheme group is stored as one of the canonical broad groups: Equity Scheme, Debt Scheme, Hybrid Scheme or Other Scheme. Asset class is derived only from that official group.
-- A sub-category (for example, Large Cap Fund or Short Duration Fund) is stored only when AMFI explicitly supplies the second part of a modern `Group - Sub-category` header. Legacy single-label headers map to a broad group only; the parser does not invent a sub-category from the scheme's marketing name.
-- Fund Explorer and Research Terminal expose separate Scheme Group and Sub-category filters. The `Power Select` tab label is renamed `Fund Screener`; it is a screen name, not a mutual-fund category.
-- Facets exclude unrecognized group and asset-class labels, and sub-categories without a canonical group. This prevents marketing labels or arbitrary database values from becoming categories.
-- Existing scheme-master rows receive the corrected classification on the next successful AMFI NAV refresh. The parser and persistence regression tests cover AMC capture, modern/legacy headings, Equity/Debt/Hybrid mapping and rejection of a deliberately invalid `PowerUp` category label.
+- The current SEBI framework (Circular HO/24/13/15(2)2026-IMD-RAC4/I/5764/2026, 26-Feb-2026) defines five broad groups: Equity Scheme, Debt Scheme, Hybrid Scheme, Life Cycle Funds and Other Schemes. See https://www.sebi.gov.in/sebi_data/attachdocs/feb-2026/1772079826878.pdf.
+- Asset class is derived only where the SEBI broad group has a single meaningful asset class. Life Cycle Funds remains a distinct scheme group and is not fabricated into an asset class.
+- Standard SEBI sub-categories are allow-listed per broad group. AMFI-provided detail labels (including Life Cycle maturity bands and ETF types) are retained only when explicitly present in the AMFI section header; they do not become additional SEBI broad groups.
+- AMFI's explicit `Group - Sub-category` header is required; unknown suffixes such as `PowerUp` are discarded even when paired with a valid Equity Scheme group.
+- Legacy AMFI group aliases are normalized only where their mapping is unambiguous. Retired Solution Oriented labels are not guessed into a current category.
+- Fund Explorer and Research Terminal expose separate Scheme Group and Sub-category filters. The `Power Select` tab label is `Fund Screener`; it is a screen name, not a mutual-fund category.
+- API responses and facets apply the same allow-list to new feed rows and stale persisted values, so arbitrary marketing labels cannot leak into fund cards, filters, watchlists or research metadata.
+- The parser and API regression tests cover five current groups, official passive/other categories, legacy group aliases, and rejection of a deliberately invalid `PowerUp` sub-category under a valid Equity Scheme group.
 
 ## Major product gaps
 

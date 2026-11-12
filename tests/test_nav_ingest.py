@@ -125,7 +125,7 @@ Open Ended Schemes ( Growth )
 
 def test_maps_debt_and_hybrid_headers_without_using_scheme_marketing_names():
     debt, _ = parse_amfi_nav_text(
-        "Open Ended Schemes(Debt Scheme - Short Duration Fund)\n"
+        "Open Ended Schemes(Debt Scheme - Short Term Fund)\n"
         "120586;INF109K01480;-;Power Select Opportunity Fund;123.4567;21-Oct-2026\n"
     )
     hybrid, _ = parse_amfi_nav_text(
@@ -133,8 +133,112 @@ def test_maps_debt_and_hybrid_headers_without_using_scheme_marketing_names():
         "120587;INF109K01498;-;PowerUp Growth Fund;23.4567;21-Oct-2026\n"
     )
     assert debt[0].category_group == "Debt Scheme"
-    assert debt[0].category == "Short Duration Fund"
+    assert debt[0].category == "Short Term Fund"
     assert debt[0].asset_class == "Debt"
     assert hybrid[0].category_group == "Hybrid Scheme"
     assert hybrid[0].category == "Aggressive Hybrid Fund"
     assert hybrid[0].asset_class == "Hybrid"
+
+
+
+def test_rejects_unknown_marketing_subcategory_even_when_broad_group_is_valid():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Equity Scheme - PowerUp)
+120588;INF109K01480;-;PowerUp Growth Fund;23.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Equity Scheme"
+    assert records[0].category is None
+    assert records[0].asset_class == "Equity"
+
+
+def test_maps_2026_life_cycle_group_separately_from_other_schemes():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
+120589;INF109K01480;-;Life Cycle Fund 2036;23.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Life Cycle Funds"
+    assert records[0].category == "Life Cycle Fund with Maturity of 10 Years"
+    assert records[0].asset_class is None
+
+
+
+def test_maps_official_other_scheme_subcategories_and_does_not_guess_retired_groups():
+    other, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Other Scheme - FoF Domestic)\n"
+        "120590;INF109K01480;-;Domestic Fund of Funds;23.4567;21-Oct-2026\n"
+    )
+    retired, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Solution Oriented Scheme)\n"
+        "120591;INF109K01480;-;Retirement Goal Fund;23.4567;21-Oct-2026\n"
+    )
+    assert other[0].category_group == "Other Schemes"
+    assert other[0].category == "FoFs (Overseas/Domestic)"
+    assert other[0].asset_class == "Other"
+    assert retired[0].category_group is None
+    assert retired[0].category is None
+    assert retired[0].asset_class is None
+
+
+
+def test_unrecognized_legacy_group_does_not_inherit_previous_amfi_section():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Equity Scheme - Large Cap Fund)
+120592;INF109K01480;-;Example Large Cap Fund;23.4567;21-Oct-2026
+Open Ended Schemes(Solution Oriented Scheme)
+120593;INF109K01480;-;Legacy Solution Oriented Fund;23.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Equity Scheme"
+    assert records[0].category == "Large Cap Fund"
+    assert records[1].category_group is None
+    assert records[1].category is None
+    assert records[1].asset_class is None
+
+
+
+def test_uses_exact_sebi_hybrid_and_focused_category_labels():
+    focused, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Equity Scheme - Focused Fund (No. of Stocks))\n"
+        "120594;INF109K01480;-;Focused Fund;23.4567;21-Oct-2026\n"
+    )
+    hybrid, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Hybrid Scheme - Multi Asset Allocation)\n"
+        "120595;INF109K01480;-;Multi Asset Allocation;23.4567;21-Oct-2026\n"
+    )
+    assert focused[0].category == "Focused Fund (No. of Stocks)"
+    assert hybrid[0].category == "Multi Asset Allocation"
+
+
+
+def test_parses_current_amfi_heading_variants_without_marketing_name_guessing():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+Open Ended Schemes(Exchange Traded Funds (ETFs) - Gold ETF)
+360 ONE Mutual Fund
+153357;INF579M01BB5;-;360 ONE Gold ETF;Direct Plan;GROWTH Option;136.0845;11-Nov-2026
+Open Ended Schemes(Fund of Funds Scheme (Domestic) - Fund of Funds Scheme (Domestic))
+Aditya Birla Sun Life Mutual Fund
+149780;INF209KB16F2;-;Aditya Birla Sun Life Silver ETF FOF;Direct Plan;GROWTH;28.7087;11-Nov-2026
+Open Ended Schemes(Hybrid Scheme - Dynamic Asset Allocation or Balanced Advantage)
+Aditya Birla Sun Life Mutual Fund
+131670;INF084M01DJ5;-;Aditya Birla Sun Life Balanced Advantage Fund;Direct Plan;GROWTH;134.28;11-Nov-2026
+Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
+ICICI Prudential Mutual Fund
+154578;INF109K1A583;-;ICICI Prudential Life Cycle Fund 2036;;;10.0797;11-Nov-2026
+Open Ended Schemes(Children’s Fund - Childrens' Fund)
+Axis Mutual Fund
+135762;INF846K01WO1;-;Axis Children's Fund;Direct Plan;Growth Option;31.0915;11-Nov-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Other Schemes"
+    assert records[0].category == "Gold ETF"
+    assert records[1].category_group == "Other Schemes"
+    assert records[1].category == "FoFs (Overseas/Domestic)"
+    assert records[2].category_group == "Hybrid Scheme"
+    assert records[2].category == "Dynamic Asset Allocation Fund"
+    assert records[3].category_group == "Life Cycle Funds"
+    assert records[3].category == "Life Cycle Fund with Maturity of 10 Years"
+    assert records[3].asset_class is None
+    assert records[4].category_group is None
+    assert records[4].category is None
