@@ -1150,6 +1150,20 @@ def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkey
     )
     assert duplicate.status_code == 200
     assert duplicate.json()["status"] == "already_imported"
+    assert duplicate.json()["verification_status"] == "PENDING"
+
+    pending_holdings = client.get(f"/v1/holdings/{scheme_a}", headers=headers)
+    assert pending_holdings.status_code == 404
+    verified_a = client.post(
+        f"/v1/holdings/disclosures/{imported_a.json()['disclosure_id']}/verify",
+        headers=headers,
+    )
+    verified_b = client.post(
+        f"/v1/holdings/disclosures/{imported_b.json()['disclosure_id']}/verify",
+        headers=headers,
+    )
+    assert verified_a.status_code == 200 and verified_a.json()["verification_status"] == "VERIFIED"
+    assert verified_b.status_code == 200 and verified_b.json()["verification_status"] == "VERIFIED"
 
     overlap = client.get(
         f"/v1/analytics/holdings-overlap?scheme_a={scheme_a}&scheme_b={scheme_b}",
