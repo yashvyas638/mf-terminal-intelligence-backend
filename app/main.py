@@ -1087,7 +1087,7 @@ def create_portfolio(
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
     with SessionLocal() as db:
-        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, owner_user_id=_authenticated_user_id.get(), created_at=datetime.now(timezone.utc))
+        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, owner_user_id=_authenticated_user_id.get() or "legacy-operator", created_at=datetime.now(timezone.utc))
         db.add(portfolio)
         db.commit()
         db.refresh(portfolio)
