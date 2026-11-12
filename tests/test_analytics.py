@@ -16,6 +16,33 @@ def test_performance_metrics_are_finite_and_have_expected_return():
     assert result["max_drawdown"] == 0
 
 
+def test_period_returns_reject_stale_base_nav_and_report_coverage_gap():
+    latest = date(2026, 11, 11)
+    points = [
+        (date(2025, 10, 31), 100.0),
+        (latest, 120.0),
+    ]
+    result = performance_metrics(points)
+
+    assert result["period_returns"]["1M"] is None
+    assert result["period_returns"]["3M"] is None
+    assert result["period_returns"]["6M"] is None
+    assert result["period_returns"]["1Y"] == pytest.approx(0.20)
+    assert result["period_base_date_gaps_days"]["1M"] == 346
+    assert result["period_base_date_gaps_days"]["1Y"] == 11
+
+
+def test_period_returns_accept_recent_actual_daily_base_nav():
+    points = [
+        (date(2026, 10, 12), 100.0),
+        (date(2026, 11, 11), 110.0),
+    ]
+    result = performance_metrics(points)
+
+    assert result["period_returns"]["1M"] == pytest.approx(0.10)
+    assert result["period_base_date_gaps_days"]["1M"] == 0
+
+
 def test_max_drawdown():
     assert max_drawdown([100, 120, 90, 110]) == -0.25
 

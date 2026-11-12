@@ -1290,6 +1290,7 @@ def refresh_fund_research_snapshots(
                 "latest_nav": metrics.get("latest_nav"),
                 "total_return": metrics.get("total_return"),
                 "period_returns": period,
+                "period_base_date_gaps_days": metrics.get("period_base_date_gaps_days", {}),
                 "rolling_1y": {
                     "status": rolling.get("status"),
                     "observations": rolling.get("observations", 0),
