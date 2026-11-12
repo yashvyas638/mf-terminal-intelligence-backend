@@ -42,10 +42,11 @@ Goal APIs are owner-scoped to the verified Supabase user:
 A goal stores:
 - Target amount in today's rupees and target date.
 - Current invested amount and monthly contribution.
+- Optional link to one of the user's own portfolios. When linked, the projection uses that portfolio's latest complete and fresh market value instead of the manually entered current amount. Missing or stale NAV coverage blocks the linked projection rather than substituting an incomplete value.
 - User-entered inflation assumption.
 - User-entered low/base/high annual return assumptions.
 
-The projection compounds monthly, assumes contributions at month-end, inflates the target amount, and reports projected future value, shortfall/surplus and required monthly contribution for each scenario. It does not assign probabilities to scenarios.
+The projection compounds monthly, assumes contributions at month-end, inflates the target amount, and reports projected future value, shortfall/surplus and required monthly contribution for each scenario. A linked portfolio is owner-checked on create/update and is revalued on every projection request; its market value is never cached as a stale goal balance. It does not assign probabilities to scenarios.
 
 ## Limitations
 
