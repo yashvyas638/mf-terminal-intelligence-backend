@@ -59,3 +59,9 @@ def test_financial_trigger_functions_pin_safe_search_path():
     }
     for config in configs.values():
         assert any(value.replace(" ", "") == "search_path=pg_catalog,public" for value in config)
+    with engine.connect() as connection:
+        installed = connection.execute(text(
+            "SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.portfolio_transactions'::regclass "
+            "AND tgname = 'trg_portfolio_transactions_immutable' AND NOT tgisinternal"
+        )).scalar_one_or_none()
+    assert installed == 1
