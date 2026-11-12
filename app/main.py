@@ -21,7 +21,7 @@ from typing import Any, Literal
 from pathlib import Path
 
 import requests
-from fastapi import Body, FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, desc, func, or_, select, text, tuple_
