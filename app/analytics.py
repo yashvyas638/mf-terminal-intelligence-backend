@@ -44,6 +44,7 @@ def drawdown_profile(points: Iterable[tuple[date, float]]) -> dict:
     peak_date, peak_value = rows[0]
     worst = 0.0
     worst_peak_date = peak_date
+    worst_peak_value = peak_value
     worst_trough_date = peak_date
     worst_recovery_date = None
     worst_recovery_days = None
@@ -77,6 +78,7 @@ def drawdown_profile(points: Iterable[tuple[date, float]]) -> dict:
         if drawdown < worst:
             worst = drawdown
             worst_peak_date = peak_date
+            worst_peak_value = peak_value
             worst_trough_date = current_date
             worst_recovery_date = None
             worst_recovery_days = None
@@ -89,10 +91,11 @@ def drawdown_profile(points: Iterable[tuple[date, float]]) -> dict:
             longest_underwater_recovery = None
 
     if worst < 0:
+        # Cache the value at the selected peak during the first pass. Looking
+        # it up with a fresh linear scan for every candidate recovery date made
+        # this second pass quadratic for long, unrecovered drawdowns.
         for current_date, current_value in rows:
-            if current_date > worst_trough_date and current_value >= next(
-                value for observed_date, value in rows if observed_date == worst_peak_date
-            ):
+            if current_date > worst_trough_date and current_value >= worst_peak_value:
                 worst_recovery_date = current_date
                 worst_recovery_days = (current_date - worst_peak_date).days
                 break
