@@ -424,3 +424,22 @@ def test_history_batch_defers_research_refresh_while_checkpoints_remain(monkeypa
         "reason": "history_windows_remaining",
         "unfinished_windows": 3,
     }
+
+
+def test_research_refresh_waits_for_hybrid_five_year_baseline(monkeypatch):
+    calls = []
+    monkeypatch.setenv("AMFI_HISTORY_PLAN_MODE", "hybrid")
+    monkeypatch.setattr(
+        main,
+        "history_backfill_status",
+        lambda: {"groups": [{"checkpoint_status": "complete", "windows": 200}]},
+    )
+    monkeypatch.setattr(main, "_hybrid_baseline_buffer_complete", lambda: False)
+    monkeypatch.setattr(
+        main,
+        "_refresh_research_snapshots_after_ingestion",
+        lambda: calls.append("refresh") or {"status": "refreshed"},
+    )
+    result = main._maybe_refresh_research_after_history_completion()
+    assert result == {"status": "deferred", "reason": "five_year_baseline_incomplete"}
+    assert calls == []
