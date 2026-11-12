@@ -30,11 +30,11 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <main class="wrap">
 <div class="eyebrow">Research / India mutual funds</div><h1>Fund Explorer & Research</h1><p class="sub">Screen the stored scheme universe, inspect NAV-derived performance and study rolling-return behaviour.</p>
 <div class="notice" id="authStatus">Sign in with your own account to access research and your private portfolios.</div><div class="notice" id="notice">Sign in to load stored research data. Metrics are calculated from accepted AMFI NAV observations; unavailable reference data is shown as unavailable, never estimated.</div>
-<div class="tabs"><button class="active" data-tab="screener">Power Select · Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
+<div class="tabs"><button class="active" data-tab="screener">Fund Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
 <section id="screener" class="panel">
 <div class="toolbar">
 <input id="q" type="search" placeholder="Search fund name or scheme code">
-<select id="category"><option value="">All categories</option></select>
+<select id="category" aria-label="Scheme group"><option value="">All scheme groups</option></select><select id="subCategory" aria-label="Scheme sub-category"><option value="">All sub-categories</option></select>
 <select id="assetClass"><option value="">All asset classes</option></select>
 <select id="plan"><option value="">All plans</option></select>
 <select id="option"><option value="">All options</option></select>
