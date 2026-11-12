@@ -1,10 +1,11 @@
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.db import init_db
+from app.db import FundWatchlistItem, Scheme, SessionLocal, init_db
 
 
 def test_supabase_users_get_isolated_portfolios(monkeypatch):
@@ -25,6 +26,31 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
 
     monkeypatch.setattr(main.requests, "get", verify_user)
     client = TestClient(main.app)
+
+    # Give the watchlist isolation test one known public scheme fixture.
+    scheme_code = 99877001
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        db.query(FundWatchlistItem).filter(
+            FundWatchlistItem.scheme_code == scheme_code
+        ).delete(synchronize_session=False)
+        db.query(Scheme).filter(Scheme.scheme_code == scheme_code).delete(
+            synchronize_session=False
+        )
+        db.add(Scheme(
+            scheme_code=scheme_code,
+            scheme_name="Auth Isolation Test Scheme",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+            category_group="Equity Scheme",
+            category="Flexi Cap Fund",
+            asset_class="Equity",
+            plan_type="Direct Plan",
+            option_type="Growth Option",
+        ))
+        db.commit()
 
     assert client.get("/v1/nav/status").status_code == 401
 
@@ -63,6 +89,64 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
         headers=user_a_headers,
     )
     assert own_valuation.status_code == 200
+
+    # Watchlist rows are scoped by verified user identity, even for the same scheme.
+    added_by_a = client.post(
+        "/v1/watchlist",
+        headers=user_a_headers,
+        json={"scheme_code": scheme_code},
+    )
+    assert added_by_a.status_code == 201
+    assert client.get("/v1/watchlist", headers=user_a_headers).json()["count"] == 1
+    assert client.get("/v1/watchlist", headers=user_b_headers).json()["count"] == 0
+    assert client.delete(
+        f"/v1/watchlist/{scheme_code}",
+        headers=user_b_headers,
+    ).status_code == 404
+
+    added_by_b = client.post(
+        "/v1/watchlist",
+        headers=user_b_headers,
+        json={"scheme_code": scheme_code},
+    )
+    assert added_by_b.status_code == 201
+    assert client.get("/v1/watchlist", headers=user_a_headers).json()["count"] == 1
+    assert client.get("/v1/watchlist", headers=user_b_headers).json()["count"] == 1
+
+    # Private financial goals must never appear in, or be mutable by, another account.
+    goal_payload = {
+        "name": "User A Retirement Goal",
+        "target_amount_today": "1000000",
+        "target_date": (date.today() + timedelta(days=365)).isoformat(),
+        "current_amount": "100000",
+        "monthly_contribution": "10000",
+        "inflation_rate": 0.06,
+        "annual_return_low": 0.04,
+        "annual_return_base": 0.10,
+        "annual_return_high": 0.14,
+    }
+    created_goal = client.post("/v1/goals", headers=user_a_headers, json=goal_payload)
+    assert created_goal.status_code == 201
+    goal_id = created_goal.json()["id"]
+    assert client.get("/v1/goals", headers=user_a_headers).json()["count"] == 1
+    assert client.get("/v1/goals", headers=user_b_headers).json()["count"] == 0
+    assert client.get(
+        f"/v1/goals/{goal_id}/projection",
+        headers=user_b_headers,
+    ).status_code == 404
+    assert client.put(
+        f"/v1/goals/{goal_id}",
+        headers=user_b_headers,
+        json={**goal_payload, "name": "Attempted cross-account edit"},
+    ).status_code == 404
+    assert client.delete(
+        f"/v1/goals/{goal_id}",
+        headers=user_b_headers,
+    ).status_code == 404
+    assert client.get(
+        f"/v1/goals/{goal_id}/projection",
+        headers=user_a_headers,
+    ).status_code == 200
 
 
 def test_invalid_supabase_session_is_rejected(monkeypatch):
