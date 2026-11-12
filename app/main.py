@@ -1622,6 +1622,9 @@ def fund_screener(
             FundResearchSnapshot.window_days == days,
             FundResearchSnapshot.observations >= min_observations,
             FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
+            sort_column.is_not(None),
+            Scheme.category_group.is_not(None),
+            Scheme.category.is_not(None),
         )
         .subquery()
     )
@@ -1630,11 +1633,12 @@ def fund_screener(
         query = (
             select(FundResearchSnapshot, Scheme, category_ranked.c.category_rank)
             .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
-            .join(category_ranked, category_ranked.c.scheme_code == Scheme.scheme_code)
+            .outerjoin(category_ranked, category_ranked.c.scheme_code == Scheme.scheme_code)
             .where(
                 FundResearchSnapshot.window_days == days,
                 FundResearchSnapshot.observations >= min_observations,
                 FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
+                sort_column.is_not(None),
             )
         )
         if q:
