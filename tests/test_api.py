@@ -923,8 +923,8 @@ def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypat
                 isin_dividend_reinvestment=None,
                 first_seen_at=now,
                 last_seen_at=now,
-                plan_type=source_labels[code][0],
-                option_type=source_labels[code][1],
+                plan_type="Direct",
+                option_type="Growth",
             ))
             db.commit()
 
@@ -1028,8 +1028,8 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
                 category_group=None if code == scheme_codes[3] else "Equity Scheme",
                 category=None if code == scheme_codes[3] else "CI Test Category",
                 asset_class=None if code == scheme_codes[3] else "Equity",
-                plan_type="Direct",
-                option_type="Growth",
+                plan_type=source_labels[code][0],
+                option_type=source_labels[code][1],
             ))
         db.flush()
         nav_rows = []
