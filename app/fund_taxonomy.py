@@ -91,10 +91,6 @@ _GROUP_ALIASES = {
     "index funds": "Other Schemes",
     "index funds etfs": "Other Schemes",
     "exchange traded funds etfs": "Other Schemes",
-    "solution oriented scheme": "Other Schemes",
-    "solution oriented schemes": "Other Schemes",
-    "children": "Other Schemes",
-    "retirement": "Other Schemes",
 }
 
 _SUBCATEGORY_ALIASES = {
