@@ -28,7 +28,7 @@ def test_database_rejects_non_positive_portfolio_transaction_units():
                     last_seen_at=now,
                 )
             )
-        portfolio = Portfolio(name="Constraint Test", currency="INR", created_at=now)
+        portfolio = Portfolio(name="Constraint Test", currency="INR", owner_user_id="legacy-operator", created_at=now)
         db.add(portfolio)
         db.commit()
         portfolio_id = portfolio.id
