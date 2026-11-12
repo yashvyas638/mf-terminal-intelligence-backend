@@ -71,22 +71,23 @@ def upgrade() -> None:
             "FROM PUBLIC, anon, authenticated"
         )
 
-    # Index foreign-key columns used by joins and referential checks.
+    # SQLite does not accept schema-qualified table names in CREATE INDEX.
+    table_schema = "public." if dialect == "postgresql" else ""
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_nav_observations_source_snapshot "
-        "ON public.nav_observations (source_snapshot_id)"
+        f"ON {table_schema}nav_observations (source_snapshot_id)"
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_nav_revisions_previous_snapshot "
-        "ON public.nav_observation_revisions (previous_source_snapshot_id)"
+        f"ON {table_schema}nav_observation_revisions (previous_source_snapshot_id)"
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_nav_revisions_replacement_snapshot "
-        "ON public.nav_observation_revisions (replacement_source_snapshot_id)"
+        f"ON {table_schema}nav_observation_revisions (replacement_source_snapshot_id)"
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_portfolio_transactions_scheme_code "
-        "ON public.portfolio_transactions (scheme_code)"
+        f"ON {table_schema}portfolio_transactions (scheme_code)"
     )
 
 
