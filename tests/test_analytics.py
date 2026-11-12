@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.analytics import benchmark_comparison_metrics, max_drawdown, performance_metrics, rolling_return_series, research_metrics, xirr
+from app.analytics import benchmark_comparison_metrics, max_drawdown, performance_metrics, portfolio_risk_metrics, rolling_return_series, research_metrics, xirr
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
@@ -144,3 +144,49 @@ def test_benchmark_comparison_returns_insufficient_data_without_common_dates():
     )
     assert result["status"] == "INSUFFICIENT_DATA"
     assert result["common_observations"] == 0
+
+def test_portfolio_risk_uses_current_value_weights_and_reports_empirical_tail_risk():
+    start = date(2025, 1, 1)
+    first = []
+    second = []
+    value_a = 100.0
+    value_b = 100.0
+    for index in range(100):
+        observed = start + timedelta(days=index)
+        return_a = (0.001 if index % 6 else -0.012)
+        return_b = (0.0007 if index % 8 else -0.008)
+        value_a *= 1 + return_a
+        value_b *= 1 + return_b
+        first.append((observed, value_a))
+        second.append((observed, value_b))
+
+    result = portfolio_risk_metrics([(0.7, first), (0.3, second)])
+    assert result["status"] == "OK"
+    assert result["common_observations"] == 100
+    assert result["daily_return_observations"] == 99
+    assert result["annualized_volatility"] > 0
+    assert result["historical_var_95"] > 0
+    assert result["historical_cvar_95"] >= result["historical_var_95"]
+    assert result["worst_1d_return"] < 0
+    assert result["worst_5d_return"] is not None
+    assert result["worst_21d_return"] is not None
+    assert result["max_drawdown"] < 0
+
+
+def test_portfolio_risk_does_not_forward_fill_or_join_across_large_gaps():
+    start = date(2025, 1, 1)
+    first = [(start + timedelta(days=index), 100 + index * 0.2) for index in range(80)]
+    second = [(start + timedelta(days=index), 100 + index * 0.1) for index in range(0, 80, 10)]
+    result = portfolio_risk_metrics([(0.5, first), (0.5, second)])
+    assert result["common_observations"] == 8
+    assert result["daily_return_observations"] == 0
+    assert result["status"] == "INSUFFICIENT_HISTORY"
+    assert result["annualized_volatility"] is None
+
+
+def test_portfolio_risk_returns_insufficient_history_for_short_series():
+    start = date(2025, 1, 1)
+    points = [(start + timedelta(days=index), 100 + index) for index in range(10)]
+    result = portfolio_risk_metrics([(1.0, points)])
+    assert result["status"] == "INSUFFICIENT_HISTORY"
+    assert result["annualized_volatility"] is None
