@@ -76,8 +76,6 @@ def test_batch_commits_nav_and_checkpoint_then_status_reports_totals(factory):
         session_factory=factory,
         enabled=True,
         source_contract_verified=True,
-        enabled=True,
-        source_contract_verified=True,
     )
     assert result["completed"] == 1
     assert result["failed"] == 0
@@ -113,6 +111,8 @@ def test_failed_window_is_recorded_and_can_be_retried(factory):
     retried = run_history_backfill_batch(
         fetcher=lambda window, scheme_type: ([_record()], _report()),
         session_factory=factory,
+        enabled=True,
+        source_contract_verified=True,
     )
     assert retried["completed"] == 1
     with factory() as db:
