@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, audit/production-foundation, feature/research-layer-integration, feature/research-layer-integration-sync]
+    branches: [main, audit/production-foundation, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified]
   pull_request:
     branches: [main, audit/production-foundation]
   workflow_dispatch:
@@ -32,6 +32,7 @@ jobs:
         run: |
           node --check app/static/dashboard.js
           node --check app/static/research.js
+          node --check app/static/fund-detail.js
       - name: Test SQLite
         run: python -m pytest -q
         env:
