@@ -872,6 +872,25 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
         }
 
 
+@app.post("/v1/schemes/metadata/refresh")
+def refresh_scheme_metadata_endpoint(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Refresh the shared scheme master from AMFI without writing NAV observations."""
+    require_api_key(x_api_key)
+    try:
+        return _refresh_scheme_metadata_from_amfi()
+    except (requests.RequestException, ValueError, RuntimeError) as exc:
+        logger.warning(
+            "amfi_scheme_metadata_refresh_failed error_type=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            502,
+            f"AMFI scheme metadata refresh failed: {type(exc).__name__}; existing metadata was not changed where the transaction rolled back",
+        ) from None
+
+
 @app.get("/v1/nav/facets")
 def nav_scheme_facets(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
