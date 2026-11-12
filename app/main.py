@@ -1190,8 +1190,7 @@ def preview_portfolio_statement(
     transactions = _statement_transactions(payload.csv_text)
     statement_sha256 = _canonical_statement_fingerprint(transactions)
     with SessionLocal() as db:
-        if db.get(Portfolio, portfolio_id) is None:
-            raise HTTPException(404, "Portfolio not found")
+        _require_portfolio_owner(db, portfolio_id)
         existing_batch = db.execute(
             select(PortfolioImportBatch).where(
                 PortfolioImportBatch.portfolio_id == portfolio_id,
@@ -1383,6 +1382,7 @@ def transaction_audit_history(
         transaction = db.get(PortfolioTransaction, transaction_id)
         if transaction is None or transaction.portfolio_id != portfolio_id:
             raise HTTPException(404, "Portfolio transaction not found")
+        _require_portfolio_owner(db, portfolio_id)
         events = db.execute(
             select(PortfolioTransactionAudit)
             .where(PortfolioTransactionAudit.transaction_id == transaction_id)
