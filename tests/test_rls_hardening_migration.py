@@ -82,7 +82,13 @@ def test_public_cannot_execute_public_schema_functions():
              WHERE n.nspname = 'public' AND p.prokind = 'f'
         """)).scalars().all()
         for signature in functions:
-            allowed = connection.execute(text(
-                "SELECT has_function_privilege('public', :signature, 'EXECUTE')"
-            ), {"signature": signature}).scalar_one()
+            allowed = connection.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_proc p
+                    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                    WHERE p.oid = to_regprocedure(:signature)
+                      AND a.grantee = 0
+                      AND a.privilege_type = 'EXECUTE'
+                )
+            """), {"signature": signature}).scalar_one()
             assert not allowed, f"PUBLIC can execute {signature}"
