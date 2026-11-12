@@ -246,23 +246,14 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     }
 
     # Historical backfill writes NAV observations directly rather than through
-    # the daily refresh endpoint. Build the research cache only after every
-    # non-paused checkpoint is settled, so rankings never freeze a partial run.
+    # the daily refresh endpoint. Reuse the single gate that verifies both
+    # settled checkpoints and the full-resolution 5Y baseline buffer.
     research_refresh: dict[str, Any] = {
         "status": "deferred",
-        "reason": "history_windows_remaining",
+        "reason": "history_backfill_failed",
     }
     if failed == 0:
-        history_status = history_backfill_status()
-        unfinished = sum(
-            int(group.get("windows", 0))
-            for group in history_status.get("groups", [])
-            if group.get("checkpoint_status") in {"pending", "running", "failed"}
-        )
-        if unfinished == 0:
-            research_refresh = _refresh_research_snapshots_after_ingestion()
-        else:
-            research_refresh["unfinished_windows"] = unfinished
+        research_refresh = _maybe_refresh_research_after_history_completion()
     result["research_snapshot_refresh"] = research_refresh
 
     first_failure = next(
