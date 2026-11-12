@@ -38,6 +38,13 @@ class Scheme(Base):
     isin_dividend_reinvestment: Mapped[str | None] = mapped_column(String(40))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    amc: Mapped[str | None] = mapped_column(String(200))
+    structure: Mapped[str | None] = mapped_column(String(40))
+    category_group: Mapped[str | None] = mapped_column(String(120))
+    category: Mapped[str | None] = mapped_column(String(160))
+    asset_class: Mapped[str | None] = mapped_column(String(40))
+    plan_type: Mapped[str | None] = mapped_column(String(20))
+    option_type: Mapped[str | None] = mapped_column(String(20))
 
 
 class IngestionSnapshot(Base):
