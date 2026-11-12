@@ -43,3 +43,55 @@ jobs:
               "payload_sha256": report["payload_sha256"],
           }, indent=2))
           PY
+      - name: Fetch and validate AMFI historical archives without database writes
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          from app.nav_backfill import HistoryWindow
+          from app.nav_history_source import fetch_amfi_history_window
+
+          end_date = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
+          start_date = end_date - timedelta(days=6)
+          window = HistoryWindow(start_date, end_date)
+          summaries = []
+
+          # Validate open-ended, close-ended, and interval scheme types.
+          for scheme_type in (1, 2, 3):
+              records, report = fetch_amfi_history_window(
+                  window, scheme_type, max_attempts=3
+              )
+              if report.get("header_verified") is not True:
+                  raise SystemExit(
+                      f"AMFI type {scheme_type} historical archive header was not verified"
+                  )
+              if report["records_valid"] < (1000 if scheme_type == 1 else 1):
+                  raise SystemExit(
+                      f"AMFI type {scheme_type} returned only {report['records_valid']} valid rows"
+                  )
+              if any(row.nav_date < start_date or row.nav_date > end_date for row in records):
+                  raise SystemExit(
+                      f"AMFI type {scheme_type} contains dates outside the requested range"
+                  )
+
+              summaries.append({
+                  "scheme_type": scheme_type,
+                  "source": report["source_url"],
+                  "http_status": report["http_status"],
+                  "requested_start_date": report["requested_start_date"],
+                  "requested_end_date": report["requested_end_date"],
+                  "bytes_received": report["bytes_received"],
+                  "records_valid": report["records_valid"],
+                  "unique_scheme_codes": report["unique_scheme_codes"],
+                  "min_nav_date": report["min_nav_date"],
+                  "max_nav_date": report["max_nav_date"],
+                  "schema_variant": report["schema_variant"],
+                  "invalid_rows": report["invalid_rows"],
+                  "invalid_issue_counts": report["invalid_issue_counts"],
+                  "payload_sha256": report["payload_sha256"],
+              })
+
+          print(json.dumps({"scheme_type_checks": summaries, "database_writes": 0}, indent=2))
+          PY
