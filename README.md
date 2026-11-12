@@ -6,7 +6,7 @@ A deployable FastAPI service that retrieves the official AMFI all-schemes NAV fe
 
 ## What it does
 
-- Protects every data endpoint with a constant-time API-key check.
+- Protects `/v1/*` data endpoints with a verified Supabase Auth session or a server-side operator API key; NAV refresh remains restricted to the server-side operator key.
 - Downloads AMFI's official `NAVAll.txt` source only when an authenticated refresh is requested.
 - Rejects empty, malformed, oversized, invalid-UTF-8, stale, and unexpectedly small source responses before changing persisted data.
 - Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.
@@ -47,13 +47,13 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /health` | Public database/service readiness probe; exposes no data or secrets. |
-| `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot. |
+| `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot; server-side operator key only. |
 | `GET /v1/nav/status` | Latest ingestion snapshot and retrieval freshness. |
 | `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |\n| `GET /v1/nav/schemes/{scheme_code}` | Scheme metadata, ISINs, latest stored NAV, observation coverage and NAV-derived metrics. |\n| `POST /v1/analytics/compare` | Compare 2–10 schemes on stored AMFI NAV series; each scheme's coverage is reported independently. |
 | `GET /v1/nav/history/{scheme_code}?days=` | Stored NAV history for one scheme. |
 | `GET /v1/nav/snapshot/latest` | Latest full validation report. |
-| `POST /v1/portfolios` | Creates a private workspace portfolio for the single trusted operator. |
-| `GET /v1/portfolios` | Lists available portfolios. |
+| `POST /v1/portfolios` | Creates a portfolio owned by the authenticated Supabase user (or trusted server-side operator). |
+| `GET /v1/portfolios` | Lists only the signed-in user's portfolios; operator access is server-side only. |
 | `POST /v1/portfolios/{id}/transactions` | Creates a validated BUY/SELL ledger transaction. |
 | `POST /v1/portfolios/{id}/transactions/{transaction_id}/void` | Audited void; never deletes a financial record. |
 | `GET /v1/portfolios/{id}/transactions/{transaction_id}/audit` | Immutable, authenticated event history for one transaction. |
@@ -62,7 +62,13 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `POST /v1/portfolios/{id}/rebalance/preview` | Non-executable target-allocation trade estimate using stored NAVs. |
 | `GET /v1/portfolios/{id}/valuation` | Latest stored-NAV valuation, with explicit missing-coverage status. |
 
-Except `/health`, every endpoint requires `X-API-Key`.
+**Authentication rules**
+
+- Browser/user access to `/v1/*` requires `Authorization: Bearer <Supabase access token>`; the backend verifies the token against Supabase Auth and scopes portfolio access to the verified user ID.
+- Trusted scheduled/server automation uses `X-API-Key`; the key must remain in server-side secret storage and must never be embedded in browser JavaScript, HTML, mobile apps, or committed files.
+- `POST /v1/nav/refresh` is deliberately excluded from browser-session auth and requires the server-side operator key.
+- `GET /health` is public and reports only service/database readiness, not portfolio or account data.
+- Supabase RLS and table grants provide database-layer defence in depth. Application ownership checks also apply to portfolio reads, writes, imports, audit history, valuation and rebalance previews.
 
 ## Deployment on Render
 
@@ -139,7 +145,7 @@ The product is developed in seven gated phases. Read these documents before chan
 - [UX and Design System — terminal experience and interaction standards](docs/UX_AND_DESIGN_SYSTEM.md)
 - [Final Release Runbook — Supabase, Render, smoke tests and rollback](docs/FINAL_RELEASE_RUNBOOK.md)
 
-**Current phase: P0 — OPEN / BLOCKED.** Do not begin P1 implementation until P0 exit evidence is complete and explicitly signed off. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
+**Current phase: P0 — OPEN / BLOCKED.** P0 security/authentication foundations are implemented and deployed through Alembic revision `0011_research_security_tuning`; automated SQLite/PostgreSQL CI and simulated two-user isolation tests pass. Remaining P0 exit evidence includes real two-account production login/isolation verification, Auth provider/redirect confirmation, backup restore drill, live AMFI refresh/quality verification, and full production endpoint smoke tests. P1 analytics work must not be represented as complete until its benchmark/peer data dependencies and acceptance tests pass. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
 
 
 ## P0 security remediation
