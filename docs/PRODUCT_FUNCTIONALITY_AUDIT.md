@@ -16,7 +16,7 @@ The repository has a useful backend foundation, but it is not yet the complete M
 
 ## Implemented API capabilities (not equivalent to complete UI)
 
-- NAV health/status, scheme search/list, scheme details and NAV history.
+- NAV health/status, scheme search/list with AMC/category/asset-class/plan/option filters and server-side pagination, scheme details with NAV history series and NAV history API.
 - Single-scheme performance/research metrics, screener and 2–10 scheme comparison.
 - Portfolio create/list, transaction create/list, statement CSV preview/import, void/audit, valuation and rebalance preview.
 - User ownership checks and PostgreSQL RLS foundations.
@@ -30,11 +30,11 @@ The repository has a useful backend foundation, but it is not yet the complete M
 |---|---|---|
 | Authentication | Dashboard and Research Terminal flows implemented in this PR; live E2E pending | Verified provider settings, email delivery, redirect configuration and two-account browser test |
 | Home | Basic metrics and data health | Portfolio-first command centre, alerts, activity and actionable insights |
-| Fund Explorer | Basic text search and 30-row page | Filters, pagination, AMC/category/plan/option/benchmark metadata and watchlist |
-| Fund profile | Basic NAV/ISIN/performance detail | Factsheet, AUM, expense ratio, manager, benchmark, exit load, documents and coverage view |
+| Fund Explorer | Search, AMC/category/asset-class/plan/option filters, facets and server-side pagination (this PR; classification facets depend on stored metadata coverage) | Watchlist, benchmark metadata and global metric-ranked screening |
+| Fund profile | Scheme metadata, NAV-derived metrics, coverage and historical NAV line chart (this PR; end-to-end pending) | Factsheet, AUM, expense ratio, manager, benchmark TRI, exit load, documents and distribution-adjusted return history |
 | Research | NAV-derived CAGR/volatility/drawdown and ratios | Full verified historical NAV, calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
-| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL, transaction history, audited void, holdings breakdown, cost basis, realized/unrealized/total gain-loss and conditional XIRR (this PR; end-to-end pending) | Allocation visuals, cashflow attribution, multi-portfolio overview and tax/exit-load-aware performance |
+| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL, transaction history, audited void, holdings breakdown, cost basis, realized/unrealized/total gain-loss, conditional XIRR and scheme concentration bars (this PR; end-to-end pending) | Asset-class/sector exposure, cashflow attribution, multi-portfolio overview and tax/exit-load-aware performance |
 | Rebalance | Target-weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
 | Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
 | Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
@@ -52,6 +52,7 @@ The repository has a useful backend foundation, but it is not yet the complete M
 
 ## Evidence boundaries
 
+- CI run #545 passed SQLite and PostgreSQL migrations/tests, lint, JavaScript syntax checks and dashboard/research DOM/layout contracts on commit `b8402391a7f845497006ff0affae9685c1fd518d`. A no-tree-change commit was pushed afterward to queue a final push-triggered run.
 - CI success proves only the commit and tests actually run in CI; it does not prove live Supabase settings, SMTP delivery or real browser sign-up.
 - Setting Render environment variables triggers a deployment but does not prove that the expected commit is live.
 - No test account was created and no production portfolio/NAV records were modified for this audit.
