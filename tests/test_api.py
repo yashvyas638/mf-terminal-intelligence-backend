@@ -750,6 +750,7 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
         f"/v1/portfolios/{portfolio_id}/valuation",
         f"/v1/portfolios/{portfolio_id}/risk",
         f"/v1/portfolios/{portfolio_id}/tax-lots",
+        f"/v1/portfolios/{portfolio_id}/reports",
     ):
         response = client.get(path, headers=user_two)
         assert response.status_code == 404, (path, response.text)
@@ -1376,6 +1377,7 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert report_detail.status_code == 200
     assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
     assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
+    assert report_detail.json()["integrity_status"] == "VERIFIED"
     pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
     assert pdf.status_code == 200
     assert pdf.headers["content-type"] == "application/pdf"
