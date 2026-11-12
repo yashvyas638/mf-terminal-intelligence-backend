@@ -350,6 +350,24 @@ class PortfolioGoal(Base):
     )
 
 
+class PortfolioReportSnapshot(Base):
+    """Immutable, owner-scoped portfolio report payload and reproducibility hash."""
+
+    __tablename__ = "portfolio_report_snapshots"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    report_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    content_json: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_max_nav_date: Mapped[object | None] = mapped_column(Date)
+    __table_args__ = (
+        Index("ix_portfolio_report_owner_generated", "owner_user_id", "generated_at"),
+        Index("ix_portfolio_report_portfolio_generated", "portfolio_id", "generated_at"),
+    )
+
+
 class FundHoldingDisclosure(Base):
     """Immutable source snapshot for one scheme's dated portfolio disclosure."""
 
