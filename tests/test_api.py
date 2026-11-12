@@ -740,7 +740,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "PowerUp" not in facets.json()["sub_categories"]
     assert "Life Cycle Funds" in facets.json()["categories"]
     assert "Life Cycle" not in facets.json()["asset_classes"]
-    assert not any(value.startswith("Life Cycle Fund with Maturity") for value in facets.json()["sub_categories"])
+    assert "Life Cycle Fund with Maturity of 10 Years" in facets.json()["sub_categories"]
     assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
