@@ -589,9 +589,8 @@ def nav_scheme_facets(
         ).all()
         valid_groups = {
             normalized
-            for group, asset in group_rows
+            for group, _asset in group_rows
             if (normalized := canonical_group(group)) is not None
-            and canonical_asset_class(normalized, asset) is not None
         }
         category_rows = db.execute(
             select(Scheme.category_group, Scheme.category)
