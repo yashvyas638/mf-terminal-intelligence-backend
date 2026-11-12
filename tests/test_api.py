@@ -1159,12 +1159,25 @@ def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movem
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     now = datetime.now(timezone.utc)
-    codes = (999961, 999962, 999963)
+    codes = (999961, 999962, 999963, 999964, 999965, 999966, 999967)
     monthly = {
         codes[0]: [{"month": "2026-09", "return": 0.03}, {"month": "2026-10", "return": 0.04}],
         codes[1]: [{"month": "2026-09", "return": 0.08}, {"month": "2026-10", "return": 0.02}],
         codes[2]: [{"month": "2026-09", "return": 0.02}, {"month": "2026-10", "return": -0.01}],
+        codes[3]: [{"month": "2026-09", "return": 0.01}, {"month": "2026-10", "return": 0.03}],
+        codes[4]: [{"month": "2026-09", "return": 0.02}, {"month": "2026-10", "return": 0.05}],
+        codes[5]: [{"month": "2026-09", "return": 0.90}, {"month": "2026-10", "return": 0.90}],
+        codes[6]: [{"month": "2026-09", "return": 0.80}, {"month": "2026-10", "return": 0.95}],
     }
+    source_labels = [
+        ("Direct Plan", "Growth"),
+        ("Direct Plan", "Growth Option"),
+        ("Direct Plan", "GROWTH"),
+        ("Direct Plan", "IDCW Option"),
+        ("Direct Plan", "Monthly IDCW"),
+        ("Regular Plan", "Growth Option"),
+        ("Direct Plan", "Unclaimed IDCW Less than 3 years"),
+    ]
     with SessionLocal() as db:
         for index, code in enumerate(codes):
             if db.get(Scheme, code) is None:
@@ -1175,8 +1188,8 @@ def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movem
                     isin_dividend_reinvestment=None,
                     first_seen_at=now,
                     last_seen_at=now,
-                    plan_type="Direct",
-                    option_type="Growth",
+                    plan_type=source_labels[index][0],
+                    option_type=source_labels[index][1],
                     category_group="Equity Scheme",
                     category="Flexi Cap Fund",
                     asset_class="Equity",
@@ -1213,12 +1226,23 @@ def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movem
     result = response.json()
     assert result["month"] == "2026-10"
     assert result["previous_month"] == "2026-09"
+    assert result["count"] == 3
     assert [item["scheme_code"] for item in result["items"]] == [codes[0], codes[1], codes[2]]
     assert [item["category_rank"] for item in result["items"]] == [1, 2, 3]
-    assert result["items"][0]["rank_change"] == 1
-    assert result["items"][1]["rank_change"] == -1
-    assert result["items"][2]["rank_change"] == 0
+    assert [item["rank_change"] for item in result["items"]] == [1, -1, 0]
+    assert {item["plan_type"] for item in result["items"]} == {"Direct"}
+    assert {item["option_type"] for item in result["items"]} == {"Growth"}
     assert "No interpolation" in result["methodology"]
+
+    idcw = client.get(
+        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Equity+Scheme&sub_category=Flexi+Cap+Fund&plan_type=Direct&option_type=IDCW&limit=3",
+        headers=headers,
+    )
+    assert idcw.status_code == 200, idcw.text
+    idcw_result = idcw.json()
+    assert idcw_result["count"] == 2
+    assert [item["scheme_code"] for item in idcw_result["items"]] == [codes[4], codes[3]]
+    assert {item["option_type"] for item in idcw_result["items"]} == {"IDCW"}
 
     future = client.get(
         "/v1/analytics/monthly-leaderboard?month=2026-12",
