@@ -874,13 +874,28 @@ def refresh_fund_research_snapshots(
             metrics = research_metrics(window_points)
             period = metrics.get("period_returns", {})
             rolling = metrics.get("rolling_1y", {})
+            compact_metrics = {
+                "status": metrics.get("status"),
+                "observations": metrics.get("observations", 0),
+                "start_date": metrics.get("start_date"),
+                "end_date": metrics.get("end_date"),
+                "latest_nav": metrics.get("latest_nav"),
+                "total_return": metrics.get("total_return"),
+                "period_returns": period,
+                "rolling_1y": {
+                    "status": rolling.get("status"),
+                    "observations": rolling.get("observations", 0),
+                    "positive_window_rate": rolling.get("positive_window_rate"),
+                },
+                "methodology": "NAV-only research snapshot; no benchmark TRI or distribution adjustment.",
+            }
             snapshot_rows.append(FundResearchSnapshot(
                 scheme_code=scheme_code,
                 window_days=window_days,
                 nav_as_of_date=as_of,
                 refreshed_at=refreshed_at,
                 observations=int(metrics.get("observations", 0)),
-                metrics_json=json.dumps(metrics, ensure_ascii=False, allow_nan=False),
+                metrics_json=json.dumps(compact_metrics, ensure_ascii=False, allow_nan=False),
                 return_1m=period.get("1M"),
                 return_1y=period.get("1Y"),
                 return_3y=period.get("3Y"),
