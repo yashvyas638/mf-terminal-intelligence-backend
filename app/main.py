@@ -35,6 +35,8 @@ from app.db import (
     BenchmarkIndex,
     BenchmarkObservation,
     BenchmarkObservationRevision,
+    FundHolding,
+    FundHoldingDisclosure,
     FundResearchSnapshot,
     FundWatchlistItem,
     IngestionSnapshot,
@@ -51,6 +53,7 @@ from app.db import (
 )
 from app.analytics import benchmark_comparison_metrics, performance_metrics, research_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
+from app.holdings_ingest import parse_fund_holdings_csv
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 logger = logging.getLogger("mf_terminal.nav")
@@ -1131,6 +1134,22 @@ class BenchmarkImportRequest(BaseModel):
         return self
 
 
+class HoldingsImportRequest(BaseModel):
+    scheme_code: int = Field(gt=0)
+    as_of_date: date
+    source_document_url: str = Field(min_length=12, max_length=1000)
+    source_document_sha256: str = Field(pattern="^[a-fA-F0-9]{64}$")
+    csv_text: str = Field(min_length=10, max_length=5_000_000)
+
+    @model_validator(mode="after")
+    def validate_holdings_source(self) -> "HoldingsImportRequest":
+        self.source_document_url = self.source_document_url.strip()
+        self.source_document_sha256 = self.source_document_sha256.lower()
+        if not self.source_document_url.startswith("https://"):
+            raise ValueError("holdings source document must use an HTTPS URL")
+        return self
+
+
 class SchemeBenchmarkAssignmentCreate(BaseModel):
     scheme_code: int = Field(gt=0)
     benchmark_code: str = Field(min_length=2, max_length=80, pattern="^[A-Z0-9][A-Z0-9_-]+$")
@@ -1643,6 +1662,273 @@ def compare_fund_with_benchmark(
             "as_of_date": as_of.isoformat(),
             "comparisons": comparisons,
             "limitations": limitations,
+        }
+
+
+@app.post("/v1/holdings/import-csv")
+def import_fund_holdings_csv(
+    payload: HoldingsImportRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Import one dated AMC/AMFI holdings disclosure as an immutable source snapshot."""
+    require_operator_api_key(x_api_key)
+    source_sha256 = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(source_sha256, payload.source_document_sha256):
+        raise HTTPException(422, "source_document_sha256 must match the exact uploaded CSV text")
+    try:
+        points, report = parse_fund_holdings_csv(payload.csv_text)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+    retrieved_at = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found")
+        existing = db.execute(
+            select(FundHoldingDisclosure).where(
+                FundHoldingDisclosure.scheme_code == payload.scheme_code,
+                FundHoldingDisclosure.as_of_date == payload.as_of_date,
+                FundHoldingDisclosure.source_sha256 == source_sha256,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return {
+                "status": "already_imported",
+                "disclosure_id": existing.id,
+                "scheme_code": existing.scheme_code,
+                "as_of_date": existing.as_of_date.isoformat(),
+                "row_count": existing.row_count,
+                "source_sha256": existing.source_sha256,
+                **report,
+            }
+
+        supersedes = db.execute(
+            select(FundHoldingDisclosure)
+            .where(
+                FundHoldingDisclosure.scheme_code == payload.scheme_code,
+                FundHoldingDisclosure.as_of_date == payload.as_of_date,
+            )
+            .order_by(desc(FundHoldingDisclosure.retrieved_at), desc(FundHoldingDisclosure.id))
+            .limit(1)
+        ).scalar_one_or_none()
+        disclosure = FundHoldingDisclosure(
+            scheme_code=payload.scheme_code,
+            as_of_date=payload.as_of_date,
+            source_document_url=payload.source_document_url,
+            source_sha256=source_sha256,
+            retrieved_at=retrieved_at,
+            row_count=len(points),
+            total_weight_pct=Decimal(report["total_weight_pct"]),
+            supersedes_disclosure_id=supersedes.id if supersedes else None,
+        )
+        db.add(disclosure)
+        db.flush()
+        db.add_all([
+            FundHolding(
+                disclosure_id=disclosure.id,
+                security_id=point.security_id,
+                security_name=point.security_name,
+                is_isin=point.is_isin,
+                asset_type=point.asset_type,
+                sector=point.sector,
+                weight_pct=point.weight_pct,
+                market_value_inr=point.market_value_inr,
+            )
+            for point in points
+        ])
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Concurrent holdings import conflict; retry the import") from None
+
+        return {
+            "status": "imported",
+            "disclosure_id": disclosure.id,
+            "scheme_code": disclosure.scheme_code,
+            "as_of_date": disclosure.as_of_date.isoformat(),
+            "source_document_url": disclosure.source_document_url,
+            "source_sha256": disclosure.source_sha256,
+            "supersedes_disclosure_id": disclosure.supersedes_disclosure_id,
+            "row_count": disclosure.row_count,
+            **report,
+        }
+
+
+@app.get("/v1/holdings/{scheme_code}")
+def get_fund_holdings(
+    scheme_code: int,
+    as_of_date: date | None = None,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Return the latest accepted holdings disclosure on or before the requested date."""
+    require_api_key(x_api_key)
+    cutoff = as_of_date or datetime.now(timezone.utc).date()
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found")
+        disclosure = db.execute(
+            select(FundHoldingDisclosure)
+            .where(
+                FundHoldingDisclosure.scheme_code == scheme_code,
+                FundHoldingDisclosure.as_of_date <= cutoff,
+            )
+            .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
+            .limit(1)
+        ).scalar_one_or_none()
+        if disclosure is None:
+            raise HTTPException(404, "No holdings disclosure is available for this scheme")
+        rows = db.execute(
+            select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            .order_by(desc(FundHolding.weight_pct), FundHolding.security_name)
+        ).scalars().all()
+        return {
+            "scheme_code": scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "disclosure_id": disclosure.id,
+            "as_of_date": disclosure.as_of_date.isoformat(),
+            "retrieved_at": disclosure.retrieved_at.isoformat(),
+            "source_document_url": disclosure.source_document_url,
+            "source_sha256": disclosure.source_sha256,
+            "supersedes_disclosure_id": disclosure.supersedes_disclosure_id,
+            "row_count": disclosure.row_count,
+            "total_weight_pct": str(disclosure.total_weight_pct),
+            "items": [
+                {
+                    "security_id": row.security_id,
+                    "security_name": row.security_name,
+                    "is_isin": row.is_isin,
+                    "asset_type": row.asset_type,
+                    "sector": row.sector,
+                    "weight_pct": str(row.weight_pct),
+                    "market_value_inr": str(row.market_value_inr) if row.market_value_inr is not None else None,
+                }
+                for row in rows
+            ],
+        }
+
+
+@app.get("/v1/analytics/holdings-overlap")
+def compare_fund_holdings_overlap(
+    scheme_a: int = Query(gt=0),
+    scheme_b: int = Query(gt=0),
+    as_of_date: date | None = None,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Calculate transparent, symmetric overlap using positive matched ISIN weights."""
+    require_api_key(x_api_key)
+    if scheme_a == scheme_b:
+        raise HTTPException(422, "Choose two different scheme codes")
+    cutoff = as_of_date or datetime.now(timezone.utc).date()
+
+    with SessionLocal() as db:
+        schemes = {
+            scheme.scheme_code: scheme
+            for scheme in db.execute(
+                select(Scheme).where(Scheme.scheme_code.in_([scheme_a, scheme_b]))
+            ).scalars().all()
+        }
+        if len(schemes) != 2:
+            raise HTTPException(404, "One or both scheme codes were not found")
+
+        disclosures = {}
+        for code in (scheme_a, scheme_b):
+            disclosure = db.execute(
+                select(FundHoldingDisclosure)
+                .where(
+                    FundHoldingDisclosure.scheme_code == code,
+                    FundHoldingDisclosure.as_of_date <= cutoff,
+                )
+                .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
+                .limit(1)
+            ).scalar_one_or_none()
+            if disclosure is None:
+                raise HTTPException(409, f"No holdings disclosure is available for scheme {code}")
+            disclosures[code] = disclosure
+
+        holdings_by_scheme: dict[int, dict[str, FundHolding]] = {}
+        coverage = {}
+        for code, disclosure in disclosures.items():
+            rows = db.execute(
+                select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            ).scalars().all()
+            all_positive = sum((row.weight_pct for row in rows if row.weight_pct > 0), Decimal("0"))
+            isin_rows = {
+                row.security_id: row
+                for row in rows
+                if row.is_isin and row.weight_pct > 0
+            }
+            isin_positive = sum((row.weight_pct for row in isin_rows.values()), Decimal("0"))
+            holdings_by_scheme[code] = isin_rows
+            coverage[code] = {
+                "total_positive_weight_pct": all_positive,
+                "isin_matched_weight_pct": isin_positive,
+                "isin_coverage_pct": (isin_positive / all_positive * 100) if all_positive > 0 else None,
+            }
+
+        left = holdings_by_scheme[scheme_a]
+        right = holdings_by_scheme[scheme_b]
+        common_ids = set(left).intersection(right)
+        shared = []
+        overlap_weight = Decimal("0")
+        shared_a = Decimal("0")
+        shared_b = Decimal("0")
+        for security_id in common_ids:
+            weight_a = left[security_id].weight_pct
+            weight_b = right[security_id].weight_pct
+            matched_weight = min(weight_a, weight_b)
+            overlap_weight += matched_weight
+            shared_a += weight_a
+            shared_b += weight_b
+            shared.append({
+                "isin": security_id,
+                "security_name": left[security_id].security_name,
+                "weight_in_scheme_a_pct": str(weight_a),
+                "weight_in_scheme_b_pct": str(weight_b),
+                "matched_overlap_weight_pct": str(matched_weight),
+            })
+        shared.sort(key=lambda item: Decimal(item["matched_overlap_weight_pct"]), reverse=True)
+
+        age_a = (cutoff - disclosures[scheme_a].as_of_date).days
+        age_b = (cutoff - disclosures[scheme_b].as_of_date).days
+        stale = age_a > 90 or age_b > 90
+        return {
+            "status": "STALE_DISCLOSURE" if stale else "OK",
+            "scheme_a": {
+                "scheme_code": scheme_a,
+                "scheme_name": schemes[scheme_a].scheme_name,
+                "as_of_date": disclosures[scheme_a].as_of_date.isoformat(),
+                "disclosure_age_days": age_a,
+                "source_document_url": disclosures[scheme_a].source_document_url,
+                "source_sha256": disclosures[scheme_a].source_sha256,
+                "coverage": {key: str(value) if value is not None else None for key, value in coverage[scheme_a].items()},
+            },
+            "scheme_b": {
+                "scheme_code": scheme_b,
+                "scheme_name": schemes[scheme_b].scheme_name,
+                "as_of_date": disclosures[scheme_b].as_of_date.isoformat(),
+                "disclosure_age_days": age_b,
+                "source_document_url": disclosures[scheme_b].source_document_url,
+                "source_sha256": disclosures[scheme_b].source_sha256,
+                "coverage": {key: str(value) if value is not None else None for key, value in coverage[scheme_b].items()},
+            },
+            "common_isin_count": len(common_ids),
+            "holdings_overlap_pct": str(overlap_weight),
+            "shared_weight_in_scheme_a_pct": str(shared_a),
+            "shared_weight_in_scheme_b_pct": str(shared_b),
+            "top_shared_holdings": shared[:20],
+            "methodology": (
+                "For each common ISIN, overlap contribution is the lower of the two positive "
+                "weights (% of each scheme's net assets); total overlap is the sum of those "
+                "contributions. Non-ISIN rows and negative exposures are excluded. No fuzzy "
+                "security-name matching is used."
+            ),
+            "limitations": [
+                "Disclosure dates may differ between schemes; the response shows each as-of date and age.",
+                "Coverage is the positive portfolio weight represented by valid ISIN rows divided by total positive reported weight.",
+                "Overlap is a holdings snapshot, not a forecast of future correlation or portfolio risk.",
+            ],
         }
 
 
