@@ -636,7 +636,8 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             scheme_code=999970,
             scheme_name="Explorer Equity Direct Growth",
             amc="Explorer AMC",
-            category="Flexi Cap",
+            category_group="Equity Scheme",
+            category="Flexi Cap Fund",
             asset_class="Equity",
             plan_type="Direct",
             option_type="Growth",
@@ -662,7 +663,8 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             scheme_code=999972,
             scheme_name="Explorer Debt Direct Growth",
             amc="Explorer AMC",
-            category="Short Duration",
+            category_group="Debt Scheme",
+            category="Short Duration Fund",
             asset_class="Debt",
             plan_type="Direct",
             option_type="Growth",
@@ -683,11 +685,12 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     facets = client.get("/v1/nav/facets", headers=headers)
     assert facets.status_code == 200
     assert "Explorer AMC" in facets.json()["amcs"]
-    assert "Flexi Cap" in facets.json()["categories"]
+    assert "Equity Scheme" in facets.json()["categories"]
+    assert "Flexi Cap Fund" in facets.json()["sub_categories"]
 
     filtered = client.get(
         "/v1/nav/schemes",
-        params={"amc": "Explorer AMC", "category": "Flexi Cap", "plan_type": "Direct", "limit": 1, "offset": 0},
+        params={"amc": "Explorer AMC", "category_group": "Equity Scheme", "sub_category": "Flexi Cap Fund", "plan_type": "Direct", "limit": 1, "offset": 0},
         headers=headers,
     )
     assert filtered.status_code == 200
