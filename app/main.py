@@ -589,12 +589,14 @@ def nav_scheme_facets(
             select(Scheme.category_group, Scheme.asset_class).distinct()
         ).all()
         valid_groups = {
-            group for group, asset in group_rows
-            if canonical_group(group) and canonical_asset_class(group, asset)
+            normalized
+            for group, asset in group_rows
+            if (normalized := canonical_group(group)) is not None
+            and canonical_asset_class(normalized, asset) is not None
         }
         category_rows = db.execute(
             select(Scheme.category_group, Scheme.category)
-            .where(Scheme.category_group.in_(VALID_SCHEME_GROUPS), Scheme.category.is_not(None), Scheme.category != "")
+            .where(Scheme.category_group.is_not(None), Scheme.category.is_not(None), Scheme.category != "")
             .distinct()
         ).all()
         valid_subcategories = sorted({
