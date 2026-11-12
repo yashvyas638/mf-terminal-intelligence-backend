@@ -49,9 +49,9 @@ def test_nifty_parser_rejects_price_return_or_wrong_variant_data():
 
 def test_nifty_parser_rejects_invalid_values_dates_and_multiple_index_names():
     with pytest.raises(ValueError, match="invalid benchmark CSV row"):
-        parse_nifty_tri_csv("Date,Total Returns Index\n01-Jan-2026,-1\n", "TRI")
+        parse_nifty_tri_csv("IndexName,Date,Total Returns Index\nNIFTY 50,01-Jan-2026,-1\n", "TRI")
     with pytest.raises(ValueError, match="unsupported benchmark date"):
-        parse_nifty_tri_csv("Date,Total Returns Index\nnot-a-date,100\n", "TRI")
+        parse_nifty_tri_csv("IndexName,Date,Total Returns Index\nNIFTY 50,not-a-date,100\n", "TRI")
     multi = TRI_CSV + "NIFTY NEXT 50,06-Jan-2026,25300,25250\n"
     with pytest.raises(ValueError, match="multiple index names"):
         parse_nifty_tri_csv(multi, "TRI")
@@ -66,10 +66,10 @@ def test_nifty_parser_rejects_empty_and_oversized_files():
 
 def test_nifty_parser_requires_index_identity_and_rejects_future_dates():
     with pytest.raises(ValueError, match="IndexName column"):
-        parse_nifty_tri_csv("Date,Total Returns Index\\n01-Jan-2026,100\\n", "TRI")
+        parse_nifty_tri_csv("Date,Total Returns Index\n01-Jan-2026,100\n", "TRI")
     with pytest.raises(ValueError, match="cannot be in the future"):
         parse_nifty_tri_csv(
-            "IndexName,Date,Total Returns Index\\nNIFTY 50,01-Jan-2027,100\\n",
+            "IndexName,Date,Total Returns Index\nNIFTY 50,01-Jan-2027,100\n",
             "TRI",
         )
 
@@ -77,6 +77,6 @@ def test_nifty_parser_requires_index_identity_and_rejects_future_dates():
 def test_nifty_parser_rejects_silent_precision_rounding():
     with pytest.raises(ValueError, match="eight decimal places"):
         parse_nifty_tri_csv(
-            "IndexName,Date,Total Returns Index\\nNIFTY 50,01-Jan-2026,100.000000001\\n",
+            "IndexName,Date,Total Returns Index\nNIFTY 50,01-Jan-2026,100.000000001\n",
             "TRI",
         )
