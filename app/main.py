@@ -51,7 +51,7 @@ from app.db import (
     SessionLocal,
     init_db,
 )
-from app.analytics import benchmark_comparison_metrics, performance_metrics, portfolio_risk_metrics, research_metrics
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, research_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
@@ -2590,6 +2590,68 @@ def rebalance_preview(
                 "Verify suitability, scheme restrictions, and current NAV availability before acting.",
             ],
         }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/tax-lots")
+def portfolio_fifo_tax_lots(
+    portfolio_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Return FIFO acquisition/redemption lots without applying unverified tax rates."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        transactions = db.execute(
+            select(PortfolioTransaction)
+            .where(
+                PortfolioTransaction.portfolio_id == portfolio_id,
+                PortfolioTransaction.voided_at.is_(None),
+            )
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        latest_nav_by_scheme: dict[int, Decimal] = {}
+        scheme_metadata = {}
+        transaction_rows = []
+        for transaction in transactions:
+            transaction_rows.append({
+                "id": transaction.id,
+                "scheme_code": transaction.scheme_code,
+                "transaction_type": transaction.transaction_type,
+                "transaction_date": transaction.transaction_date,
+                "units": transaction.units,
+                "amount": transaction.amount,
+                "charges": transaction.charges,
+            })
+            if transaction.scheme_code not in scheme_metadata:
+                scheme = db.get(Scheme, transaction.scheme_code)
+                scheme_metadata[transaction.scheme_code] = {
+                    "scheme_name": scheme.scheme_name if scheme else str(transaction.scheme_code),
+                    "asset_class": scheme.asset_class if scheme else None,
+                    "category": scheme.category if scheme else None,
+                    "tax_rule_status": "UNVERIFIED_SCHEME_TAX_CLASSIFICATION",
+                }
+                latest = db.execute(
+                    select(NavObservation)
+                    .where(NavObservation.scheme_code == transaction.scheme_code)
+                    .order_by(desc(NavObservation.nav_date))
+                    .limit(1)
+                ).scalar_one_or_none()
+                if latest is not None:
+                    latest_nav_by_scheme[transaction.scheme_code] = Decimal(latest.nav_value)
+
+        try:
+            result = fifo_capital_gains(transaction_rows, latest_nav_by_scheme)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        result["portfolio_id"] = portfolio_id
+        result["portfolio_name"] = portfolio.name
+        result["schemes"] = scheme_metadata
+        result["tax_note"] = (
+            result["tax_note"]
+            + " Scheme asset-class/category metadata is not yet sufficiently verified for tax classification. "
+            + "No equity/debt holding-period threshold, surcharge, cess, exemption, indexation or tax rate is applied."
+        )
+        return result
 
 
 @app.get("/v1/portfolios/{portfolio_id}/risk")
