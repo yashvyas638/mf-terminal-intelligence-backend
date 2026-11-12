@@ -1148,6 +1148,7 @@ class GoalCreateRequest(BaseModel):
     target_amount_today: Decimal = Field(gt=Decimal("0"), le=Decimal("100000000000"))
     target_date: date
     current_amount: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("100000000000"))
+    linked_portfolio_id: int | None = Field(default=None, gt=0)
     monthly_contribution: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("1000000000"))
     inflation_rate: float = Field(default=0.06, ge=0, le=0.20)
     annual_return_low: float = Field(default=0.04, ge=-0.20, le=0.30)
@@ -2103,6 +2104,7 @@ def list_portfolio_goals() -> dict[str, Any]:
                     "target_amount_today": str(goal.target_amount_today),
                     "target_date": goal.target_date.isoformat(),
                     "current_amount": str(goal.current_amount),
+                    "linked_portfolio_id": goal.linked_portfolio_id,
                     "monthly_contribution": str(goal.monthly_contribution),
                     "inflation_rate": goal.inflation_rate,
                     "annual_return_low": goal.annual_return_low,
@@ -2122,8 +2124,11 @@ def create_portfolio_goal(payload: GoalCreateRequest) -> dict[str, Any]:
     owner_id = require_authenticated_user()
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
+        if payload.linked_portfolio_id is not None:
+            _require_portfolio_owner(db, payload.linked_portfolio_id)
         goal = PortfolioGoal(
             owner_user_id=owner_id,
+            linked_portfolio_id=payload.linked_portfolio_id,
             name=payload.name,
             target_amount_today=payload.target_amount_today,
             target_date=payload.target_date,
@@ -2154,6 +2159,9 @@ def update_portfolio_goal(goal_id: int, payload: GoalCreateRequest) -> dict[str,
         ).scalar_one_or_none()
         if goal is None:
             raise HTTPException(404, "Goal not found")
+        if payload.linked_portfolio_id is not None:
+            _require_portfolio_owner(db, payload.linked_portfolio_id)
+        goal.linked_portfolio_id = payload.linked_portfolio_id
         goal.name = payload.name
         goal.target_amount_today = payload.target_amount_today
         goal.target_date = payload.target_date
@@ -2206,9 +2214,31 @@ def project_portfolio_goal(goal_id: int) -> dict[str, Any]:
             + goal.target_date.month - today.month
             - (1 if goal.target_date.day < today.day else 0),
         )
+        current_amount = float(goal.current_amount)
+        linked_portfolio = None
+        if goal.linked_portfolio_id is not None:
+            valuation = portfolio_valuation(goal.linked_portfolio_id, None)
+            if valuation.get("valuation_status") != "COMPLETE":
+                raise HTTPException(
+                    409,
+                    "Linked portfolio valuation is incomplete; resolve missing NAV coverage before using it for goal progress.",
+                )
+            if valuation.get("valuation_freshness") != "FRESH":
+                raise HTTPException(
+                    409,
+                    "Linked portfolio NAV is stale; refresh NAV data before using it for goal progress.",
+                )
+            current_amount = float(valuation["current_value"])
+            linked_portfolio = {
+                "portfolio_id": goal.linked_portfolio_id,
+                "portfolio_name": valuation["portfolio_name"],
+                "market_value": current_amount,
+                "valuation_date": valuation.get("valuation_date"),
+                "valuation_freshness": valuation.get("valuation_freshness"),
+            }
         projection = project_financial_goal(
             target_amount_today=float(goal.target_amount_today),
-            current_amount=float(goal.current_amount),
+            current_amount=current_amount,
             monthly_contribution=float(goal.monthly_contribution),
             months=months,
             inflation_rate=goal.inflation_rate,
@@ -2223,6 +2253,8 @@ def project_portfolio_goal(goal_id: int) -> dict[str, Any]:
             "goal_name": goal.name,
             "target_date": goal.target_date.isoformat(),
             "currency": "INR",
+            "linked_portfolio": linked_portfolio,
+            "current_amount_source": "LINKED_PORTFOLIO_MARKET_VALUE" if linked_portfolio else "USER_ENTERED",
             "projection": projection,
             "limitations": [
                 "Return and inflation rates are user-entered assumptions, not forecasts or guarantees.",
