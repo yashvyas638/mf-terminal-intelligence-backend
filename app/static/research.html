@@ -21,6 +21,11 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 .detailhead{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}.detailhead h2{margin:3px 0 8px;font-size:21px}.tag{display:inline-block;background:#eef4fb;color:#385d8a;border-radius:30px;padding:5px 9px;font-size:11px;margin:2px}
 .chart{width:100%;height:230px;border:1px solid var(--line);border-radius:12px;padding:8px}.chart svg{width:100%;height:100%}.twocol{display:grid;grid-template-columns:1.2fr 1fr;gap:14px}.metriclist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metricrow{padding:12px;border:1px solid var(--line);border-radius:10px}.metricrow span{display:block;color:var(--muted);font-size:11px}.metricrow strong{display:block;margin-top:6px;font-size:18px}
 .hidden{display:none!important}.error{color:var(--red)}.footnote{font-size:11px;line-height:1.6;color:var(--muted)}.view-fund{background:#e8f1ff;border-color:#b9d2f5;color:#174d91;font-weight:700;white-space:nowrap;padding:7px 10px}.view-fund:hover{background:#d8e8ff}#fundRows tr{cursor:default}#fundRows tr td:last-child{min-width:120px}.pagination{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:14px}
+.leaderhead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}.leaderhead h2{font-size:18px;margin:3px 0}.leadercontrols{display:flex;gap:8px;flex-wrap:wrap}.leadergrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin-top:14px}.leadercard{border:1px solid var(--line);border-radius:13px;padding:13px;background:linear-gradient(155deg,#fff,#f8faff);min-width:0}.leadercard h3{font-size:13px;margin:0 0 3px}.leadercard .groupmeta{font-size:10px;color:var(--muted);margin-bottom:10px}.leaderfund{padding:9px 0;border-top:1px solid var(--line)}.leaderfund:first-of-type{border-top:0}.leaderfund strong{display:block;font-size:11px;line-height:1.4}.leaderfund small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.leaderreturn{font-weight:800;color:var(--green);font-variant-numeric:tabular-nums}.rankmove{font-size:10px;color:var(--muted);margin-left:5px}.rankmove.up{color:var(--green)}.rankmove.down{color:var(--red)}.leader-empty{color:var(--muted);font-size:11px;line-height:1.5}.rankbadge{display:inline-flex;align-items:center;justify-content:center;border-radius:7px;background:#edf3fb;color:#315b90;padding:4px 7px;font-weight:750;font-size:11px}.categoryrank{font-weight:750;color:#315b90}.tablewrap table{min-width:1450px}
+@media(max-width:1100px){.leadergrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.leadergrid{grid-template-columns:repeat(2,minmax(0,1fr))}.leaderhead{align-items:flex-start}}
+@media(max-width:420px){.leadergrid{grid-template-columns:1fr}}
+
 @media(max-width:850px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.twocol{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 @media(max-width:560px){.wrap{padding:18px 12px 42px}h1{font-size:23px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat strong{font-size:19px}.panel{padding:13px}.toolbar input[type=search]{min-width:100%}}
 </style>
@@ -30,6 +35,23 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <main class="wrap">
 <div class="eyebrow">Research / India mutual funds</div><h1>Fund Explorer & Research</h1><p class="sub">Screen the stored scheme universe, inspect NAV-derived performance and study rolling-return behaviour.</p>
 <div class="notice" id="authStatus">Sign in with your own account to access research and your private portfolios.</div><div class="notice" id="notice">Sign in to load stored research data. Metrics are calculated from accepted AMFI NAV observations; unavailable reference data is shown as unavailable, never estimated.</div>
+
+<section id="categoryLeaderboard" class="panel">
+  <div class="leaderhead">
+    <div><div class="eyebrow">Market pulse · category intelligence</div><h2>Monthly category leaders</h2><div class="footnote">Completed calendar-month returns · Direct Growth default · Rank movement versus previous month</div></div>
+    <div class="leadercontrols">
+      <select id="leaderboardMonth" aria-label="Completed month"></select>
+      <select id="leaderboardPlan" aria-label="Plan"><option value="Direct">Direct</option><option value="Regular">Regular</option></select>
+      <select id="leaderboardOption" aria-label="Option"><option value="Growth">Growth</option><option value="IDCW">IDCW</option></select>
+      <button class="primary" id="refreshLeaderboards" type="button">Refresh leaders</button>
+    </div>
+  </div>
+  <div id="leaderboardFreshness" class="footnote" style="margin-top:9px">Monthly ranking loads from verified calendar-month NAV observations.</div>
+  <div id="leaderboardCards" class="leadergrid">
+    <div class="leadercard"><div class="leader-empty">Sign in to view category leaders.</div></div>
+  </div>
+  <p class="footnote">Returns are NAV-only, not dividend-adjusted total returns. A missing rank change means prior-month comparison data is unavailable; it is not treated as zero.</p>
+</section>
 <div class="tabs"><button class="active" data-tab="screener">Fund Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
 <section id="screener" class="panel">
 <div class="toolbar">
@@ -39,14 +61,14 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <select id="plan"><option value="">All plans</option></select>
 <select id="option"><option value="">All options</option></select>
 <select id="days"><option value="365">1 year history</option><option value="1095" selected>3 years history</option><option value="1825">5 years history</option><option value="3650">10 years history</option></select>
-<select id="sortBy"><option value="return_1y">Rank by 1Y return</option><option value="cagr">Rank by CAGR</option><option value="return_3y">Rank by 3Y return</option><option value="sharpe_ratio">Rank by Sharpe</option><option value="sortino_ratio">Rank by Sortino</option><option value="volatility">Rank by volatility</option><option value="max_drawdown">Rank by max drawdown</option><option value="positive_month_rate">Rank by positive months</option><option value="rolling_1y_positive_rate">Rank by positive 1Y windows</option></select>
+<select id="sortBy"><option value="return_1m">Rank by trailing 1M return</option><option value="return_1y">Rank by 1Y return</option><option value="cagr">Rank by CAGR</option><option value="return_3y">Rank by 3Y return</option><option value="sharpe_ratio">Rank by Sharpe</option><option value="sortino_ratio">Rank by Sortino</option><option value="volatility">Rank by volatility</option><option value="max_drawdown">Rank by max drawdown</option><option value="positive_month_rate">Rank by positive months</option><option value="rolling_1y_positive_rate">Rank by positive 1Y windows</option></select>
 <select id="sortOrder"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select>
 <select id="minObservations"><option value="0">Any history</option><option value="100">100+ observations</option><option value="250">250+ observations</option><option value="500">500+ observations</option></select>
 <button class="primary" id="runScreen">Screen funds</button>
 </div>
 <div class="footnote" id="screenerFreshness" style="margin-top:10px">Global ranking is prepared from stored NAV history. Loading the first verified research snapshot…</div>
 <div class="tablewrap"><table id="fundTable"><thead><tr>
-<th>Rank</th><th>Fund / Scheme</th><th>Latest NAV</th><th>1Y return</th><th>3Y return</th><th>CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Positive months</th><th>Positive 1Y windows</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="12" class="muted">Sign in to load the global fund ranking.</td></tr></tbody></table></div>
+<th>Global rank</th><th>Category rank</th><th>Fund / Scheme</th><th>Latest NAV</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Positive months</th><th>Positive 1Y windows</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="17" class="muted">Sign in to load the global fund ranking.</td></tr></tbody></table></div>
 <div class="pagination"><span class="muted" id="pageInfo">—</span><button id="prev">Previous</button><button id="next">Next</button></div>
 <p class="footnote">Ranks are calculated across all matching stored snapshots before pagination, not just the visible page. NAV-only metrics are not distribution-adjusted total returns. Benchmark TRI and classification coverage depend on verified source integrations. Research support only—not a buy/sell recommendation.</p>
 </section>
