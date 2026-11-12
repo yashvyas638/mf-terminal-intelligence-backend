@@ -189,6 +189,7 @@ jobs:
           from app.nav_backfill import HistoryWindow
           from app.nav_history import parse_amfi_history_text
           from app.nav_history_source import build_amfi_history_url
+          from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
           end_date = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
           start_date = end_date - timedelta(days=6)
@@ -289,5 +290,47 @@ jobs:
                   "payload_sha256": historical_report["payload_sha256"]
               },
               "database_writes": 0,
+          }, indent=2))
+          nav_response = requests.get(
+              AMFI_NAV_URL,
+              timeout=(5, 25),
+              headers={
+                  "User-Agent": "MF-Terminal-Intelligence-Scheme-Metadata-Contract-Test/1.0",
+                  "Accept": "text/plain, */*;q=0.8",
+              },
+          )
+          nav_response.raise_for_status()
+          if len(nav_response.content) > 30_000_000:
+              raise SystemExit("AMFI NAVAll metadata response exceeded 30 MB safety limit")
+          nav_payload = nav_response.content.decode("utf-8-sig", errors="strict")
+          nav_records, nav_report = parse_amfi_nav_text(nav_payload)
+          metadata_records = [
+              row for row in nav_records
+              if row.metadata_present or row.plan_type or row.option_type
+          ]
+          category_rows = [row for row in nav_records if row.category_group]
+          if len(nav_records) < 1000 or not metadata_records or not category_rows:
+              raise SystemExit(
+                  "AMFI NAVAll feed did not provide enough valid scheme/category metadata"
+              )
+
+          print(json.dumps({
+              "navall_metadata_check": {
+                  "source": AMFI_NAV_URL,
+                  "http_status": nav_response.status_code,
+                  "bytes_received": len(nav_response.content),
+                  "records_valid": nav_report["records_valid"],
+                  "unique_scheme_codes": nav_report["unique_scheme_codes"],
+                  "metadata_records": len(metadata_records),
+                  "category_group_records": len(category_rows),
+                  "subcategory_records": sum(bool(row.category) for row in nav_records),
+                  "plan_type_records": sum(bool(row.plan_type) for row in nav_records),
+                  "option_type_records": sum(bool(row.option_type) for row in nav_records),
+                  "amc_records": sum(bool(row.amc) for row in nav_records),
+                  "invalid_rows": nav_report["invalid_rows"],
+                  "max_nav_date": nav_report["max_nav_date"],
+                  "payload_sha256": nav_report["payload_sha256"],
+                  "database_writes": 0,
+              }
           }, indent=2))
           PY
