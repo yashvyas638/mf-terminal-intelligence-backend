@@ -142,6 +142,43 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
     ]
     story.extend([Paragraph("Historical risk", styles["SectionHeading"]), _table(risk_rows, [70 * mm, 95 * mm])])
 
+    lookthrough = report.get("lookthrough") or {}
+    lookthrough_securities = lookthrough.get("top_securities") or []
+    security_rows = [["Underlying security", "ISIN / ID", "Sector", "Value", "Portfolio weight", "Funds"]]
+    for item in lookthrough_securities[:20]:
+        security_rows.append([
+            Paragraph(_text(item.get("security_name")), styles["SmallNote"]),
+            _text(item.get("security_id")),
+            _text(item.get("sector")),
+            _text(item.get("lookthrough_value")),
+            _text(item.get("portfolio_weight_pct")),
+            _text(item.get("scheme_count")),
+        ])
+    if len(security_rows) == 1:
+        security_rows.append(["No verified look-through holdings", "—", "—", "—", "—", "—"])
+    story.extend([
+        Paragraph("Underlying holdings look-through", styles["SectionHeading"]),
+        Paragraph(
+            "Coverage: " + _text((lookthrough.get("coverage") or {}).get("status"))
+            + " · Fresh covered weight: " + _text((lookthrough.get("coverage") or {}).get("fresh_covered_weight_pct")),
+            styles["SmallNote"],
+        ),
+        _table(security_rows, [44 * mm, 25 * mm, 31 * mm, 24 * mm, 22 * mm, 12 * mm]),
+    ])
+    sector_rows = [["Sector", "Look-through value", "Portfolio weight"]]
+    for item in lookthrough.get("sector_exposure") or []:
+        sector_rows.append([
+            _text(item.get("sector")),
+            _text(item.get("lookthrough_value")),
+            _text(item.get("portfolio_weight_pct")),
+        ])
+    if len(sector_rows) == 1:
+        sector_rows.append(["No verified sector exposure", "—", "—"])
+    story.extend([
+        Paragraph("Sector exposure", styles["SectionHeading"]),
+        _table(sector_rows, [70 * mm, 50 * mm, 38 * mm]),
+    ])
+
     tax = report.get("fifo_tax_lots") or {}
     tax_rows = [
         ["FIFO capital gains metric", "Value"],
