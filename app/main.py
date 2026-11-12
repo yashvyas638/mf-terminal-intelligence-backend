@@ -1881,6 +1881,17 @@ def compare_fund_with_benchmark(
                 "metrics": metrics,
             })
 
+        for source in lookthrough.get("sources", []):
+            sources.append({
+                "source_type": "VERIFIED_HOLDINGS_DISCLOSURE",
+                "title": source.get("scheme_name"),
+                "url": source.get("source_document_url"),
+                "source_sha256": source.get("source_sha256"),
+                "as_of_date": source.get("as_of_date"),
+                "disclosure_id": source.get("disclosure_id"),
+                "freshness": source.get("freshness"),
+            })
+
         limitations = [
             "Only exact common NAV and benchmark dates are compared; no interpolation or forward-fill is used.",
             "Alpha, beta, tracking error and information ratio require at least 30 adjacent common-date return pairs no more than seven calendar days apart.",
@@ -1913,6 +1924,7 @@ def create_portfolio_report_snapshot(
     valuation = portfolio_valuation(portfolio_id, None)
     risk = portfolio_historical_risk(portfolio_id, days, None)
     tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
+    lookthrough = portfolio_holdings_lookthrough(portfolio_id)
     generated_at = datetime.now(timezone.utc)
 
     with SessionLocal() as db:
@@ -1962,6 +1974,7 @@ def create_portfolio_report_snapshot(
             "FIFO gains are pre-tax; no Indian tax rates, surcharge, cess, exemption or exit load is applied.",
             "Portfolio-level benchmark TRI attribution is not included until every holding has a verified effective-dated benchmark mapping.",
             "No future returns or goal achievement are guaranteed.",
+            "Look-through coverage status: " + str(lookthrough.get("coverage", {}).get("status")),
         ]
         if risk.get("status") != "OK":
             limitations.append("Portfolio risk metrics are unavailable or incomplete: " + str(risk.get("status")))
@@ -1976,6 +1989,7 @@ def create_portfolio_report_snapshot(
             "lookback_days": days,
             "valuation": valuation,
             "risk": risk,
+            "lookthrough": lookthrough,
             "fifo_tax_lots": tax_lots,
             "sources": sources,
             "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
