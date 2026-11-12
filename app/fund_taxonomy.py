@@ -11,11 +11,11 @@ SCHEME_GROUP_ASSET_CLASS = {
     "Equity Scheme": "Equity",
     "Debt Scheme": "Debt",
     "Hybrid Scheme": "Hybrid",
-    "Life Cycle Funds": "Life Cycle",
+    "Life Cycle Funds": None,
     "Other Schemes": "Other",
 }
 VALID_SCHEME_GROUPS = frozenset(SCHEME_GROUP_ASSET_CLASS)
-VALID_ASSET_CLASSES = frozenset(SCHEME_GROUP_ASSET_CLASS.values())
+VALID_ASSET_CLASSES = frozenset(value for value in SCHEME_GROUP_ASSET_CLASS.values() if value is not None)
 
 SUBCATEGORIES_BY_GROUP = {
     "Equity Scheme": frozenset({
@@ -36,20 +36,12 @@ SUBCATEGORIES_BY_GROUP = {
     "Hybrid Scheme": frozenset({
         "Conservative Hybrid Fund", "Balanced Hybrid Fund",
         "Aggressive Hybrid Fund", "Dynamic Asset Allocation Fund",
-        "Balanced Advantage Fund", "Multi Asset Allocation Fund",
+        "Multi Asset Allocation Fund",
         "Arbitrage Fund", "Equity Savings Fund",
     }),
-    "Life Cycle Funds": frozenset({
-        "Life Cycle Fund with Maturity of 5 Years",
-        "Life Cycle Fund with Maturity of 10 Years",
-        "Life Cycle Fund with Maturity of 15 Years",
-        "Life Cycle Fund with Maturity of 20 Years",
-        "Life Cycle Fund with Maturity of 25 Years",
-        "Life Cycle Fund with Maturity of 30 Years",
-    }),
+    "Life Cycle Funds": frozenset(),
     "Other Schemes": frozenset({
-        "Index Funds / ETFs", "Fund of Funds (Domestic)",
-        "Fund of Funds (Overseas)",
+        "Index Funds / ETFs", "FoFs (Overseas/Domestic)",
     }),
 }
 
@@ -101,9 +93,10 @@ _SUBCATEGORY_ALIASES = {
     _key("10 Year Constant Maturity Gilt Fund"): "10-year Constant Maturity Gilt Fund",
     _key("Floating Rate Fund"): "Floating Interest Rates Fund",
     _key("Index Funds/ ETFs"): "Index Funds / ETFs",
-    _key("FoFs (Domestic)"): "Fund of Funds (Domestic)",
-    _key("FoFs (Overseas)"): "Fund of Funds (Overseas)",
-    _key("Dynamic Asset Allocation / Balanced Advantage Fund"): "Dynamic Asset Allocation Fund",
+    _key("FoFs (Domestic)"): "FoFs (Overseas/Domestic)",
+    _key("FoFs (Overseas)"): "FoFs (Overseas/Domestic)",
+    _key("Fund of Funds (Domestic)"): "FoFs (Overseas/Domestic)",
+    _key("Fund of Funds (Overseas)"): "FoFs (Overseas/Domestic)",
 }
 
 def classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, str | None]:
@@ -147,4 +140,4 @@ def canonical_group(group: str | None) -> str | None:
 
 def canonical_asset_class(group: str | None, asset_class: str | None) -> str | None:
     expected = SCHEME_GROUP_ASSET_CLASS.get(canonical_group(group) or "")
-    return expected if expected and asset_class == expected else None
+    return expected if expected is not None and asset_class == expected else None
