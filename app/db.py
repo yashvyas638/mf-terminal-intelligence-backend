@@ -243,3 +243,77 @@ class FundResearchSnapshot(Base):
         Index("ix_fund_research_window_sharpe", "window_days", "sharpe_ratio"),
         Index("ix_fund_research_window_cagr", "window_days", "cagr"),
     )
+
+
+class BenchmarkIndex(Base):
+    """A named benchmark index and its exact return variant."""
+
+    __tablename__ = "benchmark_indices"
+    benchmark_code: Mapped[str] = mapped_column(String(80), primary_key=True)
+    benchmark_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    provider: Mapped[str] = mapped_column(String(120), nullable=False)
+    variant: Mapped[str] = mapped_column(String(8), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("variant IN ('TRI', 'NTR')", name="ck_benchmark_index_total_return_variant"),
+        Index("ix_benchmark_provider_name", "provider", "benchmark_name"),
+    )
+
+
+class BenchmarkObservation(Base):
+    """A dated official benchmark total-return index observation."""
+
+    __tablename__ = "benchmark_observations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    benchmark_code: Mapped[str] = mapped_column(ForeignKey("benchmark_indices.benchmark_code", ondelete="CASCADE"), nullable=False)
+    observation_date: Mapped[object] = mapped_column(Date, nullable=False)
+    index_value: Mapped[object] = mapped_column(Numeric(24, 8), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("benchmark_code", "observation_date", name="uq_benchmark_observation_date"),
+        CheckConstraint("index_value > 0", name="ck_benchmark_index_value_positive"),
+        Index("ix_benchmark_observation_code_date", "benchmark_code", "observation_date"),
+    )
+
+
+class BenchmarkObservationRevision(Base):
+    """Append-only provenance for a corrected benchmark index value."""
+
+    __tablename__ = "benchmark_observation_revisions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    benchmark_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    observation_date: Mapped[object] = mapped_column(Date, nullable=False)
+    previous_value: Mapped[object] = mapped_column(Numeric(24, 8), nullable=False)
+    replacement_value: Mapped[object] = mapped_column(Numeric(24, 8), nullable=False)
+    previous_source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    replacement_source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    corrected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        Index("ix_benchmark_revision_code_date", "benchmark_code", "observation_date", "corrected_at"),
+    )
+
+
+class SchemeBenchmarkAssignment(Base):
+    """Effective-dated benchmark mapping sourced from a scheme disclosure."""
+
+    __tablename__ = "scheme_benchmark_assignments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheme_code: Mapped[int] = mapped_column(ForeignKey("schemes.scheme_code", ondelete="CASCADE"), nullable=False)
+    benchmark_code: Mapped[str] = mapped_column(ForeignKey("benchmark_indices.benchmark_code"), nullable=False)
+    tier: Mapped[int] = mapped_column(Integer, nullable=False)
+    valid_from: Mapped[object] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[object | None] = mapped_column(Date)
+    source_document_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source_document_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("tier IN (1, 2)", name="ck_scheme_benchmark_tier"),
+        CheckConstraint("valid_to IS NULL OR valid_to >= valid_from", name="ck_scheme_benchmark_effective_dates"),
+        CheckConstraint("verification_status IN ('PENDING', 'VERIFIED', 'REJECTED')", name="ck_scheme_benchmark_verification_status"),
+        UniqueConstraint("scheme_code", "tier", "valid_from", name="uq_scheme_benchmark_tier_start"),
+        Index("ix_scheme_benchmark_active", "scheme_code", "verification_status", "valid_from", "valid_to"),
+    )
