@@ -687,3 +687,73 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert page.json()["total_matching"] == 3
     assert len(page.json()["items"]) == 2
     assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
+
+
+def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatch):
+    """Exercise the real bearer-auth middleware and owner checks with two identities."""
+    import json
+
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    identities = {"token-user-one": "user-one-00000000-0000-000000000001", "token-user-two": "user-two-00000000-0000-000000000002"}
+
+    class AuthResponse:
+        status_code = 200
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+        def json(self):
+            return {"id": self.user_id}
+
+    def fake_auth_get(url, headers, timeout):
+        assert url.endswith("/auth/v1/user")
+        token = headers["Authorization"].removeprefix("Bearer ")
+        return AuthResponse(identities[token])
+
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    monkeypatch.setattr(main.requests, "get", fake_auth_get)
+
+    client = TestClient(app)
+    user_one = {"Authorization": "Bearer token-user-one"}
+    user_two = {"Authorization": "Bearer token-user-two"}
+
+    created = client.post("/v1/portfolios", headers=user_one, json={"name": "Private portfolio"})
+    assert created.status_code == 201
+    portfolio_id = created.json()["id"]
+
+    one_list = client.get("/v1/portfolios", headers=user_one)
+    two_list = client.get("/v1/portfolios", headers=user_two)
+    assert one_list.status_code == 200
+    assert [item["id"] for item in one_list.json()["items"]] == [portfolio_id]
+    assert two_list.status_code == 200
+    assert two_list.json()["items"] == []
+
+    # Every data-bearing route must conceal another user's portfolio as not found.
+    for path in (
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        f"/v1/portfolios/{portfolio_id}/valuation",
+    ):
+        response = client.get(path, headers=user_two)
+        assert response.status_code == 404, (path, response.text)
+
+    blocked_write = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        headers=user_two,
+        json={
+            "scheme_code": 999991,
+            "transaction_type": "BUY",
+            "transaction_date": "2026-01-01",
+            "units": "1",
+            "nav": "100",
+            "amount": "100",
+        },
+    )
+    assert blocked_write.status_code == 404
+
+    own_empty_transactions = client.get(
+        f"/v1/portfolios/{portfolio_id}/transactions", headers=user_one
+    )
+    assert own_empty_transactions.status_code == 200
+    assert own_empty_transactions.json()["count"] == 0
