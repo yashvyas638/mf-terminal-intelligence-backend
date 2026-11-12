@@ -1491,6 +1491,7 @@ def refresh_fund_research_snapshots(
                 latest_date=as_of,
                 window_days=window_days,
                 discontinuities=discontinuities,
+                window_points=window_points,
             )
             if adjustments_applied and data_quality_status == "PASS":
                 data_quality_status = "ADJUSTED"
@@ -1499,6 +1500,7 @@ def refresh_fund_research_snapshots(
             compact_metrics = {
                 "status": metrics.get("status"),
                 "data_quality_status": data_quality_status,
+                "risk_statistics_status": metrics.get("risk_statistics_status"),
                 "quality_flags": quality_flags,
                 "nav_adjustments_applied": adjustments_applied,
                 "nav_adjustment_registry_version": NAV_ADJUSTMENT_REGISTRY_VERSION,
