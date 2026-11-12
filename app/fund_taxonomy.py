@@ -36,8 +36,7 @@ SUBCATEGORIES_BY_GROUP = {
     "Hybrid Scheme": frozenset({
         "Conservative Hybrid Fund", "Balanced Hybrid Fund",
         "Aggressive Hybrid Fund", "Dynamic Asset Allocation Fund",
-        "Multi Asset Allocation",
-        "Arbitrage Fund", "Equity Savings",
+        "Multi Asset Allocation", "Arbitrage Fund", "Equity Savings",
     }),
     "Life Cycle Funds": frozenset(),
     "Other Schemes": frozenset({
@@ -95,8 +94,17 @@ _SUBCATEGORY_ALIASES = {
     _key("Index Funds/ ETFs"): "Index Funds / ETFs",
     _key("FoFs (Domestic)"): "FoFs (Overseas/Domestic)",
     _key("FoFs (Overseas)"): "FoFs (Overseas/Domestic)",
+    _key("FoF Domestic"): "FoFs (Overseas/Domestic)",
+    _key("FoF Overseas"): "FoFs (Overseas/Domestic)",
     _key("Fund of Funds (Domestic)"): "FoFs (Overseas/Domestic)",
     _key("Fund of Funds (Overseas)"): "FoFs (Overseas/Domestic)",
+    _key("Fund of Funds Scheme (Domestic)"): "FoFs (Overseas/Domestic)",
+    _key("Fund of Funds Scheme (Overseas)"): "FoFs (Overseas/Domestic)",
+    _key("Dynamic Asset Allocation or Balanced Advantage"): "Dynamic Asset Allocation Fund",
+    _key("Balanced Advantage Fund / Dynamic Asset Allocation"): "Dynamic Asset Allocation Fund",
+    _key("Multi Asset Allocation Fund"): "Multi Asset Allocation",
+    _key("Equity Savings Fund"): "Equity Savings",
+    _key("Focused Fund"): "Focused Fund (No. of Stocks)",
 }
 
 def classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, str | None]:
