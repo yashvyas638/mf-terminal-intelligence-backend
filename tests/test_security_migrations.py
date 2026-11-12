@@ -41,3 +41,21 @@ def test_supabase_client_roles_cannot_access_public_tables():
                         {"role": role, "sequence_name": f"public.{sequence}", "privilege": privilege},
                     ).scalar_one()
                     assert not allowed, f"{role} unexpectedly has {privilege} on public.{sequence}"
+
+
+@pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
+def test_financial_trigger_functions_pin_safe_search_path():
+    with engine.connect() as connection:
+        rows = connection.execute(text(
+            "SELECT proname, proconfig FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid = p.pronamespace "
+            "WHERE n.nspname = 'public' "
+            "AND proname IN ('prevent_financial_audit_mutation', 'protect_portfolio_transaction_mutation')"
+        )).all()
+    configs = {name: config or [] for name, config in rows}
+    assert set(configs) == {
+        "prevent_financial_audit_mutation",
+        "protect_portfolio_transaction_mutation",
+    }
+    for config in configs.values():
+        assert any(value.replace(" ", "") == "search_path=pg_catalog,public" for value in config)
