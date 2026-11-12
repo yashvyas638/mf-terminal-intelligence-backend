@@ -1808,6 +1808,7 @@ def fund_screener(
                 "rolling_1y_positive_rate": snapshot.rolling_1y_positive_rate,
                 "metrics_status": metrics.get("status"),
                 "data_quality_status": metrics.get("data_quality_status", "PASS"),
+                "risk_statistics_status": metrics.get("risk_statistics_status"),
                 "quality_flags": metrics.get("quality_flags", []),
                 "nav_adjustments_applied": metrics.get("nav_adjustments_applied", []),
             })
