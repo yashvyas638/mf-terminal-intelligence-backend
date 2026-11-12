@@ -98,8 +98,18 @@ def run_history_backfill_batch(
     session_factory: Callable = SessionLocal,
     now_factory: Callable = lambda: datetime.now(timezone.utc),
     max_attempts: int = 3,
+    enabled: bool = False,
+    source_contract_verified: bool = False,
 ) -> dict[str, Any]:
-    """Run a bounded number of pending/failed windows; each window commits atomically."""
+    """Run a bounded number of pending/failed windows; each window commits atomically.
+
+    Both flags are explicit release gates. Unit tests and staging harnesses must
+    opt in deliberately; the production default is to make no network request.
+    """
+    if not enabled:
+        raise RuntimeError("AMFI historical backfill is disabled; explicit operator enablement is required")
+    if not source_contract_verified:
+        raise RuntimeError("AMFI historical request contract has not been verified against the official form")
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 20:
         raise ValueError("limit must be between 1 and 20")
     if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 5:
