@@ -1998,3 +1998,36 @@ def test_refresh_wrapper_preserves_cross_instance_in_progress_status(monkeypatch
         "status": "in_progress",
         "reason": "another_instance_refreshing",
     }
+
+
+
+def test_research_snapshot_refresh_retries_until_lock_is_released(monkeypatch):
+    import asyncio
+
+    refresh_results = iter([
+        {"status": "in_progress"},
+        {"status": "refreshed", "snapshot_rows_written": 12},
+    ])
+    calls = []
+
+    def fake_refresh():
+        calls.append(True)
+        return next(refresh_results)
+
+    async def fake_sleep(_delay):
+        return None
+
+    async def fake_to_thread(function):
+        return function()
+
+    monkeypatch.setattr(
+        main,
+        "_maybe_refresh_research_after_history_completion",
+        fake_refresh,
+    )
+    monkeypatch.setattr(main.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
+
+    asyncio.run(main._retry_research_snapshot_refresh_after_lock_release())
+
+    assert len(calls) == 2
