@@ -722,6 +722,20 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             first_seen_at=now,
             last_seen_at=now,
         ),
+        Scheme(
+            scheme_code=999976,
+            scheme_name="Legacy Other Scheme FoF",
+            amc="Legacy AMC",
+            category_group="Other Scheme",
+            category="FoF Domestic",
+            asset_class="Other",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
     ]
     with SessionLocal() as db:
         for scheme in fixtures:
@@ -741,6 +755,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "Life Cycle Funds" in facets.json()["categories"]
     assert "Life Cycle" not in facets.json()["asset_classes"]
     assert "Life Cycle Fund with Maturity of 10 Years" in facets.json()["sub_categories"]
+    assert "FoFs (Overseas/Domestic)" in facets.json()["sub_categories"]
     assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
@@ -751,6 +766,15 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert filtered.status_code == 200
     assert filtered.json()["total_matching"] == 1
     assert filtered.json()["items"][0]["scheme_code"] == 999970
+    legacy_other = client.get(
+        "/v1/nav/schemes",
+        params={"category_group": "Other Schemes", "sub_category": "FoFs (Overseas/Domestic)"},
+        headers=headers,
+    )
+    assert legacy_other.status_code == 200
+    assert legacy_other.json()["total_matching"] == 1
+    assert legacy_other.json()["items"][0]["category_group"] == "Other Schemes"
+    assert legacy_other.json()["items"][0]["category"] == "FoFs (Overseas/Domestic)"
 
     page = client.get(
         "/v1/nav/schemes",
