@@ -138,3 +138,26 @@ def test_maps_debt_and_hybrid_headers_without_using_scheme_marketing_names():
     assert hybrid[0].category_group == "Hybrid Scheme"
     assert hybrid[0].category == "Aggressive Hybrid Fund"
     assert hybrid[0].asset_class == "Hybrid"
+
+
+
+def test_rejects_unknown_marketing_subcategory_even_when_broad_group_is_valid():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Equity Scheme - PowerUp)
+120588;INF109K01480;-;PowerUp Growth Fund;23.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Equity Scheme"
+    assert records[0].category is None
+    assert records[0].asset_class == "Equity"
+
+
+def test_maps_2026_life_cycle_group_separately_from_other_schemes():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
+120589;INF109K01480;-;Life Cycle Fund 2036;23.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Life Cycle Funds"
+    assert records[0].category == "Life Cycle Fund with Maturity of 10 Years"
+    assert records[0].asset_class == "Life Cycle"
