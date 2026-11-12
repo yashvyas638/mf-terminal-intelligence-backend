@@ -24,6 +24,8 @@ class NavRecord:
     scheme_name: str
     nav: Decimal
     nav_date: date
+    plan_type: str | None = None
+    option_type: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -91,7 +93,9 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
                 issues.append({"line": line_number, "type": "duplicate_scheme_date", "scheme_code": code, "date": nav_date.isoformat()})
                 continue
             seen[key] = nav
-            records.append(NavRecord(code, _clean(parts[1]), _clean(parts[2]), name, nav, nav_date))
+            plan_type = _clean(parts[4]) if len(parts) >= 8 else None
+            option_type = _clean(parts[5]) if len(parts) >= 8 else None
+            records.append(NavRecord(code, _clean(parts[1]), _clean(parts[2]), name, nav, nav_date, plan_type, option_type))
         except ConflictingDuplicateNavError:
             raise
         except (ValueError, InvalidOperation, IndexError) as exc:

@@ -21,7 +21,7 @@ Every feature must be linked to a phase, an acceptance test and a commit. No pha
 | Phase | Objective | User outcome | Status |
 |---|---|---|---|
 | **P0** | Infrastructure, security, NAV reliability, data integrity and portfolio import | Trustworthy, secure, operational foundation and accurate baseline portfolio | **OPEN — BLOCKED** |
-| **P1** | Fund research, historical performance, rolling returns and risk metrics | Understand fund quality, consistency, risk and performance against fair peers/benchmarks | NOT STARTED |
+| **P1** | Fund research, historical performance, rolling returns and risk metrics | Understand fund quality, consistency, risk and performance against fair peers/benchmarks | IN PROGRESS — NAV-only slice; P0 production gate remains |
 | **P2** | Holdings overlap, regression and quantitative research | Understand underlying exposures, concentration, correlations and quantitative relationships | NOT STARTED |
 | **P3** | Macro intelligence and stress testing | Understand economic regimes and portfolio sensitivity under historical/hypothetical shocks | NOT STARTED |
 | **P4** | Portfolio optimisation and Decision Centre | Evaluate portfolio changes with transparent evidence, constraints and trade-offs | NOT STARTED |
@@ -121,7 +121,6 @@ Mandatory order: **DEFINE → INSPECT → DESIGN → DEVELOP → TEST → REVIEW
 - Never deploy an unverified SHA or merge to main without approval.
 
 ### Current P0 evidence and blockers
-- 2026-11-12: Added a production startup guard that queries `current_user` and rejects Supabase `anon`/`authenticated` roles. Unit coverage is included. Commit `cac21e0e4daba3680e2bee99481e93b099d83031`; CI run `43142960810` passed both SQLite and PostgreSQL jobs. This is code-level defence only; the actual Render connection role still must be verified privately.
 - Earlier code commit `3ca12c92a717da5bdda79911e793483d6a376ac9` passed SQLite migration, Ruff and 15 pytest tests (CI run `43020514070`, job `130522253718`). This does not establish PostgreSQL compatibility.
 - Subsequent branch commits listed in the prior evidence log include NAV correction provenance, lifespan migration, parser hardening, PostgreSQL CI, missing-ISIN preservation and live-source validation workflow. Their exact latest CI result and production state must be re-verified on current branch head before relying on them.
 - Current source review identified that portfolio tables lack user/tenant ownership. Do not enable multi-user use until isolation is designed and tested.
@@ -378,3 +377,22 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Branch-only verification: current tip CI run includes SQLite and PostgreSQL 16 migrations/tests, Ruff and dashboard JavaScript syntax. Production remains unverified until the actual Render request and Supabase persistence flow is inspected and run.
 
 - Added secret-safe NAV refresh lifecycle diagnostics: request start, upstream response metadata, parser/quality totals, stale/minimum-record gates, transaction rollback errors and successful snapshot commit/counts. No credentials, DB URLs or raw NAV feed are logged. Regression test verifies API key absence from captured logs.
+
+
+## 2026-11-12 — P1 fund research implementation slice
+
+- Added nullable scheme metadata fields for AMC, structure, category group, category, asset class, plan and option. These are not guessed from scheme names.
+- Extended the expanded eight-column AMFI parser to preserve the source Plan and Option fields. Legacy six-column feeds remain supported; unknown fields remain null.
+- Added monthly-sampled 1Y/3Y rolling NAV return windows. A window is omitted when the nearest actual base NAV is more than seven days before the target start date; no interpolation is used.
+- Added observed positive-month and positive-rolling-window rates, downside deviation and research profile API.
+- Added a paginated NAV-based screener API and a responsive Research Terminal page with sortable current-page metrics, plan/option filters, fund profile and rolling-return diagnostics.
+- Added navigation from the existing dashboard. Portfolio, valuation, ledger, NAV ingestion and correction routes remain in the existing application.
+- Not delivered by this slice: authoritative category/AMC/asset-class mapping, benchmark TRI, distribution-adjusted total returns, AUM, P/E/P/B, expense ratio, exit load, holdings, manager data, proprietary recency/volatility/consistency scores, peer leaderboards or tax engine. These require trusted sources, methodology and additional migrations.
+- This is an implementation slice, not P1 sign-off. Run all CI and migration checks on the exact branch SHA before considering merge or deployment.
+
+
+## 2026-11-12 — Foundation security guard integrated into research branch
+
+- Integrated the production startup guard from the foundation branch. Startup checks PostgreSQL `current_user` and rejects Supabase `anon` and `authenticated` client roles; regression tests cover both rejected roles and an accepted server-side role.
+- Foundation CI run `43143080013` passed SQLite and PostgreSQL jobs on commit `cac21e0e4daba3680e2bee99481e93b099d83031`. This research branch must pass its own complete CI before PR review or merge.
+- This code-level guard does not replace private verification of the actual Render database role, Supabase grants/RLS, backup/restore, secret rotation or production smoke tests. P0 remains open and blocked.
