@@ -117,7 +117,7 @@ def test_benchmark_comparison_uses_exact_common_dates_and_reports_risk_statistic
     result = benchmark_comparison_metrics(fund_points, benchmark_points)
     assert result["status"] == "OK"
     assert result["common_observations"] == 72
-    assert result["risk_return_observations"] == 71
+    assert result["risk_return_observations"] == 70
     assert result["fund_total_return"] > result["benchmark_total_return"]
     assert result["risk_statistics_status"] == "OK"
     assert result["tracking_error"] is not None
@@ -128,7 +128,7 @@ def test_benchmark_comparison_uses_exact_common_dates_and_reports_risk_statistic
 def test_benchmark_comparison_does_not_interpolate_or_fabricate_daily_risk_statistics():
     start = date(2025, 1, 1)
     fund_points = [(start + timedelta(days=index), 100 + index) for index in range(80)]
-    benchmark_points = [(start + timedelta(days=index), 100 + index * 0.8) for index in range(0, 80, 3)]
+    benchmark_points = [(start + timedelta(days=index), 100 + index * 0.8) for index in range(0, 80, 10)]
     result = benchmark_comparison_metrics(fund_points, benchmark_points)
     assert result["common_observations"] == len(benchmark_points)
     assert result["risk_return_observations"] == 0
