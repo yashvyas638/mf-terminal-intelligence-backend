@@ -189,8 +189,8 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
         max_windows = int(total_raw)
     except ValueError as exc:
         raise RuntimeError("Historical NAV max windows per start must be an integer") from exc
-    if not 1 <= max_windows <= 20:
-        raise RuntimeError("Historical NAV max windows per start must be between 1 and 20")
+    if not 1 <= max_windows <= 200:
+        raise RuntimeError("Historical NAV max windows per start must be between 1 and 200")
 
     stale_raw = os.getenv("AMFI_HISTORY_STALE_AFTER_MINUTES", "30").strip()
     try:
