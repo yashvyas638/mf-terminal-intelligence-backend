@@ -1762,3 +1762,42 @@ def test_production_portfolio_owner_guard_rejects_operator_key_without_user(monk
             assert exc.value.status_code == 404
         finally:
             main._authenticated_user_id.reset(token)
+
+
+
+def test_production_operator_api_key_cannot_read_or_mutate_personal_portfolios(monkeypatch):
+    """The operator key remains useful for operations, never as a personal-data identity."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    with SessionLocal() as db:
+        portfolio = Portfolio(
+            owner_user_id="personal-owner-00000000-0000-0000-0000-000000000001",
+            name="Private account",
+            currency="INR",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(portfolio)
+        db.commit()
+        db.refresh(portfolio)
+        portfolio_id = portfolio.id
+
+    client = TestClient(app)
+    operator = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    assert client.get("/v1/portfolios", headers=operator).status_code == 401
+    assert client.post("/v1/portfolios", headers=operator, json={"name": "Operator portfolio"}).status_code == 401
+    assert client.get(
+        f"/v1/portfolios/{portfolio_id}/transactions", headers=operator
+    ).status_code == 401
+    assert client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        headers=operator,
+        json={
+            "scheme_code": 999991,
+            "transaction_type": "BUY",
+            "transaction_date": "2026-01-01",
+            "units": "1",
+            "nav": "100",
+            "amount": "100",
+        },
+    ).status_code == 401
