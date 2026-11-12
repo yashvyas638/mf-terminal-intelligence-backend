@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -542,3 +542,69 @@ def test_scheme_detail_and_comparison_require_api_key(monkeypatch):
     client = TestClient(app)
     assert client.get("/v1/nav/schemes/999981").status_code == 401
     assert client.post("/v1/analytics/compare", json={"scheme_codes": [1, 2]}).status_code == 401
+
+
+
+def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_code = 999980
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Research Profile Test Fund - Direct - Growth",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.invalid/nav",
+            retrieved_at=now,
+            payload_sha256="c" * 64,
+            records_valid=400,
+            unique_scheme_codes=1,
+            min_nav_date=date.today() - timedelta(days=399),
+            max_nav_date=date.today(),
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add_all([
+            NavObservation(
+                scheme_code=scheme_code,
+                nav_date=date.today() - timedelta(days=day),
+                nav_value=str(100 + (399 - day) * 0.05),
+                source_snapshot_id=snapshot.id,
+            )
+            for day in range(400)
+        ])
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    profile = client.get(f"/v1/analytics/research/{scheme_code}?days=365", headers=headers)
+    assert profile.status_code == 200
+    result = profile.json()
+    assert result["scheme"]["plan_type"] == "Direct"
+    assert result["scheme"]["option_type"] == "Growth"
+    assert result["metrics"]["status"] == "OK"
+    assert "rolling_1y" in result["metrics"]
+    assert "data_limitations" in result
+
+    screener = client.get(
+        "/v1/analytics/screener?plan_type=Direct&option_type=Growth&limit=10",
+        headers=headers,
+    )
+    assert screener.status_code == 200
+    assert screener.json()["total_matching"] == 1
+    assert screener.json()["items"][0]["scheme_code"] == scheme_code
+    assert screener.json()["items"][0]["return_1y"] is not None
+    assert client.get("/v1/analytics/screener").status_code == 401

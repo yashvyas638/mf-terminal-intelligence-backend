@@ -31,6 +31,7 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION prevent_financial_audit_mutation()
         RETURNS trigger
         LANGUAGE plpgsql
+        SET search_path = pg_catalog, public
         AS $$
         BEGIN
             RAISE EXCEPTION 'Financial audit/provenance records are append-only';
@@ -57,6 +58,7 @@ def upgrade() -> None:
         CREATE OR REPLACE FUNCTION protect_portfolio_transaction_mutation()
         RETURNS trigger
         LANGUAGE plpgsql
+        SET search_path = pg_catalog, public
         AS $$
         BEGIN
             IF TG_OP = 'DELETE' THEN
