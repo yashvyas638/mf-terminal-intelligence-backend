@@ -11,10 +11,15 @@ from app.nav_backfill import (
 
 
 def test_history_windows_are_contiguous_and_maximum_90_days():
-    windows = plan_history_windows(date(2026, 1, 1), date(2026, 7, 1))
-    assert [window.day_count for window in windows] == [90, 90, 3]
-    assert windows[0].start_date == date(2026, 1, 1)
-    assert windows[-1].end_date == date(2026, 7, 1)
+    start = date(2026, 1, 1)
+    end = date(2026, 7, 1)
+    windows = plan_history_windows(start, end)
+    # The inclusive range contains 182 calendar days: 90 + 90 + 2.
+    assert [window.day_count for window in windows] == [90, 90, 2]
+    assert windows[0].start_date == start
+    assert windows[-1].start_date == date(2026, 6, 30)
+    assert windows[-1].end_date == end
+    assert sum(window.day_count for window in windows) == (end - start).days + 1
     for previous, current in zip(windows, windows[1:], strict=False):
         assert current.start_date == date.fromordinal(previous.end_date.toordinal() + 1)
     assert all(window.day_count <= AMFI_MAX_HISTORY_WINDOW_DAYS for window in windows)
