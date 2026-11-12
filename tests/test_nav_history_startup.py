@@ -322,6 +322,7 @@ def test_research_refresh_after_history_waits_for_nonpaused_checkpoints(monkeypa
 
 def test_research_refresh_after_history_runs_when_only_complete_or_paused(monkeypatch):
     calls = []
+    monkeypatch.setattr(main, "_research_snapshots_are_current", lambda: False)
     monkeypatch.setattr(
         main,
         "history_backfill_status",
