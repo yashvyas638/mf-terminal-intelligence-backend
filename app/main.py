@@ -1096,7 +1096,6 @@ def fund_screener(
                 "rank": offset + len(items) + 1,
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
-                "category_group": scheme.category_group,
                 **_scheme_taxonomy(scheme),
                 "plan_type": scheme.plan_type,
                 "option_type": scheme.option_type,
@@ -1825,8 +1824,7 @@ def build_fund_research_evidence_pack(
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
                 "amc": scheme.amc,
-                "category": scheme.category,
-                "asset_class": scheme.asset_class,
+                **_scheme_taxonomy(scheme),
                 "plan_type": scheme.plan_type,
                 "option_type": scheme.option_type,
             },
@@ -3451,8 +3449,7 @@ def portfolio_fifo_tax_lots(
                 scheme = db.get(Scheme, transaction.scheme_code)
                 scheme_metadata[transaction.scheme_code] = {
                     "scheme_name": scheme.scheme_name if scheme else str(transaction.scheme_code),
-                    "asset_class": scheme.asset_class if scheme else None,
-                    "category": scheme.category if scheme else None,
+                    **(_scheme_taxonomy(scheme) if scheme else {"category_group": None, "category": None, "asset_class": None}),
                     "tax_rule_status": "UNVERIFIED_SCHEME_TAX_CLASSIFICATION",
                 }
                 latest = db.execute(
