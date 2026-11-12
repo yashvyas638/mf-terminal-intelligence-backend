@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, max_drawdown, performance_metrics, portfolio_risk_metrics, rolling_return_series, research_metrics, xirr
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, max_drawdown, performance_metrics, portfolio_risk_metrics, project_financial_goal, rolling_return_series, research_metrics, xirr
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
@@ -240,3 +240,33 @@ def test_fifo_capital_gains_rejects_redemptions_exceeding_available_lots():
     ]
     with pytest.raises(ValueError, match="exceeds FIFO lots"):
         fifo_capital_gains(transactions, {})
+
+def test_goal_projection_uses_inflation_and_explicit_low_base_high_scenarios():
+    result = project_financial_goal(
+        target_amount_today=1_000_000,
+        current_amount=100_000,
+        monthly_contribution=5_000,
+        months=120,
+        inflation_rate=0.06,
+        annual_return_scenarios={"low": 0.04, "base": 0.10, "high": 0.14},
+    )
+    assert result["inflation_adjusted_target"] > result["target_amount_today"]
+    assert result["scenarios"]["low"]["projected_future_value"] < result["scenarios"]["base"]["projected_future_value"]
+    assert result["scenarios"]["base"]["projected_future_value"] < result["scenarios"]["high"]["projected_future_value"]
+    assert result["scenarios"]["base"]["required_monthly_contribution"] > 0
+    assert "not forecasts" in result["methodology"]
+
+
+def test_goal_projection_handles_zero_return_and_invalid_assumptions():
+    result = project_financial_goal(
+        target_amount_today=100_000,
+        current_amount=10_000,
+        monthly_contribution=1_000,
+        months=12,
+        inflation_rate=0,
+        annual_return_scenarios={"zero": 0},
+    )
+    assert result["inflation_adjusted_target"] == 100_000
+    assert result["scenarios"]["zero"]["projected_future_value"] == 22_000
+    with pytest.raises(ValueError, match="inflation assumption"):
+        project_financial_goal(100_000, 0, 0, 12, 0.25, {"base": 0.1})
