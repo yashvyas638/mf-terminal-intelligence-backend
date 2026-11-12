@@ -841,7 +841,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     init_db()
     now = datetime.now(timezone.utc)
     as_of = date(2026, 11, 10)
-    scheme_codes = (999981, 999982)
+    scheme_codes = (999983, 999984)
     with SessionLocal() as db:
         snapshot = IngestionSnapshot(
             source_url="https://example.test/nav",
