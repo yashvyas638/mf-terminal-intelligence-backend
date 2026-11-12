@@ -123,6 +123,7 @@ def test_history_batch_startup_hook_runs_only_bounded_batch(monkeypatch):
         "limit": 1,
         "enabled": True,
         "source_contract_verified": True,
+        "stale_after_minutes": 30,
     }]
 
 
@@ -186,3 +187,35 @@ async def test_history_background_task_does_not_block_async_startup(monkeypatch)
     assert not finished.is_set()
     await asyncio.wait_for(finished.wait(), timeout=1)
     assert (await task)["completed"] == 1
+
+
+@pytest.mark.parametrize("threshold", ["0", "241", "bad"])
+def test_history_batch_startup_hook_rejects_unsafe_stale_threshold(monkeypatch, threshold):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_STALE_AFTER_MINUTES", threshold)
+    with pytest.raises(RuntimeError, match="stale-worker threshold"):
+        main._maybe_run_historical_backfill_batch_from_environment()
+
+
+def test_history_batch_startup_hook_passes_configured_stale_threshold(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "3")
+    monkeypatch.setenv("AMFI_HISTORY_STALE_AFTER_MINUTES", "2")
+    calls = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        return {"status": "idle", "selected": 0, "completed": 0, "failed": 0, "results": []}
+
+    monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
+    main._maybe_run_historical_backfill_batch_from_environment()
+    assert calls == [{
+        "limit": 3,
+        "enabled": True,
+        "source_contract_verified": True,
+        "stale_after_minutes": 2,
+    }]
