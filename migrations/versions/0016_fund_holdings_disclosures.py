@@ -28,6 +28,8 @@ def upgrade() -> None:
         sa.Column("retrieved_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("row_count", sa.Integer(), nullable=False),
         sa.Column("total_weight_pct", sa.Numeric(14, 8), nullable=False),
+        sa.Column("verification_status", sa.String(length=16), nullable=False, server_default="PENDING"),
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "supersedes_disclosure_id",
             sa.Integer(),
@@ -39,6 +41,10 @@ def upgrade() -> None:
             name="uq_holding_disclosure_source",
         ),
         sa.CheckConstraint("row_count > 0", name="ck_holding_disclosure_row_count"),
+        sa.CheckConstraint(
+            "verification_status IN ('PENDING', 'VERIFIED', 'REJECTED')",
+            name="ck_holding_disclosure_verification_status",
+        ),
     )
     op.create_index(
         "ix_holding_disclosure_scheme_date",
