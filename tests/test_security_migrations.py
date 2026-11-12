@@ -86,3 +86,35 @@ def test_financial_trigger_functions_pin_safe_search_path():
             "AND tgname = 'trg_portfolio_transactions_immutable' AND NOT tgisinternal"
         )).scalar_one_or_none()
     assert installed == 1
+
+
+@pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
+def test_portfolio_rls_hides_other_users_rows():
+    from uuid import uuid4
+    from datetime import datetime, timezone
+
+    user_a, user_b = str(uuid4()), str(uuid4())
+    with engine.begin() as connection:
+        portfolio_a = connection.execute(
+            text(
+                "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
+                "VALUES (:owner, 'RLS User A', 'INR', :created_at) RETURNING id"
+            ),
+            {"owner": user_a, "created_at": datetime.now(timezone.utc)},
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
+                "VALUES (:owner, 'RLS User B', 'INR', :created_at)"
+            ),
+            {"owner": user_b, "created_at": datetime.now(timezone.utc)},
+        )
+        connection.exec_driver_sql("SET LOCAL ROLE authenticated")
+        connection.execute(
+            text("SELECT set_config('request.jwt.claim.sub', :subject, true)"),
+            {"subject": user_a},
+        )
+        visible = connection.execute(
+            text("SELECT id FROM public.portfolios ORDER BY id")
+        ).scalars().all()
+        assert visible == [portfolio_a]
