@@ -116,12 +116,10 @@ def test_history_batch_startup_hook_runs_only_bounded_batch(monkeypatch):
         return expected
 
     monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
-    monkeypatch.setattr(
-        main,
-        "_maybe_refresh_research_after_history_completion",
-        lambda: {"status": "refreshed"},
-    )
-    expected["research_snapshot_refresh"] = {"status": "refreshed"}
+    expected["research_snapshot_refresh"] = {
+        "status": "scheduled",
+        "reason": "after_history_worker_completion",
+    }
     result = main._maybe_run_historical_backfill_batch_from_environment()
 
     assert result == expected
@@ -288,11 +286,14 @@ def test_history_batch_startup_hook_accepts_large_bounded_run(monkeypatch):
     monkeypatch.setattr(
         main,
         "_maybe_refresh_research_after_history_completion",
-        lambda: {"status": "refreshed"},
+        lambda: pytest.fail("snapshot refresh must be scheduled after the history worker returns"),
     )
     result = main._maybe_run_historical_backfill_batch_from_environment()
     assert result["status"] == "idle"
-    assert result["research_snapshot_refresh"]["status"] == "refreshed"
+    assert result["research_snapshot_refresh"] == {
+        "status": "scheduled",
+        "reason": "after_history_worker_completion",
+    }
     assert len(calls) == 1
 
 
@@ -342,7 +343,7 @@ def test_research_refresh_after_history_runs_when_only_complete_or_paused(monkey
 
 
 
-def test_history_batch_refreshes_research_only_after_queue_settles(monkeypatch):
+def test_history_batch_schedules_research_refresh_after_queue_settles(monkeypatch):
     monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
     monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
     monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
@@ -368,11 +369,14 @@ def test_history_batch_refreshes_research_only_after_queue_settles(monkeypatch):
 
     result = main._maybe_run_historical_backfill_batch_from_environment()
 
-    assert refresh_calls == [True]
-    assert result["research_snapshot_refresh"]["status"] == "refreshed"
+    assert refresh_calls == []
+    assert result["research_snapshot_refresh"] == {
+        "status": "scheduled",
+        "reason": "after_history_worker_completion",
+    }
 
 
-def test_history_batch_defers_research_refresh_while_checkpoints_remain(monkeypatch):
+def test_history_batch_schedules_refresh_gate_while_checkpoints_remain(monkeypatch):
     monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
     monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
     monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
@@ -401,10 +405,10 @@ def test_history_batch_defers_research_refresh_while_checkpoints_remain(monkeypa
 
     result = main._maybe_run_historical_backfill_batch_from_environment()
 
-    assert refresh_calls == [True]
+    assert refresh_calls == []
     assert result["research_snapshot_refresh"] == {
-        "status": "deferred",
-        "blocking_groups": 1,
+        "status": "scheduled",
+        "reason": "after_history_worker_completion",
     }
 
 
@@ -425,3 +429,36 @@ def test_research_refresh_waits_for_hybrid_five_year_baseline(monkeypatch):
     result = main._maybe_refresh_research_after_history_completion()
     assert result == {"status": "deferred", "reason": "five_year_baseline_incomplete"}
     assert calls == []
+
+
+
+def test_history_completion_callback_schedules_exactly_one_refresh(monkeypatch):
+    import asyncio
+
+    calls = []
+
+    async def fake_to_thread(function):
+        calls.append(function())
+
+    monkeypatch.setattr(main.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(
+        main,
+        "_maybe_refresh_research_after_history_completion",
+        lambda: {"status": "refreshed", "snapshot_rows_written": 4},
+    )
+
+    async def exercise():
+        task = asyncio.create_task(asyncio.sleep(0, result={
+            "status": "idle",
+            "selected": 0,
+            "completed": 0,
+            "failed": 0,
+            "research_snapshot_refresh": {"status": "scheduled"},
+        }))
+        task.add_done_callback(main._log_history_backfill_task_result)
+        await task
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(exercise())
+    assert calls == [{"status": "refreshed", "snapshot_rows_written": 4}]

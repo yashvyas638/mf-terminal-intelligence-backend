@@ -1915,3 +1915,39 @@ def test_production_operator_api_key_cannot_read_or_mutate_personal_portfolios(m
             "amount": "100",
         },
     ).status_code == 401
+
+
+
+def test_history_worker_schedules_snapshot_refresh_after_worker_returns(monkeypatch):
+    """The bounded history worker must not run the expensive snapshot rebuild inline."""
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "1")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", "1")
+    monkeypatch.setenv("AMFI_HISTORY_PLAN_MODE", "daily")
+
+    monkeypatch.setattr(
+        main,
+        "run_history_backfill_batch",
+        lambda **kwargs: {
+            "status": "idle",
+            "selected": 0,
+            "completed": 0,
+            "failed": 0,
+            "results": [],
+        },
+    )
+    monkeypatch.setattr(
+        main,
+        "_maybe_refresh_research_after_history_completion",
+        lambda: pytest.fail("snapshot rebuild must run only after the worker completion callback"),
+    )
+
+    result = main._maybe_run_historical_backfill_batch_from_environment()
+
+    assert result["status"] == "idle"
+    assert result["research_snapshot_refresh"] == {
+        "status": "scheduled",
+        "reason": "after_history_worker_completion",
+    }
