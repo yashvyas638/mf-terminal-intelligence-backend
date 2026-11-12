@@ -18,6 +18,7 @@ from app.main import app
 )
 def test_screener_sorts_and_returns_every_displayed_period(monkeypatch, sort_by, expected):
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr("app.main._research_snapshots_are_current", lambda: True)
     init_db()
     now = datetime.now(timezone.utc)
     scheme_code = 99123456 + {"return_3m": 1, "return_6m": 2, "return_5y": 3}[sort_by]
