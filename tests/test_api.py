@@ -608,3 +608,82 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
     assert screener.json()["items"][0]["scheme_code"] == scheme_code
     assert screener.json()["items"][0]["return_1y"] is not None
     assert client.get("/v1/analytics/screener").status_code == 401
+
+
+
+def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    fixtures = [
+        Scheme(
+            scheme_code=999970,
+            scheme_name="Explorer Equity Direct Growth",
+            amc="Explorer AMC",
+            category="Flexi Cap",
+            asset_class="Equity",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999971,
+            scheme_name="Explorer Equity Regular Growth",
+            amc="Explorer AMC",
+            category="Flexi Cap",
+            asset_class="Equity",
+            plan_type="Regular",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999972,
+            scheme_name="Explorer Debt Direct Growth",
+            amc="Explorer AMC",
+            category="Short Duration",
+            asset_class="Debt",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+    ]
+    with SessionLocal() as db:
+        for scheme in fixtures:
+            if db.get(Scheme, scheme.scheme_code) is None:
+                db.add(scheme)
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    facets = client.get("/v1/nav/facets", headers=headers)
+    assert facets.status_code == 200
+    assert "Explorer AMC" in facets.json()["amcs"]
+    assert "Flexi Cap" in facets.json()["categories"]
+
+    filtered = client.get(
+        "/v1/nav/schemes",
+        params={"amc": "Explorer AMC", "category": "Flexi Cap", "plan_type": "Direct", "limit": 1, "offset": 0},
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["total_matching"] == 1
+    assert filtered.json()["items"][0]["scheme_code"] == 999970
+
+    page = client.get(
+        "/v1/nav/schemes",
+        params={"q": "Explorer", "limit": 2, "offset": 1},
+        headers=headers,
+    )
+    assert page.status_code == 200
+    assert page.json()["total_matching"] == 3
+    assert len(page.json()["items"]) == 2
+    assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
