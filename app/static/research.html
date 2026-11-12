@@ -34,16 +34,21 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <section id="screener" class="panel">
 <div class="toolbar">
 <input id="q" type="search" placeholder="Search fund name or scheme code">
-<select id="plan"><option value="">All plans</option><option>Direct</option><option>Regular</option></select>
-<select id="option"><option value="">All options</option><option>Growth</option><option>IDCW Payout</option><option>IDCW Reinvestment</option></select>
+<select id="category"><option value="">All categories</option></select>
+<select id="assetClass"><option value="">All asset classes</option></select>
+<select id="plan"><option value="">All plans</option></select>
+<select id="option"><option value="">All options</option></select>
 <select id="days"><option value="365">1 year history</option><option value="1095" selected>3 years history</option><option value="1825">5 years history</option><option value="3650">10 years history</option></select>
+<select id="sortBy"><option value="return_1y">Rank by 1Y return</option><option value="cagr">Rank by CAGR</option><option value="return_3y">Rank by 3Y return</option><option value="sharpe_ratio">Rank by Sharpe</option><option value="sortino_ratio">Rank by Sortino</option><option value="volatility">Rank by volatility</option><option value="max_drawdown">Rank by max drawdown</option><option value="positive_month_rate">Rank by positive months</option><option value="rolling_1y_positive_rate">Rank by positive 1Y windows</option></select>
+<select id="sortOrder"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select>
+<select id="minObservations"><option value="0">Any history</option><option value="100">100+ observations</option><option value="250">250+ observations</option><option value="500">500+ observations</option></select>
 <button class="primary" id="runScreen">Screen funds</button>
 </div>
-<div class="footnote" style="margin-top:10px">Category and asset-class filters will become available when a verified scheme-classification source is connected. Current AMFI NAV data does not reliably provide these classifications.</div>
+<div class="footnote" id="screenerFreshness" style="margin-top:10px">Global ranking is prepared from stored NAV history. Loading the first verified research snapshot…</div>
 <div class="tablewrap"><table id="fundTable"><thead><tr>
-<th data-sort="scheme_name">Fund / Scheme ↕</th><th data-sort="latest_nav">Latest NAV ↕</th><th data-sort="return_1m">1M ↕</th><th data-sort="return_1y">1Y ↕</th><th data-sort="return_3y">3Y ↕</th><th data-sort="volatility">Volatility ↕</th><th data-sort="sharpe_ratio">Sharpe ↕</th><th data-sort="sortino_ratio">Sortino ↕</th><th data-sort="max_drawdown">Max DD ↕</th><th data-sort="positive_month_rate">Positive months ↕</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="10" class="muted">Connect to load funds.</td></tr></tbody></table></div>
+<th>Rank</th><th>Fund / Scheme</th><th>Latest NAV</th><th>1Y return</th><th>3Y return</th><th>CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Positive months</th><th>Positive 1Y windows</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="12" class="muted">Sign in to load the global fund ranking.</td></tr></tbody></table></div>
 <div class="pagination"><span class="muted" id="pageInfo">—</span><button id="prev">Previous</button><button id="next">Next</button></div>
-<p class="footnote">Sort headers sort the currently loaded page only, not the entire universe. Returns are NAV-derived and may not include distribution adjustments. This screener is research support, not a recommendation.</p>
+<p class="footnote">Ranks are calculated across all matching stored snapshots before pagination, not just the visible page. NAV-only metrics are not distribution-adjusted total returns. Benchmark TRI and classification coverage depend on verified source integrations. Research support only—not a buy/sell recommendation.</p>
 </section>
 <section id="profile" class="panel hidden">
 <div class="toolbar"><input id="profileCode" inputmode="numeric" placeholder="Enter AMFI scheme code"><select id="profileDays"><option value="365">1 year</option><option value="1095">3 years</option><option value="1825">5 years</option><option value="3650" selected>10 years</option></select><button class="primary" id="loadProfile">Load research</button></div>
