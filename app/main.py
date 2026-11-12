@@ -1873,19 +1873,12 @@ def monthly_fund_leaderboard(
     if sub_category:
         query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, sub_category)))
 
-    with SessionLocal() as db:
-        latest_refresh = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at)).where(
-                FundResearchSnapshot.window_days == 365,
-                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
-            )
-        ).scalar_one()
-    if latest_refresh is None:
-        bootstrap = _refresh_research_snapshots_after_ingestion()
-        if bootstrap.get("status") != "refreshed":
+    if not _research_snapshots_are_current():
+        bootstrap = _maybe_refresh_research_after_history_completion()
+        if bootstrap.get("status") not in {"refreshed", "already_current"}:
             raise HTTPException(
                 503,
-                "Monthly fund rankings are being prepared from accepted NAV history. Please retry shortly.",
+                "Monthly fund rankings are being prepared from accepted NAV history and verified corporate-action data. Please retry shortly.",
             )
 
     with SessionLocal() as db:
