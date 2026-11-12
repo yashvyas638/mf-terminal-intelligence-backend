@@ -647,7 +647,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             asset_class="Equity",
             plan_type="Direct",
             option_type="Growth",
-            isin_growth=None,
+            isin_growth="INF000X01001",
             isin_dividend_reinvestment=None,
             first_seen_at=now,
             last_seen_at=now,
@@ -761,6 +761,14 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert page.json()["total_matching"] == 5  # scheme-name and AMC matches, including two additional taxonomy fixtures
     assert len(page.json()["items"]) == 2
     assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
+    isin_search = client.get(
+        "/v1/nav/schemes",
+        params={"q": "INF000X01001"},
+        headers=headers,
+    )
+    assert isin_search.status_code == 200
+    assert isin_search.json()["total_matching"] == 1
+    assert isin_search.json()["items"][0]["scheme_code"] == 999970
 
     unclassified = client.get(
         "/v1/nav/schemes",
