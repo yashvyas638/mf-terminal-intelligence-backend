@@ -600,6 +600,9 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
     assert "rolling_1y" in result["metrics"]
     assert "data_limitations" in result
 
+    rebuilt = client.post("/v1/analytics/screener/refresh", headers=headers)
+    assert rebuilt.status_code == 200, rebuilt.text
+
     screener = client.get(
         "/v1/analytics/screener?plan_type=Direct&option_type=Growth&limit=10",
         headers=headers,
