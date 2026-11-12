@@ -749,6 +749,7 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
         f"/v1/portfolios/{portfolio_id}/transactions",
         f"/v1/portfolios/{portfolio_id}/valuation",
         f"/v1/portfolios/{portfolio_id}/risk",
+        f"/v1/portfolios/{portfolio_id}/lookthrough",
         f"/v1/portfolios/{portfolio_id}/tax-lots",
         f"/v1/portfolios/{portfolio_id}/reports",
     ):
@@ -1268,6 +1269,30 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         )
         db.add(snapshot)
         db.flush()
+        disclosure = FundHoldingDisclosure(
+            scheme_code=scheme_code,
+            as_of_date=as_of,
+            source_document_url="https://example.test/verified-holdings.csv",
+            source_sha256="e" * 64,
+            retrieved_at=now,
+            row_count=1,
+            total_weight_pct=Decimal("100"),
+            verification_status="VERIFIED",
+            verified_at=now,
+            supersedes_disclosure_id=None,
+        )
+        db.add(disclosure)
+        db.flush()
+        db.add(FundHolding(
+            disclosure_id=disclosure.id,
+            security_id="INE123A01016",
+            security_name="Example Financial Services Ltd",
+            is_isin=True,
+            asset_type="Equity",
+            sector="Financial Services",
+            weight_pct=Decimal("100"),
+            market_value_inr=None,
+        ))
         db.add(PortfolioTransaction(
             portfolio_id=portfolio_id,
             scheme_code=scheme_code,
@@ -1335,6 +1360,14 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert tax_json["realized_gain_loss"] == "120.00"
     assert tax_json["tax_status"] == "TAX_RULES_NOT_APPLIED"
     assert len(tax_json["open_lots"]) == 2
+
+    lookthrough = client.get(f"/v1/portfolios/{portfolio_id}/lookthrough", headers=headers)
+    assert lookthrough.status_code == 200, lookthrough.text
+    look_json = lookthrough.json()
+    assert look_json["coverage"]["status"] == "COMPLETE"
+    assert look_json["coverage"]["covered_weight_pct"] == pytest.approx(100.0)
+    assert look_json["top_securities"][0]["security_id"] == "INE123A01016"
+    assert look_json["sector_exposure"][0]["sector"] == "Financial Services"
 
     risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
     assert risk.status_code == 200, risk.text
