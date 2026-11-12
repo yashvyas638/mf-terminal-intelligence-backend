@@ -138,11 +138,11 @@ def test_history_plan_startup_hook_supports_storage_optimized_hybrid_mode(monkey
     monkeypatch.setenv("AMFI_HISTORY_DAILY_START_DATE", "2025-11-01")
     expected = {
         "status": "planned",
-        "baseline_daily_windows_per_scheme_type": 7,
+        "baseline_daily_windows_per_scheme_type": 2,
         "monthly_windows_per_scheme_type": 48,
         "daily_windows_per_scheme_type": 54,
         "checkpoints_paused": 782,
-        "checkpoints_created": 324,
+        "checkpoints_created": 309,
         "network_requests_made": 0,
     }
     calls = []

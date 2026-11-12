@@ -143,14 +143,17 @@ def create_storage_optimized_history_plan(
     # This is essential because each fund's exact 5Y target date depends on its
     # own latest NAV date; month-end-only sampling can otherwise leave that
     # target between two stored month-end observations.
-    baseline_daily_windows = (
-        plan_history_windows(
-            full_start_date,
-            monthly_start_date - timedelta(days=1),
-            max_window_days=7,
-        )
-        if full_start_date < monthly_start_date
-        else []
+    # Keep a full-resolution 14-day buffer immediately before the monthly
+    # sampling boundary. The five-year target is derived from each scheme's
+    # latest available NAV date, so a fixed full_start_date may otherwise begin
+    # after that target (e.g. latest NAV 2026-11-11 -> target 2021-11-11).
+    # This bounded buffer deliberately reaches before full_start_date when
+    # needed; older archive history remains month-end sampled.
+    baseline_start_date = monthly_start_date - timedelta(days=14)
+    baseline_daily_windows = plan_history_windows(
+        baseline_start_date,
+        monthly_start_date - timedelta(days=1),
+        max_window_days=7,
     )
     daily_windows = plan_history_windows(daily_start_date, full_end_date, max_window_days=7)
     timestamp = now or datetime.now(timezone.utc)

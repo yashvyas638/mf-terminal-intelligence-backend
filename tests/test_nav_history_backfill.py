@@ -236,24 +236,24 @@ def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint
         session_factory=factory,
     )
     assert result["checkpoints_paused"] == 782
-    assert result["baseline_daily_windows_per_scheme_type"] == 7
+    assert result["baseline_daily_windows_per_scheme_type"] == 2
     assert result["monthly_windows_per_scheme_type"] == 48
     assert result["daily_windows_per_scheme_type"] == 54
-    assert result["checkpoints_created"] == 324
+    assert result["checkpoints_created"] == 309
     assert result["checkpoints_reactivated"] == 2
     assert result["completed_checkpoints_preserved"] == 1
 
     with factory() as db:
         rows = db.execute(select(NavBackfillCheckpoint)).scalars().all()
-        assert len(rows) == 783 + 324
+        assert len(rows) == 783 + 309
         complete = [row for row in rows if row.status == "complete"]
         paused = [row for row in rows if row.status == "paused"]
         pending = [row for row in rows if row.status == "pending"]
         assert len(complete) == 1
         assert len(paused) == 780
-        assert len(pending) == 326
+        assert len(pending) == 311
         assert sum(row.sampling_mode == "month_end" and row.status == "pending" for row in rows) == 144
-        assert sum(row.sampling_mode == "daily" and row.status == "pending" for row in rows) == 182
+        assert sum(row.sampling_mode == "daily" and row.status == "pending" for row in rows) == 167
 
 
 def test_month_end_batch_persists_only_latest_observation_per_scheme_month(factory):
