@@ -1244,6 +1244,15 @@ def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movem
     assert [item["scheme_code"] for item in idcw_result["items"]] == [codes[4], codes[3]]
     assert {item["option_type"] for item in idcw_result["items"]} == {"IDCW"}
 
+    regular = client.get(
+        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Equity+Scheme&sub_category=Flexi+Cap+Fund&plan_type=Regular&option_type=Growth&limit=3",
+        headers=headers,
+    )
+    assert regular.status_code == 200, regular.text
+    regular_result = regular.json()
+    assert regular_result["count"] == 1
+    assert [item["scheme_code"] for item in regular_result["items"]] == [codes[5]]
+
     future = client.get(
         "/v1/analytics/monthly-leaderboard?month=2026-12",
         headers=headers,
