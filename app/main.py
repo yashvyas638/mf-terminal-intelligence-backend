@@ -887,7 +887,7 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
         if advisory_session.get_bind().dialect.name == "postgresql":
             advisory_lock_acquired = bool(
                 advisory_session.execute(
-                    text("SELECT pg_try_advisory_lock(:lock_key)"),
+                    text("SELECT pg_try_advisory_xact_lock(:lock_key)"),
                     {"lock_key": 0x4D46544E41565246},
                 ).scalar_one()
             )
@@ -1455,7 +1455,6 @@ def refresh_fund_research_snapshots(
                     {"lock_key": RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY},
                 ).scalar_one()
             )
-            lock_db.commit()
             if not acquired:
                 logger.info("research_snapshot_refresh_skipped reason=distributed_lock_held")
                 return {"status": "in_progress"}
@@ -1491,18 +1490,11 @@ def refresh_fund_research_snapshots(
                 db.commit()
         finally:
             if use_postgres_lock:
+                # Transaction-scoped advisory locks are safe with Supavisor's
+                # transaction pooling and release automatically on rollback.
                 try:
-                    unlocked = bool(
-                        lock_db.execute(
-                            text("SELECT pg_advisory_unlock(:lock_key)"),
-                            {"lock_key": RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY},
-                        ).scalar_one()
-                    )
-                    lock_db.commit()
-                    if not unlocked:
-                        logger.warning("research_snapshot_refresh_lock_release_failed")
-                except Exception:
                     lock_db.rollback()
+                except Exception:
                     logger.exception("research_snapshot_refresh_lock_release_error")
     return {
         "status": "refreshed",
