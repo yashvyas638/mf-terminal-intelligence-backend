@@ -76,7 +76,7 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
         return next((headers[key] for key in candidates if key in headers), None)
 
     isin_header = pick("isin", "isincode", "securityisin")
-    name_header = pick("nameofinstrument", "nameofsecurity", "securityname", "instrumentname", "issuername", "issuer")
+    name_header = pick("nameofinstrument", "nameoftheinstrument", "nameofsecurity", "securityname", "instrumentname", "issuername", "issuer")
     # Accept both common AMC spreadsheet labels and SEBI Format 4C (% to NAV).
     weight_header = pick(
         "tonetassets", "percenttonetassets", "percentageofnetassets",
@@ -86,7 +86,7 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
     market_header = pick(
         "marketvalueinr", "marketvalueinrupees", "marketvalueinrs",
         "marketvalueinlakhs", "marketvaluerupeesinlakhs", "marketvaluersinlakhs",
-        "mktvalueinrsinlakhs", "mktvaluerupeesinlakhs", "mktvalueinlakhs",
+        "mktvalueinrsinlakhs", "mktvaluersinlakhs", "mktvaluerupeesinlakhs", "mktvalueinlakhs",
         "mktvalueinrs", "mktvaluerupees", "mktvalue",
     )
     market_header_key = _header_key(market_header) if market_header else ""
