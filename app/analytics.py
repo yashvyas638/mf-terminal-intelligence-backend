@@ -193,7 +193,7 @@ def benchmark_comparison_metrics(
 
     fund_returns = []
     benchmark_returns = []
-    for previous_date, current_date in zip(common_dates, common_dates[1:]):
+    for previous_date, current_date in zip(common_dates, common_dates[1:], strict=False):
         if (current_date - previous_date).days > 7:
             continue
         fund_returns.append(fund[current_date] / fund[previous_date] - 1.0)
@@ -214,7 +214,7 @@ def benchmark_comparison_metrics(
             daily_rf = (1 + risk_free_rate) ** (1 / 252) - 1
             alpha = (mean_fund - daily_rf - beta * (mean_benchmark - daily_rf)) * 252
 
-        active_returns = [fund_return - benchmark_return for fund_return, benchmark_return in zip(fund_returns, benchmark_returns)]
+        active_returns = [fund_return - benchmark_return for fund_return, benchmark_return in zip(fund_returns, benchmark_returns, strict=True)]
         mean_active = sum(active_returns) / len(active_returns)
         active_variance = sum((value - mean_active) ** 2 for value in active_returns) / (len(active_returns) - 1)
         tracking_error = math.sqrt(active_variance) * math.sqrt(252)
