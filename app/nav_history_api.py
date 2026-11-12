@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StrictInt, model_validator
 
 from app.nav_history_backfill import (
     create_history_backfill_plan,
@@ -40,7 +40,7 @@ def _execution_gates() -> dict[str, bool]:
 class HistoryBackfillPlanRequest(BaseModel):
     start_date: date
     end_date: date
-    scheme_types: list[int] = Field(default_factory=lambda: [1, 2, 3], min_length=1, max_length=3)
+    scheme_types: list[StrictInt] = Field(default_factory=lambda: [1, 2, 3], min_length=1, max_length=3)
     max_window_days: int = Field(default=90, ge=1, le=90)
 
     @model_validator(mode="after")
