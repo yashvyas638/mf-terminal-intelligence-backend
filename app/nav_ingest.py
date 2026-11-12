@@ -8,6 +8,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.fund_taxonomy import classify_amfi_category as _classify_amfi_category
+
 # Use AMFI's portal host directly. The www host has historically redirected and
 # can return a non-feed response to automated clients.
 AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
@@ -45,30 +47,6 @@ def _clean(value: str | None) -> str | None:
     value = (value or "").strip()
     # AMFI uses a literal hyphen when an ISIN is unavailable.
     return None if not value or value == "-" else value
-
-
-def _classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, str | None]:
-    """Map AMFI section labels to broad SEBI group and optional sub-category."""
-    raw = " ".join(raw_category.strip().split())
-    group_raw, separator, subcategory = raw.partition(" - ")
-    key = group_raw.casefold().replace("&", "and").strip()
-    if any(token in key for token in ("equity", "growth", "elss")):
-        group, asset = "Equity Scheme", "Equity"
-    elif any(token in key for token in ("debt", "income", "liquid", "gilt", "money market", "floating rate")):
-        group, asset = "Debt Scheme", "Debt"
-    elif any(token in key for token in ("hybrid", "balanced")):
-        group, asset = "Hybrid Scheme", "Hybrid"
-    elif any(token in key for token in ("other", "index", "etf", "exchange traded", "fund of funds", "fof", "life cycle", "solution oriented", "capital protection", "children", "retirement")):
-        group, asset = "Other Scheme", "Other"
-    else:
-        return None, None, None
-    sub = " ".join(subcategory.split()) if separator and subcategory.strip() else None
-    if sub and sub.casefold() in {
-        "equity scheme", "debt scheme", "hybrid scheme", "other scheme",
-        "equity schemes", "debt schemes", "hybrid schemes", "other schemes",
-    }:
-        sub = None
-    return group, sub, asset
 
 
 def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
