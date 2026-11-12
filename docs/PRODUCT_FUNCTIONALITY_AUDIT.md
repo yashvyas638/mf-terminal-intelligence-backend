@@ -87,3 +87,11 @@ The repository has a useful backend foundation, but it is not yet the complete M
 - A research snapshot rebuild failure is reported as `deferred` in the NAV refresh response and does not roll back accepted NAV ingestion.
 - Operator logs record the safe failure class and rebuild counts; no credentials or NAV payloads are logged.
 - The operator can still run the explicit snapshot refresh endpoint independently.
+
+
+## First-visit research snapshot bootstrap
+
+- If an authenticated user opens Fund Screener while the shared research snapshot cache is empty, the API builds the precomputed rankings from accepted NAV observations once and then serves the screener.
+- A process-local lock prevents concurrent first-visit requests from starting duplicate builds.
+- The UI waits for the screener bootstrap to finish before requesting the five monthly category leaderboards.
+- If bootstrap is already in progress or fails, the API returns a retryable 503 rather than displaying fabricated ranks.
