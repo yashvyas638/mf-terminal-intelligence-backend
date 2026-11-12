@@ -369,15 +369,10 @@ def test_history_batch_refreshes_research_only_after_queue_settles(monkeypatch):
             "results": [],
         },
     )
-    monkeypatch.setattr(
-        main,
-        "history_backfill_status",
-        lambda: {"groups": [{"checkpoint_status": "complete", "windows": 5}]},
-    )
     refresh_calls = []
     monkeypatch.setattr(
         main,
-        "_refresh_research_snapshots_after_ingestion",
+        "_maybe_refresh_research_after_history_completion",
         lambda: refresh_calls.append(True) or {"status": "refreshed", "snapshot_rows_written": 10},
     )
 
@@ -404,25 +399,22 @@ def test_history_batch_defers_research_refresh_while_checkpoints_remain(monkeypa
             "results": [],
         },
     )
-    monkeypatch.setattr(
-        main,
-        "history_backfill_status",
-        lambda: {"groups": [{"checkpoint_status": "pending", "windows": 3}]},
-    )
     refresh_calls = []
     monkeypatch.setattr(
         main,
-        "_refresh_research_snapshots_after_ingestion",
-        lambda: refresh_calls.append(True) or {"status": "refreshed"},
+        "_maybe_refresh_research_after_history_completion",
+        lambda: refresh_calls.append(True) or {
+            "status": "deferred",
+            "blocking_groups": 1,
+        },
     )
 
     result = main._maybe_run_historical_backfill_batch_from_environment()
 
-    assert refresh_calls == []
+    assert refresh_calls == [True]
     assert result["research_snapshot_refresh"] == {
         "status": "deferred",
-        "reason": "history_windows_remaining",
-        "unfinished_windows": 3,
+        "blocking_groups": 1,
     }
 
 
