@@ -393,16 +393,20 @@ async def _refresh_research_snapshots_with_lock_retry(
         last_result = await asyncio.to_thread(
             _maybe_refresh_research_after_history_completion
         )
-        if last_result.get("status") != "in_progress":
+        status = last_result.get("status")
+        if status in {"refreshed", "already_current"}:
+            return last_result
+        if status not in {"in_progress", "deferred"}:
             return last_result
         delay_seconds = min(30, 5 * (attempt + 1))
         logger.info(
-            "research_snapshot_refresh_waiting_for_lock attempt=%s retry_in_seconds=%s",
+            "research_snapshot_refresh_retrying status=%s attempt=%s retry_in_seconds=%s",
+            status,
             attempt + 1,
             delay_seconds,
         )
         await asyncio.sleep(delay_seconds)
-    logger.warning("research_snapshot_refresh_lock_retry_exhausted attempts=%s", max_attempts)
+    logger.warning("research_snapshot_refresh_retry_exhausted attempts=%s", max_attempts)
     return {"status": "deferred", "reason": "lock_retry_exhausted"}
 
 
@@ -433,7 +437,12 @@ def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
                 "research_snapshot_refresh_status": (result.get("research_snapshot_refresh") or {}).get("status"),
             },
         )
-        if result.get("status") in {"completed", "idle"} and not result.get("failed"):
+        if result.get("status") in {"completed", "idle", "partial_failure", "skipped"}:
+            logger.info(
+                "research_snapshot_refresh_triggered_after_history status=%s failed=%s",
+                result.get("status"),
+                result.get("failed"),
+            )
             refresh_task = asyncio.create_task(
                 _refresh_research_snapshots_with_lock_retry()
             )
@@ -442,6 +451,10 @@ def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
         logger.warning("amfi_history_backfill_background_task_cancelled")
     except Exception:
         logger.exception("amfi_history_backfill_background_task_failed")
+        refresh_task = asyncio.create_task(
+            _refresh_research_snapshots_with_lock_retry()
+        )
+        refresh_task.add_done_callback(_log_research_refresh_task_result)
 
 
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
