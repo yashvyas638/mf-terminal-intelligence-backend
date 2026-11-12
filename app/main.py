@@ -571,10 +571,15 @@ def nav_scheme_facets(
             return [str(value) for value in rows if str(value).strip()]
         allowed_groups = {"Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Scheme"}
         allowed_assets = {"Equity", "Debt", "Hybrid", "Other"}
+        subcategory_rows = db.execute(
+            select(Scheme.category)
+            .where(Scheme.category_group.in_(allowed_groups), Scheme.category.is_not(None), Scheme.category != "")
+            .distinct().order_by(Scheme.category)
+        ).scalars().all()
         return {
             "amcs": values(Scheme.amc),
             "categories": [value for value in values(Scheme.category_group) if value in allowed_groups],
-            "sub_categories": values(Scheme.category),
+            "sub_categories": [str(value) for value in subcategory_rows if str(value).strip()],
             "asset_classes": [value for value in values(Scheme.asset_class) if value in allowed_assets],
             "plan_types": values(Scheme.plan_type),
             "option_types": values(Scheme.option_type),
