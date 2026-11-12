@@ -55,7 +55,15 @@ from app.db import (
     SessionLocal,
     init_db,
 )
-from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics
+from app.analytics import (
+    benchmark_comparison_metrics,
+    fifo_capital_gains,
+    performance_metrics,
+    portfolio_risk_metrics,
+    project_financial_goal,
+    research_metrics,
+    research_snapshot_metrics,
+)
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
@@ -332,6 +340,28 @@ def _hybrid_baseline_buffer_complete() -> bool:
     return all(observed.get(key) == "complete" for key in expected)
 
 
+def _research_snapshots_are_current() -> bool:
+    """Return true only when the complete four-window snapshot set covers the latest NAV date."""
+    with SessionLocal() as db:
+        latest_nav_date = db.execute(
+            select(func.max(NavObservation.nav_date))
+        ).scalar_one()
+        snapshot_rows, snapshot_windows, snapshot_nav_date = db.execute(
+            select(
+                func.count(FundResearchSnapshot.id),
+                func.count(func.distinct(FundResearchSnapshot.window_days)),
+                func.max(FundResearchSnapshot.nav_as_of_date),
+            )
+        ).one()
+    return bool(
+        snapshot_rows
+        and snapshot_windows == 4
+        and latest_nav_date is not None
+        and snapshot_nav_date is not None
+        and snapshot_nav_date >= latest_nav_date
+    )
+
+
 def _maybe_refresh_research_after_history_completion() -> dict[str, Any]:
     """Refresh rankings only after non-paused history and the 5Y baseline are complete."""
     status = history_backfill_status()
@@ -348,7 +378,32 @@ def _maybe_refresh_research_after_history_completion() -> dict[str, Any]:
     if not _hybrid_baseline_buffer_complete():
         logger.info("research_snapshot_refresh_deferred_five_year_baseline_incomplete")
         return {"status": "deferred", "reason": "five_year_baseline_incomplete"}
+    if _research_snapshots_are_current():
+        logger.info("research_snapshot_refresh_skipped reason=snapshots_already_current")
+        return {"status": "already_current"}
     return _refresh_research_snapshots_after_ingestion()
+
+
+async def _refresh_research_snapshots_with_lock_retry(
+    max_attempts: int = 60,
+) -> dict[str, Any]:
+    """Retry a cross-instance lock miss until a peer commits or this worker can rebuild."""
+    last_result: dict[str, Any] = {"status": "in_progress"}
+    for attempt in range(max_attempts):
+        last_result = await asyncio.to_thread(
+            _maybe_refresh_research_after_history_completion
+        )
+        if last_result.get("status") != "in_progress":
+            return last_result
+        delay_seconds = min(30, 5 * (attempt + 1))
+        logger.info(
+            "research_snapshot_refresh_waiting_for_lock attempt=%s retry_in_seconds=%s",
+            attempt + 1,
+            delay_seconds,
+        )
+        await asyncio.sleep(delay_seconds)
+    logger.warning("research_snapshot_refresh_lock_retry_exhausted attempts=%s", max_attempts)
+    return {"status": "deferred", "reason": "lock_retry_exhausted"}
 
 
 def _log_research_refresh_task_result(task: asyncio.Task[Any]) -> None:
@@ -380,7 +435,7 @@ def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
         )
         if result.get("status") in {"completed", "idle"} and not result.get("failed"):
             refresh_task = asyncio.create_task(
-                asyncio.to_thread(_maybe_refresh_research_after_history_completion)
+                _refresh_research_snapshots_with_lock_retry()
             )
             refresh_task.add_done_callback(_log_research_refresh_task_result)
     except asyncio.CancelledError:
@@ -1402,9 +1457,9 @@ def refresh_fund_research_snapshots(
         for window_days in windows:
             cutoff = as_of - timedelta(days=window_days)
             window_points = [(d, value) for d, value in points if d >= cutoff]
-            metrics = research_metrics(
+            metrics = research_snapshot_metrics(
                 window_points,
-                period_baseline_points=points,
+                period_baseline_rows=points,
             )
             period = metrics.get("period_returns", {})
             rolling = metrics.get("rolling_1y", {})

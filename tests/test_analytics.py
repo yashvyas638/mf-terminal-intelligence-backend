@@ -3,7 +3,18 @@ from decimal import Decimal
 
 import pytest
 
-from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, max_drawdown, performance_metrics, portfolio_risk_metrics, project_financial_goal, rolling_return_series, research_metrics, xirr
+from app.analytics import (
+    benchmark_comparison_metrics,
+    fifo_capital_gains,
+    max_drawdown,
+    performance_metrics,
+    portfolio_risk_metrics,
+    project_financial_goal,
+    rolling_return_series,
+    research_metrics,
+    research_snapshot_metrics,
+    xirr,
+)
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
@@ -346,3 +357,36 @@ def test_research_metrics_accepts_actual_baseline_outside_window():
         period_baseline_points=baseline_points,
     )
     assert result["period_returns"]["5Y"] == pytest.approx(0.8)
+
+
+
+def test_research_snapshot_metrics_matches_persisted_research_fields():
+    start = date(2021, 1, 1)
+    baseline = [
+        (start + timedelta(days=index * 7), 100.0 + index * 0.23 + (index % 9) * 0.17)
+        for index in range(310)
+    ]
+    window = baseline[-160:]
+    full = research_metrics(window, period_baseline_points=baseline)
+    snapshot = research_snapshot_metrics(window, baseline)
+
+    for key in (
+        "status",
+        "observations",
+        "start_date",
+        "end_date",
+        "latest_nav",
+        "total_return",
+        "period_returns",
+        "monthly_returns",
+        "cagr",
+        "annualized_volatility",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "max_drawdown",
+        "positive_month_rate",
+        "rolling_1y",
+    ):
+        assert snapshot.get(key) == full.get(key)
+    assert "drawdown_profile" not in snapshot
+    assert "rolling_3y" not in snapshot
