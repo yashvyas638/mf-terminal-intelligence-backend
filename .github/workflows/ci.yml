@@ -18,7 +18,7 @@ jobs:
         with:
           python-version-file: ".python-version"
           cache: pip
-      - run: pip install -r requirements.lock
+      - run: pip install -r requirements.txt
       - name: Apply SQLite baseline through existing production revision
         run: alembic upgrade 0003_nav_correction_history
         env:
@@ -131,7 +131,7 @@ jobs:
         with:
           python-version-file: ".python-version"
           cache: pip
-      - run: pip install -r requirements.lock
+      - run: pip install -r requirements.txt
       - name: Create Supabase client-role test fixtures
         run: |
           python - <<'PY'
