@@ -648,6 +648,7 @@ def list_schemes(
                     "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
                     "plan_type": scheme.plan_type,
                     "option_type": scheme.option_type,
+                    "category_group": scheme.category_group,
                     "category": scheme.category,
                     "asset_class": scheme.asset_class,
                     "latest_nav": str(nav.nav_value) if nav else None,
@@ -991,6 +992,8 @@ def refresh_fund_research_snapshots(
 def fund_screener(
     q: str | None = Query(default=None, max_length=120),
     category: str | None = Query(default=None, max_length=160),
+    category_group: str | None = Query(default=None, max_length=80),
+    sub_category: str | None = Query(default=None, max_length=120),
     asset_class: str | None = Query(default=None, max_length=40),
     plan_type: str | None = Query(default=None, max_length=20),
     option_type: str | None = Query(default=None, max_length=20),
@@ -1041,8 +1044,10 @@ def fund_screener(
                 query = query.where(Scheme.scheme_code == int(term))
             else:
                 query = query.where(Scheme.scheme_name.ilike(f"%{term}%"))
-        if category:
-            query = query.where(Scheme.category == category)
+        if category_group:
+            query = query.where(Scheme.category_group == category_group)
+        if sub_category or category:
+            query = query.where(Scheme.category == (sub_category or category))
         if asset_class:
             query = query.where(Scheme.asset_class == asset_class)
         if plan_type:
@@ -1076,6 +1081,7 @@ def fund_screener(
                 "rank": offset + len(items) + 1,
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
+                "category_group": scheme.category_group,
                 "category": scheme.category,
                 "asset_class": scheme.asset_class,
                 "plan_type": scheme.plan_type,
