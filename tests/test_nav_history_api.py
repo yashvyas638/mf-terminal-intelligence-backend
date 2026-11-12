@@ -40,7 +40,7 @@ def test_plan_payload_rejects_invalid_range_duplicate_and_boolean_types():
             end_date=date(2026, 1, 2),
             scheme_types=[1, 1],
         )
-    with pytest.raises(ValueError, match="only 1, 2, or 3"):
+    with pytest.raises(ValueError, match="valid integer"):
         HistoryBackfillPlanRequest(
             start_date=date(2026, 1, 1),
             end_date=date(2026, 1, 2),
