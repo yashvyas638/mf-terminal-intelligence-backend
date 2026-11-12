@@ -91,6 +91,7 @@ def upgrade() -> None:
         sa.Column("source_document_url", sa.String(length=1000), nullable=False),
         sa.Column("source_document_sha256", sa.String(length=64), nullable=False),
         sa.Column("verification_status", sa.String(length=16), nullable=False, server_default="PENDING"),
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("tier IN (1, 2)", name="ck_scheme_benchmark_tier"),
         sa.CheckConstraint(
