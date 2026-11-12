@@ -183,10 +183,19 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     if not 1 <= limit <= 5:
         raise RuntimeError("Startup historical NAV batch limit must be between 1 and 5")
 
+    stale_raw = os.getenv("AMFI_HISTORY_STALE_AFTER_MINUTES", "30").strip()
+    try:
+        stale_after_minutes = int(stale_raw)
+    except ValueError as exc:
+        raise RuntimeError("Historical NAV stale-worker threshold must be an integer") from exc
+    if not 1 <= stale_after_minutes <= 240:
+        raise RuntimeError("Historical NAV stale-worker threshold must be between 1 and 240 minutes")
+
     result = run_history_backfill_batch(
         limit=limit,
         enabled=True,
         source_contract_verified=True,
+        stale_after_minutes=stale_after_minutes,
     )
     first_failure = next(
         (item for item in result["results"] if item.get("status") == "failed"),
