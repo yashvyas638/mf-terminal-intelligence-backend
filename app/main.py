@@ -1369,7 +1369,10 @@ def refresh_fund_research_snapshots(
 
     refreshed_at = datetime.now(timezone.utc)
     windows = (365, 1095, 1825, 3650)
-    history_floor = refreshed_at.date() - timedelta(days=max(windows))
+    # Keep an extra 35-day baseline lookback outside each nominal window.
+    # The NAV performance window remains exact; earlier observations are used
+    # only to resolve the requested target-date NAV without forward-fill.
+    history_floor = refreshed_at.date() - timedelta(days=max(windows) + 35 + MAX_NAV_STALENESS_DAYS)
     snapshot_rows: list[FundResearchSnapshot] = []
     schemes_processed = 0
     min_as_of: date | None = None
@@ -1389,7 +1392,10 @@ def refresh_fund_research_snapshots(
         for window_days in windows:
             cutoff = as_of - timedelta(days=window_days)
             window_points = [(d, value) for d, value in points if d >= cutoff]
-            metrics = research_metrics(window_points)
+            metrics = research_metrics(
+                window_points,
+                period_baseline_points=points,
+            )
             period = metrics.get("period_returns", {})
             rolling = metrics.get("rolling_1y", {})
             compact_metrics = {
