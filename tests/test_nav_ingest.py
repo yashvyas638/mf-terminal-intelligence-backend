@@ -286,3 +286,18 @@ Open Ended Schemes(Children's Fund - Childrens' Fund)
     assert records[0].category is None
     assert records[1].category_group is None
     assert records[1].category is None
+
+
+def test_normalizes_sectoral_and_thematic_headers_with_official_descriptors():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Equity Schemes - Sectoral Fund - Banking and Financial Services)
+150007;-;-;Example Banking Fund;10.1234;11-Nov-2026
+Open Ended Schemes(Equity Schemes - Thematic Fund - Business Cycle)
+150008;-;-;Example Business Cycle Fund;10.1234;11-Nov-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+
+    assert records[0].category_group == "Equity Scheme"
+    assert records[0].category == "Sectoral Fund"
+    assert records[1].category_group == "Equity Scheme"
+    assert records[1].category == "Thematic Fund"
