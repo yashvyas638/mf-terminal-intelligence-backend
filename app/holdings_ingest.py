@@ -67,6 +67,9 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
     reader = csv.DictReader(StringIO(csv_text.lstrip("\ufeff")))
     if not reader.fieldnames:
         raise ValueError("holdings CSV header is missing")
+    normalized_headers = [_header_key(name) for name in reader.fieldnames if name]
+    if len(normalized_headers) != len(set(normalized_headers)):
+        raise ValueError("holdings CSV contains duplicate or ambiguous column headers")
     headers = {_header_key(name): name for name in reader.fieldnames if name}
 
     def pick(*candidates: str) -> str | None:
@@ -92,6 +95,8 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
     for row_number, row in enumerate(reader, start=2):
         if not row or not any((value or "").strip() for value in row.values()):
             continue
+        if None in row:
+            raise ValueError(f"row {row_number}: more values than the CSV header defines")
         rows_seen += 1
         if rows_seen > MAX_HOLDING_ROWS:
             raise ValueError("holdings CSV exceeds the 20,000-row safety limit")
@@ -101,12 +106,18 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
         try:
             security_id, is_isin = _security_id(row.get(isin_header) or "" if isin_header else "", name)
             weight = _decimal_value(row.get(weight_header) or "", "% to Net Assets", required=True)
-            market_value = _decimal_value(row.get(market_header) or "", "market value") * market_multiplier if market_header else None
+            raw_market_value = _decimal_value(row.get(market_header) or "", "market value") if market_header else None
+            market_value = raw_market_value * market_multiplier if raw_market_value is not None else None
         except ValueError as exc:
             raise ValueError(f"invalid holdings CSV row {row_number}: {exc}") from exc
         assert weight is not None
         if weight < Decimal("-1000") or weight > Decimal("1000"):
             raise ValueError(f"row {row_number}: holding weight is outside supported bounds")
+        # Reject silent numeric precision loss before storing fixed-scale values.
+        if weight.quantize(Decimal("0.00000001")) != weight:
+            raise ValueError(f"row {row_number}: holding weight has more than 8 decimal places")
+        if market_value is not None and market_value.quantize(Decimal("0.01")) != market_value:
+            raise ValueError(f"row {row_number}: market value has more than 2 decimal places")
         existing = aggregated.get(security_id)
         if existing is None:
             aggregated[security_id] = {
@@ -119,6 +130,17 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
                 "sector": (row.get(sector_header) or "").strip() or None if sector_header else None,
             }
         else:
+            for field, label in (("asset_type", "asset type"), ("sector", "sector")):
+                incoming = (row.get(asset_header) or "").strip() if field == "asset_type" and asset_header else (
+                    (row.get(sector_header) or "").strip() if field == "sector" and sector_header else ""
+                )
+                previous = existing[field]
+                if incoming and previous and incoming.casefold() != previous.casefold():
+                    raise ValueError(
+                        f"row {row_number}: conflicting {label} values for the same security identifier"
+                    )
+                if incoming and not previous:
+                    existing[field] = incoming
             existing["weight_pct"] += weight
             if market_value is not None:
                 existing["market_value_inr"] = (existing["market_value_inr"] or Decimal("0")) + market_value
@@ -144,4 +166,12 @@ def parse_fund_holdings_csv(csv_text: str) -> tuple[list[HoldingPoint], dict]:
         "isin_holdings": sum(item.is_isin for item in points),
         "non_isin_holdings": sum(not item.is_isin for item in points),
         "total_weight_pct": str(sum((item.weight_pct for item in points), Decimal("0"))),
+        "weight_total_variance_from_100_pct": str(
+            sum((item.weight_pct for item in points), Decimal("0")) - Decimal("100")
+        ),
+        "weight_total_status": (
+            "RECONCILED_WITHIN_0_10_PCT"
+            if abs(sum((item.weight_pct for item in points), Decimal("0")) - Decimal("100")) <= Decimal("0.10")
+            else "REVIEW_REQUIRED"
+        ),
     }
