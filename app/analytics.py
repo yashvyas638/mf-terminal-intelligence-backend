@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_right
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Iterable
 
@@ -137,9 +137,15 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
     sortino = ((sum(excess) / len(excess)) * 252 / downside_dev) if downside_dev > 0 else None
     periods = {}
     for label, days in (("1M", 30), ("3M", 90), ("6M", 182), ("1Y", 365), ("3Y", 365 * 3), ("5Y", 365 * 5)):
-        target = dates[-1].toordinal() - days
-        eligible = [(d, v) for d, v in rows if d.toordinal() <= target]
-        periods[label] = (values[-1] / eligible[-1][1] - 1) if eligible else None
+        target_date = dates[-1] - timedelta(days=days)
+        eligible = [(d, v) for d, v in rows if d <= target_date]
+        # Never silently substitute a materially older NAV for the requested
+        # period baseline. Weekends and holidays are fine; long data gaps are not.
+        max_baseline_gap_days = 35 if label in {"3Y", "5Y"} else 7
+        if not eligible or (target_date - eligible[-1][0]).days > max_baseline_gap_days:
+            periods[label] = None
+        else:
+            periods[label] = values[-1] / eligible[-1][1] - 1
     monthly: dict[str, tuple[date, float]] = {}
     for d, v in rows:
         key = d.strftime("%Y-%m")
