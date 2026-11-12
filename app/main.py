@@ -60,7 +60,10 @@ from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
 from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
-from app.nav_history_backfill import create_history_backfill_plan
+from app.nav_history_backfill import (
+    create_history_backfill_plan,
+    run_history_backfill_batch,
+)
 from app.fund_taxonomy import (
     canonical_asset_class,
     canonical_group,
@@ -130,6 +133,45 @@ def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
     )
     return result
 
+def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | None:
+    """Run one explicitly enabled, tightly bounded historical NAV batch."""
+    if os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() != "true":
+        return None
+    if os.getenv("AMFI_HISTORY_CONTRACT_VERIFIED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "Historical NAV execution requires AMFI_HISTORY_CONTRACT_VERIFIED=true"
+        )
+    if os.getenv("AMFI_HISTORY_BACKFILL_ENABLED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "Historical NAV execution requires AMFI_HISTORY_BACKFILL_ENABLED=true"
+        )
+
+    limit_raw = os.getenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "1").strip()
+    try:
+        limit = int(limit_raw)
+    except ValueError as exc:
+        raise RuntimeError("Historical NAV batch limit must be an integer") from exc
+    if not 1 <= limit <= 5:
+        raise RuntimeError("Startup historical NAV batch limit must be between 1 and 5")
+
+    result = run_history_backfill_batch(
+        limit=limit,
+        enabled=True,
+        source_contract_verified=True,
+    )
+    logger.warning(
+        "amfi_history_backfill_batch_finished",
+        extra={
+            "status": result["status"],
+            "selected": result["selected"],
+            "completed": result["completed"],
+            "failed": result["failed"],
+            "batch_limit": limit,
+        },
+    )
+    return result
+
+
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
     """Expose only allow-listed SEBI taxonomy, including the sub-category."""
     group = canonical_group(scheme.category_group)
@@ -172,6 +214,7 @@ async def lifespan(_: FastAPI):
             db.execute(text("SELECT 1"))
             _verify_trusted_database_role(db)
         _maybe_plan_historical_backfill_from_environment()
+        _maybe_run_historical_backfill_batch_from_environment()
     else:
         init_db()
     yield
