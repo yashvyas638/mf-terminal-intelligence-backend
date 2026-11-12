@@ -11,3 +11,16 @@ input,select,textarea{background:#fff;border:1px solid #e1e6ed;border-radius:11p
 @media(max-width:700px){body{font-size:13px}.app{display:block}.side{height:auto;position:sticky;top:0;z-index:20;padding:12px 14px 9px;border-right:0;border-bottom:1px solid var(--line);box-shadow:0 4px 16px rgba(20,35,55,.05)}.brand{font-size:15px}.brand small{font-size:8px;margin-top:3px}.nav{display:flex;overflow-x:auto;overflow-y:hidden;gap:5px;margin-top:10px;padding-bottom:2px;scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav button,.navlink{white-space:nowrap;flex:0 0 auto;padding:9px 11px;font-size:11px}.sidefoot{display:none}.main{padding:19px 13px 34px}.top{align-items:stretch;flex-direction:column;gap:13px;margin-bottom:15px}h1{font-size:25px;margin:4px 0}p.sub{font-size:12px}.actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px}.actions #apiKey{grid-column:1/-1;width:100%}.actions #saveKey{grid-column:1}.actions #refresh{grid-column:2}.notice{font-size:11px;padding:11px 12px}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.card{padding:15px;border-radius:15px}.metric .value{font-size:21px;margin:9px 0 4px}.metric .label{font-size:10px}.metric .hint{font-size:9px}.section{margin-top:13px}.sectionhead h2{font-size:14px}.toolbar{gap:7px}.toolbar input{flex:1 1 150px}.tablewrap{margin-left:-2px;margin-right:-2px;max-width:calc(100vw - 26px)}table{min-width:610px}th,td{padding:11px 9px}#overviewDiscovery .card,#overviewAnalytics .card{min-width:0}#performance .grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}#performance .grid>div{padding:10px}#performance h2{font-size:20px}.filebox{padding:13px}.formgrid{gap:11px}textarea{max-width:100%}footer{line-height:1.6}}
 @media(max-width:380px){.main{padding-left:10px;padding-right:10px}.grid{gap:7px}.card{padding:12px}.metric .value{font-size:19px}.actions{grid-template-columns:1fr}.actions #saveKey,.actions #refresh{grid-column:1}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+
+/* Portfolio performance and Fund Explorer controls */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.stat{background:#f7f9fc;border:1px solid #edf0f4;border-radius:13px;padding:14px;min-width:0}
+.stat label{display:block;color:#77818d;font-size:11px;font-weight:650;margin-bottom:8px}
+.stat strong{display:block;color:#202833;font-size:clamp(17px,1.7vw,23px);font-weight:760;letter-spacing:-.035em;overflow-wrap:anywhere}
+#portfolioOverview{margin-top:18px}
+#portfolioValuationStatus{font-size:12px}
+#fundFilters select{flex:1 1 145px;max-width:220px}
+#fundFilters input{flex:2 1 220px}
+#fundPrev:disabled,#fundNext:disabled{opacity:.42;cursor:not-allowed}
+#fundPageLabel{align-self:center}
+@media(max-width:700px){.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat{padding:11px}.stat label{font-size:10px}.stat strong{font-size:17px}#fundFilters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}#fundFilters input{grid-column:1/-1;min-width:0}#fundFilters select{max-width:none;min-width:0;width:100%}#fundFilters button{min-width:0}}
