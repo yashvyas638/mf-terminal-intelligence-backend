@@ -237,6 +237,10 @@ def _require_portfolio_owner(db: Any, portfolio_id: int) -> Portfolio:
     if portfolio is None:
         raise HTTPException(404, "Portfolio not found")
     user_id = _authenticated_user_id.get()
+    # In production, the shared operator key is for operational endpoints only.
+    # It must never act as a wildcard owner for private portfolio data.
+    if not user_id and os.getenv("ENVIRONMENT", "").lower() == "production":
+        raise HTTPException(401, "Sign in with a personal account to access portfolio data")
     if user_id and portfolio.owner_user_id != user_id:
         raise HTTPException(404, "Portfolio not found")
     return portfolio
@@ -2842,8 +2846,11 @@ def create_portfolio(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
+    owner_user_id = _authenticated_user_id.get()
+    if not owner_user_id and os.getenv("ENVIRONMENT", "").lower() == "production":
+        owner_user_id = require_authenticated_user()
     with SessionLocal() as db:
-        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, owner_user_id=_authenticated_user_id.get() or "legacy-operator", created_at=datetime.now(timezone.utc))
+        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, owner_user_id=owner_user_id or "legacy-operator", created_at=datetime.now(timezone.utc))
         db.add(portfolio)
         db.commit()
         db.refresh(portfolio)
@@ -2855,9 +2862,11 @@ def list_portfolios(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
+    user_id = _authenticated_user_id.get()
+    if not user_id and os.getenv("ENVIRONMENT", "").lower() == "production":
+        user_id = require_authenticated_user()
     with SessionLocal() as db:
         portfolio_query = select(Portfolio).order_by(Portfolio.created_at.desc())
-        user_id = _authenticated_user_id.get()
         if user_id:
             portfolio_query = portfolio_query.where(Portfolio.owner_user_id == user_id)
         rows = db.execute(portfolio_query).scalars().all()
@@ -2874,6 +2883,7 @@ def add_portfolio_transaction(
     _validate_transaction_amount(payload)
     with SessionLocal() as db:
         _lock_portfolio(db, portfolio_id)
+        _require_portfolio_owner(db, portfolio_id)
         if db.get(Scheme, payload.scheme_code) is None:
             raise HTTPException(404, "Scheme code not found; ingest the AMFI scheme master first")
         transaction = PortfolioTransaction(
@@ -3014,6 +3024,7 @@ def import_portfolio_statement(
         raise HTTPException(428, "A valid, unexpired preview confirmation token is required before import")
     with SessionLocal() as db:
         _lock_portfolio(db, portfolio_id)
+        _require_portfolio_owner(db, portfolio_id)
         existing_batch = db.execute(
             select(PortfolioImportBatch).where(
                 PortfolioImportBatch.portfolio_id == portfolio_id,
