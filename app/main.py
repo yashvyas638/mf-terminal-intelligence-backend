@@ -3317,6 +3317,8 @@ def portfolio_holdings_lookthrough(
             "fresh_covered_market_value": str(fresh_covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
             "stale_covered_market_value": str(stale_covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
             "missing_disclosure_scheme_codes": sorted(missing_codes),
+            "missing_nav_scheme_codes": sorted(valuation.get("missing_nav_scheme_codes", [])),
+            "stale_nav_scheme_codes": sorted(valuation.get("stale_nav_scheme_codes", [])),
             "stale_disclosure_scheme_codes": sorted(stale_codes),
             "covered_weight_pct": (
                 float((covered_value / total_value * 100).quantize(Decimal("0.0001")))
