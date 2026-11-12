@@ -1087,6 +1087,40 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
         assert all(item.metrics_json for item in persisted)
 
 
+
+def test_nav_ingestion_refreshes_research_snapshots_and_reports_result(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    captured = {}
+
+    def fake_refresh(*, x_api_key):
+        captured["key"] = x_api_key
+        return {
+            "status": "refreshed",
+            "schemes_processed": 42,
+            "snapshot_rows_written": 168,
+            "refreshed_at": "2026-11-12T10:00:00+00:00",
+        }
+
+    monkeypatch.setattr(main, "refresh_fund_research_snapshots", fake_refresh)
+    result = main._refresh_research_snapshots_after_ingestion()
+    assert captured["key"] == "test-api-key-that-is-at-least-32-characters-long"
+    assert result["status"] == "refreshed"
+    assert result["schemes_processed"] == 42
+    assert result["snapshot_rows_written"] == 168
+
+
+def test_nav_ingestion_remains_successful_when_research_snapshot_refresh_fails(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+
+    def failed_refresh(*, x_api_key):
+        raise RuntimeError("snapshot build failed")
+
+    monkeypatch.setattr(main, "refresh_fund_research_snapshots", failed_refresh)
+    result = main._refresh_research_snapshots_after_ingestion()
+    assert result == {"status": "deferred", "error_type": "RuntimeError"}
+
+
+
 def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movement(monkeypatch):
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
