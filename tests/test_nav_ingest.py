@@ -195,3 +195,17 @@ Open Ended Schemes(Solution Oriented Scheme)
     assert records[1].category_group is None
     assert records[1].category is None
     assert records[1].asset_class is None
+
+
+
+def test_uses_exact_sebi_hybrid_and_focused_category_labels():
+    focused, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Equity Scheme - Focused Fund (No. of Stocks))\n"
+        "120594;INF109K01480;-;Focused Fund;23.4567;21-Oct-2026\n"
+    )
+    hybrid, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Hybrid Scheme - Multi Asset Allocation)\n"
+        "120595;INF109K01480;-;Multi Asset Allocation;23.4567;21-Oct-2026\n"
+    )
+    assert focused[0].category == "Focused Fund (No. of Stocks)"
+    assert hybrid[0].category == "Multi Asset Allocation"
