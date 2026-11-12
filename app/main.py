@@ -1917,6 +1917,13 @@ def create_portfolio_report_snapshot(
     with SessionLocal() as db:
         portfolio = _require_portfolio_owner(db, portfolio_id)
         holdings = valuation.get("holdings", [])
+        current_value = float(valuation.get("current_value") or 0)
+        for holding in holdings:
+            holding["weight_pct"] = (
+                round(float(holding["market_value"]) / current_value * 100, 4)
+                if current_value > 0 and holding.get("market_value") is not None else None
+            )
+            holding["freshness_status"] = holding.get("nav_freshness")
         source_snapshot_ids = set()
         max_nav_date = None
         for holding in holdings:
@@ -1957,8 +1964,8 @@ def create_portfolio_report_snapshot(
         ]
         if risk.get("status") != "OK":
             limitations.append("Portfolio risk metrics are unavailable or incomplete: " + str(risk.get("status")))
-        if valuation.get("status") not in {"OK", "VALUED"}:
-            limitations.append("Portfolio valuation has a data-quality status: " + str(valuation.get("status")))
+        if valuation.get("valuation_status") != "COMPLETE":
+            limitations.append("Portfolio valuation has a data-quality status: " + str(valuation.get("valuation_status")))
 
         report = {
             "report_version": "portfolio-report-v1",
