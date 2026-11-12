@@ -282,3 +282,48 @@ def test_history_batch_startup_hook_accepts_large_bounded_run(monkeypatch):
     result = main._maybe_run_historical_backfill_batch_from_environment()
     assert result["status"] == "idle"
     assert len(calls) == 1
+
+
+def test_research_refresh_after_history_waits_for_nonpaused_checkpoints(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        main,
+        "history_backfill_status",
+        lambda: {
+            "groups": [
+                {"checkpoint_status": "complete", "windows": 20},
+                {"checkpoint_status": "paused", "windows": 782},
+                {"checkpoint_status": "pending", "windows": 4},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        main,
+        "_refresh_research_snapshots_after_ingestion",
+        lambda: calls.append("refresh") or {"status": "refreshed"},
+    )
+    result = main._maybe_refresh_research_after_history_completion()
+    assert result == {"status": "deferred", "blocking_groups": 1}
+    assert calls == []
+
+
+def test_research_refresh_after_history_runs_when_only_complete_or_paused(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        main,
+        "history_backfill_status",
+        lambda: {
+            "groups": [
+                {"checkpoint_status": "complete", "windows": 200},
+                {"checkpoint_status": "paused", "windows": 782},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        main,
+        "_refresh_research_snapshots_after_ingestion",
+        lambda: calls.append("refresh") or {"status": "refreshed", "schemes_processed": 100},
+    )
+    result = main._maybe_refresh_research_after_history_completion()
+    assert result == {"status": "refreshed", "schemes_processed": 100}
+    assert calls == ["refresh"]
