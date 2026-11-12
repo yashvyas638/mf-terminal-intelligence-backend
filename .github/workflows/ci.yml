@@ -72,7 +72,7 @@ jobs:
           engine = create_engine(os.environ["DATABASE_URL"])
           with engine.begin() as connection:
               connection.exec_driver_sql("""
-              DO $$
+              DO $roles$
               BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
                   CREATE ROLE anon NOLOGIN;
@@ -81,7 +81,15 @@ jobs:
                   CREATE ROLE authenticated NOLOGIN;
                 END IF;
               END
-              $$;
+              $roles$;
+              CREATE SCHEMA IF NOT EXISTS auth;
+              CREATE OR REPLACE FUNCTION auth.uid()
+              RETURNS uuid
+              LANGUAGE sql
+              STABLE
+              AS $uid$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $uid$;
+              GRANT USAGE ON SCHEMA auth TO authenticated;
+              GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
               """)
           PY
       - name: Apply PostgreSQL baseline through existing production revision
