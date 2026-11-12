@@ -45,7 +45,7 @@ This is the release-control checklist for the nine product capabilities requeste
 ## Current evidence boundary (2026-11-12)
 
 - The current feature branch has dashboard and research auth UX changes, server-side Supabase user verification, owner-scoped portfolio routes and RLS migration work.
-- CI run 43168199878 passed SQLite and PostgreSQL jobs at commit 61b134b86a123dcc3e97fdd64c67fdcef0669b00. A new two-user middleware/API isolation test has since been added; its new commit still requires CI.
-- Live Supabase signup/login/email delivery and deployed browser E2E are not yet verified.
-- Latest NAV ingestion and parser fixtures exist. Historical date-window planning and checkpoint schema exist, but the official AMFI historical request contract is not yet validated and production backfill is not enabled.
+- CI run 43168199878 passed SQLite and PostgreSQL jobs at commit 61b134b86a123dcc3e97fdd64c67fdcef0669b00. The two-user bearer-auth middleware/API isolation test passed SQLite and PostgreSQL CI at commit 74052cabbb36ee50e4725e303e03c845a7451417. The AMFI history adapter is a later addition and its latest CI run must pass before it is treated as verified.
+- Live Supabase signup/login/email delivery and deployed browser E2E are not yet verified. The connected project audit found owner-scoped RLS policies on portfolio tables; the four RLS-enabled/no-policy INFO findings (migration metadata, ingestion snapshots, NAV corrections and backfill checkpoints) have no grants to anon/authenticated/PUBLIC, so they remain closed to client roles.
+- Latest NAV ingestion and parser fixtures exist. Historical date-window planning, checkpoint schema, atomic persistence and an isolated bounded HTTP adapter now exist. Adapter HTTP tests use mocks; the official AMFI historical request contract is still not live-validated and production backfill is not enabled.
 - Fund Explorer has classification filters and pagination; persistent watchlists and metric-ranked screener are not yet complete.
