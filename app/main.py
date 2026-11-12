@@ -569,11 +569,13 @@ def nav_scheme_facets(
                 select(column).where(column.is_not(None), column != "").distinct().order_by(column)
             ).scalars().all()
             return [str(value) for value in rows if str(value).strip()]
+        allowed_groups = {"Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Scheme"}
+        allowed_assets = {"Equity", "Debt", "Hybrid", "Other"}
         return {
             "amcs": values(Scheme.amc),
-            "categories": values(Scheme.category_group),
+            "categories": [value for value in values(Scheme.category_group) if value in allowed_groups],
             "sub_categories": values(Scheme.category),
-            "asset_classes": values(Scheme.asset_class),
+            "asset_classes": [value for value in values(Scheme.asset_class) if value in allowed_assets],
             "plan_types": values(Scheme.plan_type),
             "option_types": values(Scheme.option_type),
         }
