@@ -128,6 +128,10 @@ async def supabase_user_authentication(request, call_next):
 
     authorization = request.headers.get("Authorization", "")
     if not authorization.startswith("Bearer "):
+        if not expected:
+            return JSONResponse({"detail": "Server authentication is not configured."}, status_code=503)
+        if len(expected) < 32 and supplied and secrets.compare_digest(supplied, expected):
+            return JSONResponse({"detail": "Server operator key must contain at least 32 characters."}, status_code=503)
         return JSONResponse({"detail": "Please sign in to continue."}, status_code=401)
 
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
