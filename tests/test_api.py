@@ -1269,6 +1269,36 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
             voided_at=None,
             void_reason=None,
         ))
+        db.add_all([
+            PortfolioTransaction(
+                portfolio_id=portfolio_id,
+                scheme_code=scheme_code,
+                transaction_type="BUY",
+                transaction_date=as_of - timedelta(days=60),
+                units=Decimal("5"),
+                nav=Decimal("110"),
+                amount=Decimal("550"),
+                charges=Decimal("0"),
+                notes="Second FIFO lot",
+                created_at=now,
+                voided_at=None,
+                void_reason=None,
+            ),
+            PortfolioTransaction(
+                portfolio_id=portfolio_id,
+                scheme_code=scheme_code,
+                transaction_type="SELL",
+                transaction_date=as_of - timedelta(days=30),
+                units=Decimal("6"),
+                nav=Decimal("120"),
+                amount=Decimal("720"),
+                charges=Decimal("0"),
+                notes="FIFO redemption",
+                created_at=now,
+                voided_at=None,
+                void_reason=None,
+            ),
+        ])
         nav_rows = []
         value = 100.0
         for index in range(100):
@@ -1283,6 +1313,15 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
             ))
         db.add_all(nav_rows)
         db.commit()
+
+    tax_lots = client.get(f"/v1/portfolios/{portfolio_id}/tax-lots", headers=headers)
+    assert tax_lots.status_code == 200, tax_lots.text
+    tax_json = tax_lots.json()
+    assert tax_json["realized_lot_count"] == 1
+    assert tax_json["open_lot_count"] == 2
+    assert tax_json["realized_gain_loss"] == "120.00"
+    assert tax_json["tax_status"] == "TAX_RULES_NOT_APPLIED"
+    assert len(tax_json["open_lots"]) == 2
 
     risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
     assert risk.status_code == 200, risk.text
