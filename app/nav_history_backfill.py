@@ -139,6 +139,19 @@ def create_storage_optimized_history_plan(
 
     monthly_end_date = daily_start_date - timedelta(days=1)
     monthly_windows = plan_calendar_month_windows(monthly_start_date, monthly_end_date)
+    # Retain a short, full-resolution baseline buffer before month-end sampling.
+    # This is essential because each fund's exact 5Y target date depends on its
+    # own latest NAV date; month-end-only sampling can otherwise leave that
+    # target between two stored month-end observations.
+    baseline_daily_windows = (
+        plan_history_windows(
+            full_start_date,
+            monthly_start_date - timedelta(days=1),
+            max_window_days=7,
+        )
+        if full_start_date < monthly_start_date
+        else []
+    )
     daily_windows = plan_history_windows(daily_start_date, full_end_date, max_window_days=7)
     timestamp = now or datetime.now(timezone.utc)
     paused = created = reactivated = already_complete = 0
@@ -210,6 +223,8 @@ def create_storage_optimized_history_plan(
             created += 1
 
         for scheme_type in sorted(scheme_types):
+            for window in baseline_daily_windows:
+                upsert_window(window, scheme_type, "daily")
             for window in monthly_windows:
                 upsert_window(window, scheme_type, "month_end")
             for window in daily_windows:
@@ -222,6 +237,7 @@ def create_storage_optimized_history_plan(
         "monthly_end_date": monthly_end_date.isoformat(),
         "daily_start_date": daily_start_date.isoformat(),
         "daily_end_date": full_end_date.isoformat(),
+        "baseline_daily_windows_per_scheme_type": len(baseline_daily_windows),
         "monthly_windows_per_scheme_type": len(monthly_windows),
         "daily_windows_per_scheme_type": len(daily_windows),
         "checkpoints_paused": paused,
