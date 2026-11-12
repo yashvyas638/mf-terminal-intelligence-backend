@@ -1459,6 +1459,66 @@ def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch)
     )
     assert cross_owner_link.status_code == 404
 
+    scheme_code = 87654325
+    now = datetime.now(timezone.utc)
+    nav_date = date.today()
+    with SessionLocal() as db:
+        db.add(Scheme(
+            scheme_code=scheme_code,
+            scheme_name="Linked Goal Test Fund",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+            plan_type="Direct",
+            option_type="Growth",
+        ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/goal-nav",
+            retrieved_at=now,
+            payload_sha256="d" * 64,
+            records_valid=1,
+            unique_scheme_codes=1,
+            min_nav_date=nav_date,
+            max_nav_date=nav_date,
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add(PortfolioTransaction(
+            portfolio_id=owner_portfolio.json()["id"],
+            scheme_code=scheme_code,
+            transaction_type="BUY",
+            transaction_date=nav_date,
+            units=Decimal("10"),
+            nav=Decimal("100"),
+            amount=Decimal("1000"),
+            charges=Decimal("0"),
+            notes="Goal link test",
+            created_at=now,
+            voided_at=None,
+            void_reason=None,
+        ))
+        db.add(NavObservation(
+            scheme_code=scheme_code,
+            nav_date=nav_date,
+            nav_value=Decimal("100"),
+            source_snapshot_id=snapshot.id,
+        ))
+        db.commit()
+
+    linked_payload = {**payload, "linked_portfolio_id": owner_portfolio.json()["id"]}
+    linked_update = client.put(f"/v1/goals/{goal_id}", headers=user_one, json=linked_payload)
+    assert linked_update.status_code == 200, linked_update.text
+    linked_projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
+    assert linked_projection.status_code == 200, linked_projection.text
+    assert linked_projection.json()["current_amount_source"] == "LINKED_PORTFOLIO_MARKET_VALUE"
+    assert linked_projection.json()["linked_portfolio"]["portfolio_id"] == owner_portfolio.json()["id"]
+    assert linked_projection.json()["projection"]["current_amount"] == 1000.0
+
     projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
     assert projection.status_code == 200, projection.text
     assert projection.json()["projection"]["inflation_adjusted_target"] > 10_000_000
