@@ -14,18 +14,17 @@ NAV_ADJUSTMENT_REGISTRY_VERSION = "2026-11-12.2"
 # Rs.1,000 effective 16-Aug-2022. The AMC notice states that existing unit
 # holdings were adjusted proportionately without changing holding value. Its
 # factsheet records the corresponding pre/post NAV levels. The event applies
-# across the fund's 20 AMFI plan/option codes listed below.
-_ICICI_OVERNIGHT_SCHEME_CODES = (
-    *range(145535, 145551),
-    *range(149408, 149412),
-)
+# across the fund's 16 standard plan/option codes. The notice explicitly
+# excludes the four unclaimed-amount subplans, which remain subject to the
+# unverified-discontinuity quality gate instead of receiving this adjustment.
+_ICICI_OVERNIGHT_SCHEME_CODES = tuple(range(145535, 145551))
 
 _VERIFIED_EVENTS: tuple[dict[str, Any], ...] = (
     {
         "scheme_codes": frozenset(_ICICI_OVERNIGHT_SCHEME_CODES),
         "effective_date": date(2022, 8, 16),
         "factor": 10.0,
-        "action": "unit_consolidation",
+        "action": "face_value_change",
         "source_urls": (
             "https://fundsindia.com/blog/wp-content/uploads/2022/08/Attachment74998attachmentsChange-in-FV-Overnight-Fund.pdf",
             "https://www.icicipruamc.com/blob/sebi-repo/Advertisements/2026/February/Filing%20date%2010-02-2026/Release%20date%2006-02-2026/Advertisements/Annexure%203-%20Big%20Factsheet.pdf",
