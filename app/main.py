@@ -2023,6 +2023,21 @@ def monthly_fund_leaderboard(
             item["previous_category_rank"] = old_rank
             item["rank_change"] = old_rank - rank_value if old_rank is not None else None
 
+    # Return the leaders for every sub-category, not only the top three funds
+    # across the entire broad scheme group. This keeps the UI's category cards
+    # genuinely comparable within their SEBI-defined peer groups.
+    category_leaders = [
+        {
+            "category": key[1],
+            "count": len(group_rows),
+            "items": group_rows[:limit],
+        }
+        for key, group_rows in sorted(
+            category_groups.items(),
+            key=lambda pair: str(pair[0][1]).casefold(),
+        )
+    ]
+
     for rank_value, item in enumerate(current_items, start=1):
         item["rank"] = rank_value
     visible = current_items[:limit]
@@ -2034,6 +2049,8 @@ def monthly_fund_leaderboard(
         "category_group": canonical_group(category_group) if category_group else None,
         "count": len(current_items),
         "items": visible,
+        "category_count": len(category_leaders),
+        "categories": category_leaders,
         "refreshed_at": latest_refresh.isoformat(),
         "methodology": (
             "Completed calendar-month NAV return from the last observed NAV in the prior calendar month "
