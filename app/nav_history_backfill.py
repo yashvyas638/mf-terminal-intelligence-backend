@@ -28,7 +28,7 @@ def create_history_backfill_plan(
     end_date: date,
     scheme_types: tuple[int, ...] = (1, 2, 3),
     *,
-    max_window_days: int = 90,
+    max_window_days: int = 7,
     session_factory: Callable = SessionLocal,
     now: datetime | None = None,
 ) -> dict[str, Any]:
