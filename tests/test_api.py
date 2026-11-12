@@ -731,6 +731,16 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert len(page.json()["items"]) == 2
     assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
 
+    unclassified = client.get(
+        "/v1/nav/schemes",
+        params={"q": "999973"},
+        headers=headers,
+    )
+    assert unclassified.status_code == 200
+    assert unclassified.json()["items"][0]["category_group"] is None
+    assert unclassified.json()["items"][0]["category"] is None
+    assert unclassified.json()["items"][0]["asset_class"] is None
+
 
 def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatch):
     """Exercise the real bearer-auth middleware and owner checks with two identities."""
