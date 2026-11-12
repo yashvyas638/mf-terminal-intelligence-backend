@@ -1277,7 +1277,7 @@ def monthly_fund_leaderboard(
 
     current_items.sort(key=lambda item: (-item["monthly_return"], item["scheme_name"].casefold(), item["scheme_code"]))
     previous_groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
-    for snapshot, scheme in rows:
+    for _snapshot, scheme in rows:
         value = previous_returns.get(scheme.scheme_code)
         if value is None:
             continue
