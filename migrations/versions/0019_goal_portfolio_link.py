@@ -13,18 +13,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "portfolio_goals",
-        sa.Column("linked_portfolio_id", sa.Integer(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_portfolio_goals_linked_portfolio",
-        "portfolio_goals",
-        "portfolios",
-        ["linked_portfolio_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("portfolio_goals") as batch:
+        batch.add_column(sa.Column("linked_portfolio_id", sa.Integer(), nullable=True))
+        batch.create_foreign_key(
+            "fk_portfolio_goals_linked_portfolio",
+            "portfolios",
+            ["linked_portfolio_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
     op.create_index(
         "ix_portfolio_goal_linked_portfolio",
         "portfolio_goals",
