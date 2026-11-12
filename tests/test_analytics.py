@@ -319,7 +319,7 @@ def test_period_return_uses_baseline_lookback_without_changing_window_total_retu
     target_5y = latest - timedelta(days=365 * 5)
     actual_base = target_5y - timedelta(days=30)
     window_points = [
-        (target_5y, 120.0),
+        (target_5y + timedelta(days=1), 120.0),
         (latest, 180.0),
     ]
     baseline_points = [
@@ -330,7 +330,7 @@ def test_period_return_uses_baseline_lookback_without_changing_window_total_retu
         window_points,
         period_baseline_points=baseline_points,
     )
-    assert result["start_date"] == target_5y.isoformat()
+    assert result["start_date"] == (target_5y + timedelta(days=1)).isoformat()
     assert result["total_return"] == pytest.approx(0.5)
     assert result["period_returns"]["5Y"] == pytest.approx(0.8)
 
@@ -339,7 +339,7 @@ def test_research_metrics_accepts_actual_baseline_outside_window():
     latest = date(2026, 11, 11)
     target_5y = latest - timedelta(days=365 * 5)
     actual_base = target_5y - timedelta(days=30)
-    window_points = [(target_5y, 120.0), (latest, 180.0)]
+    window_points = [(target_5y + timedelta(days=1), 120.0), (latest, 180.0)]
     baseline_points = [(actual_base, 100.0), *window_points]
     result = research_metrics(
         window_points,
