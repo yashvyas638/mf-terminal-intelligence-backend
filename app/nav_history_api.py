@@ -49,7 +49,7 @@ class HistoryBackfillPlanRequest(BaseModel):
             raise ValueError("end_date must be on or after start_date")
         if len(set(self.scheme_types)) != len(self.scheme_types):
             raise ValueError("scheme_types must not contain duplicates")
-        if any(value not in {1, 2, 3} for value in self.scheme_types):
+        if any(isinstance(value, bool) or value not in {1, 2, 3} for value in self.scheme_types):
             raise ValueError("scheme_types must contain only 1, 2, or 3")
         return self
 
