@@ -290,4 +290,71 @@ jobs:
               },
               "database_writes": 0,
           }, indent=2))
+          monthly_window = HistoryWindow(date(2021, 12, 1), date(2021, 12, 31))
+          monthly_url = build_amfi_history_url(monthly_window, 1)
+          monthly_response = requests.get(
+              monthly_url,
+              timeout=(10, 75),
+              headers={"User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0"},
+          )
+          monthly_response.raise_for_status()
+          if len(monthly_response.content) > 30_000_000:
+              raise SystemExit("Monthly AMFI history sample exceeded 30 MB response safety limit")
+          monthly_payload = monthly_response.content.decode("utf-8-sig", errors="strict")
+          monthly_records, monthly_report = parse_amfi_history_text(monthly_payload)
+          if monthly_report["records_valid"] < 1:
+              raise SystemExit("Monthly AMFI history sample returned no valid rows")
+          if any(
+              row.nav_date < monthly_window.start_date
+              or row.nav_date > monthly_window.end_date
+              for row in monthly_records
+          ):
+              raise SystemExit("Monthly AMFI history sample contains out-of-range dates")
+
+          print(json.dumps({
+              "scheme_type_checks": summaries,
+              "first_planned_checkpoint": {
+                  "scheme_type": 1,
+                  "source": historical_url,
+                  "start_date": historical_window.start_date.isoformat(),
+                  "end_date": historical_window.end_date.isoformat(),
+                  "records_valid": historical_report["records_valid"],
+                  "unique_scheme_codes": historical_report["unique_scheme_codes"],
+                  "schema_variant": historical_report["schema_variant"],
+                  "invalid_rows": historical_report["invalid_rows"],
+                  "max_scheme_name_length": max(len(row.scheme_name) for row in historical_records),
+                  "max_isin_length": max(
+                      max(len(row.isin_growth or ""), len(row.isin_dividend_reinvestment or ""))
+                      for row in historical_records
+                  ),
+                  "max_plan_type_length": max(len(row.plan_type or "") for row in historical_records),
+                  "max_option_type_length": max(len(row.option_type or "") for row in historical_records),
+                  "oversized_plan_types": sorted({
+                      row.plan_type for row in historical_records
+                      if row.plan_type and len(row.plan_type) > 20
+                  }),
+                  "oversized_option_types": sorted({
+                      row.option_type for row in historical_records
+                      if row.option_type and len(row.option_type) > 20
+                  }),
+                  "max_nav_value": str(max(row.nav for row in historical_records)),
+                  "payload_sha256": historical_report["payload_sha256"],
+              },
+              "monthly_sample": {
+                  "scheme_type": 1,
+                  "source": monthly_url,
+                  "start_date": monthly_window.start_date.isoformat(),
+                  "end_date": monthly_window.end_date.isoformat(),
+                  "bytes_received": len(monthly_response.content),
+                  "records_valid": monthly_report["records_valid"],
+                  "unique_scheme_codes": monthly_report["unique_scheme_codes"],
+                  "schema_variant": monthly_report["schema_variant"],
+                  "sampled_month_end_rows": len({
+                      (row.scheme_code, row.nav_date.year, row.nav_date.month)
+                      for row in monthly_records
+                  }),
+                  "payload_sha256": monthly_report["payload_sha256"],
+              },
+              "database_writes": 0,
+          }, indent=2))
           PY

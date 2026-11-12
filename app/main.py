@@ -62,6 +62,7 @@ from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 from app.nav_history_backfill import (
     create_history_backfill_plan,
+    create_storage_optimized_history_plan,
     run_history_backfill_batch,
 )
 from app.fund_taxonomy import (
@@ -116,18 +117,46 @@ def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
     if end_date < start_date:
         raise RuntimeError("Historical backfill end date must be on or after start date")
 
-    result = create_history_backfill_plan(
-        start_date,
-        end_date,
-        (1, 2, 3),
-        max_window_days=7,
-    )
+    plan_mode = os.getenv("AMFI_HISTORY_PLAN_MODE", "daily").strip().lower()
+    if plan_mode == "hybrid":
+        monthly_start_raw = os.getenv("AMFI_HISTORY_MONTHLY_START_DATE", "").strip()
+        daily_start_raw = os.getenv("AMFI_HISTORY_DAILY_START_DATE", "").strip()
+        if not monthly_start_raw or not daily_start_raw:
+            raise RuntimeError(
+                "Hybrid history planning requires AMFI_HISTORY_MONTHLY_START_DATE "
+                "and AMFI_HISTORY_DAILY_START_DATE"
+            )
+        try:
+            monthly_start_date = date.fromisoformat(monthly_start_raw)
+            daily_start_date = date.fromisoformat(daily_start_raw)
+        except ValueError as exc:
+            raise RuntimeError("Hybrid history plan dates must use YYYY-MM-DD") from exc
+        result = create_storage_optimized_history_plan(
+            start_date,
+            end_date,
+            monthly_start_date,
+            daily_start_date,
+            (1, 2, 3),
+        )
+    elif plan_mode == "daily":
+        result = create_history_backfill_plan(
+            start_date,
+            end_date,
+            (1, 2, 3),
+            max_window_days=7,
+        )
+    else:
+        raise RuntimeError("AMFI_HISTORY_PLAN_MODE must be daily or hybrid")
+
     logger.warning(
         "amfi_history_backfill_plan_created",
         extra={
+            "plan_mode": plan_mode,
             "checkpoints_created": result["checkpoints_created"],
-            "checkpoints_already_present": result["checkpoints_already_present"],
-            "windows_per_scheme_type": result["windows_per_scheme_type"],
+            "checkpoints_already_present": result.get("checkpoints_already_present", 0),
+            "checkpoints_paused": result.get("checkpoints_paused", 0),
+            "monthly_windows_per_scheme_type": result.get("monthly_windows_per_scheme_type", 0),
+            "daily_windows_per_scheme_type": result.get("daily_windows_per_scheme_type", result.get("windows_per_scheme_type", 0)),
             "network_requests_made": result["network_requests_made"],
         },
     )

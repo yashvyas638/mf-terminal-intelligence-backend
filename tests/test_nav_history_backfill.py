@@ -9,7 +9,10 @@ from sqlalchemy.orm import sessionmaker
 from app.db import Base, NavBackfillCheckpoint, NavObservation
 from app.nav_history_backfill import (
     create_history_backfill_plan,
+    create_storage_optimized_history_plan,
     history_backfill_status,
+    plan_calendar_month_windows,
+    retain_month_end_records,
     run_history_backfill_batch,
 )
 
@@ -192,3 +195,144 @@ def test_stale_running_checkpoint_is_recovered_after_worker_crash(factory):
         checkpoint = db.execute(select(NavBackfillCheckpoint)).scalar_one()
         assert checkpoint.status == "complete"
         assert checkpoint.attempts == 2
+
+
+
+def test_calendar_month_windows_are_aligned_and_never_exceed_31_days():
+    windows = plan_calendar_month_windows(date(2021, 11, 19), date(2022, 1, 31))
+    assert [(item.start_date, item.end_date) for item in windows] == [
+        (date(2021, 11, 19), date(2021, 11, 30)),
+        (date(2021, 12, 1), date(2021, 12, 31)),
+        (date(2022, 1, 1), date(2022, 1, 31)),
+    ]
+    assert all(item.day_count <= 31 for item in windows)
+
+
+def test_month_end_sampling_keeps_latest_nav_per_scheme_and_month():
+    records = [
+        SimpleNamespace(scheme_code=1, nav_date=date(2021, 12, 1), nav=Decimal("10")),
+        SimpleNamespace(scheme_code=1, nav_date=date(2021, 12, 30), nav=Decimal("11")),
+        SimpleNamespace(scheme_code=2, nav_date=date(2021, 12, 29), nav=Decimal("20")),
+        SimpleNamespace(scheme_code=1, nav_date=date(2022, 1, 3), nav=Decimal("12")),
+    ]
+    sampled = retain_month_end_records(records)
+    assert [(item.scheme_code, item.nav_date) for item in sampled] == [
+        (1, date(2021, 12, 30)),
+        (1, date(2022, 1, 3)),
+        (2, date(2021, 12, 29)),
+    ]
+
+
+def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint(factory):
+    create_history_backfill_plan(
+        date(2021, 11, 12), date(2026, 11, 11), (1, 2, 3), session_factory=factory
+    )
+    with factory.begin() as db:
+        first = db.execute(
+            select(NavBackfillCheckpoint)
+            .where(
+                NavBackfillCheckpoint.scheme_type == 1,
+                NavBackfillCheckpoint.start_date == date(2021, 11, 12),
+            )
+        ).scalar_one()
+        first.status = "complete"
+        first.completed_at = datetime(2026, 11, 12, tzinfo=timezone.utc)
+
+    result = create_storage_optimized_history_plan(
+        date(2021, 11, 12),
+        date(2026, 11, 11),
+        date(2021, 11, 19),
+        date(2025, 11, 1),
+        (1, 2, 3),
+        session_factory=factory,
+    )
+    assert result["checkpoints_paused"] == 782
+    assert result["monthly_windows_per_scheme_type"] == 48
+    assert result["daily_windows_per_scheme_type"] == 54
+    assert result["checkpoints_created"] == 306
+    assert result["completed_checkpoints_preserved"] == 0
+
+    with factory() as db:
+        rows = db.execute(select(NavBackfillCheckpoint)).scalars().all()
+        assert len(rows) == 783 + 306
+        complete = [row for row in rows if row.status == "complete"]
+        paused = [row for row in rows if row.status == "paused"]
+        pending = [row for row in rows if row.status == "pending"]
+        assert len(complete) == 1
+        assert len(paused) == 782
+        assert len(pending) == 306
+        assert sum(row.sampling_mode == "month_end" and row.status == "pending" for row in rows) == 144
+        assert sum(row.sampling_mode == "daily" and row.status == "pending" for row in rows) == 162
+
+
+def test_month_end_batch_persists_only_latest_observation_per_scheme_month(factory):
+    create_storage_optimized_history_plan(
+        date(2021, 11, 12),
+        date(2026, 11, 11),
+        date(2021, 11, 19),
+        date(2025, 11, 1),
+        (1,),
+        session_factory=factory,
+    )
+    source_records = [
+        SimpleNamespace(
+            scheme_code=119551,
+            scheme_name="Example Fund",
+            isin_growth="INF204K01K15",
+            isin_dividend_reinvestment=None,
+            nav=Decimal("10.10"),
+            nav_date=date(2021, 11, 22),
+            plan_type="Direct Plan",
+            option_type="GROWTH",
+        ),
+        SimpleNamespace(
+            scheme_code=119551,
+            scheme_name="Example Fund",
+            isin_growth="INF204K01K15",
+            isin_dividend_reinvestment=None,
+            nav=Decimal("10.25"),
+            nav_date=date(2021, 11, 30),
+            plan_type="Direct Plan",
+            option_type="GROWTH",
+        ),
+        SimpleNamespace(
+            scheme_code=120000,
+            scheme_name="Other Fund",
+            isin_growth="INF0000000001",
+            isin_dividend_reinvestment=None,
+            nav=Decimal("20.25"),
+            nav_date=date(2021, 11, 29),
+            plan_type="Regular Plan",
+            option_type="IDCW Payout",
+        ),
+    ]
+    report = {
+        **_report(),
+        "records_valid": 3,
+        "unique_scheme_codes": 2,
+        "min_nav_date": "2021-11-22",
+        "max_nav_date": "2021-11-30",
+    }
+    result = run_history_backfill_batch(
+        limit=1,
+        fetcher=lambda window, scheme_type: (source_records, report),
+        session_factory=factory,
+        enabled=True,
+        source_contract_verified=True,
+    )
+    assert result["completed"] == 1
+    with factory() as db:
+        checkpoint = db.execute(
+            select(NavBackfillCheckpoint).where(
+                NavBackfillCheckpoint.sampling_mode == "month_end",
+                NavBackfillCheckpoint.start_date == date(2021, 11, 19),
+                NavBackfillCheckpoint.end_date == date(2021, 11, 30),
+            )
+        ).scalar_one()
+        nav_rows = db.execute(select(NavObservation).order_by(NavObservation.scheme_code)).scalars().all()
+        assert checkpoint.records_valid == 2
+        assert len(nav_rows) == 2
+        assert {row.nav_value for row in nav_rows} == {
+            Decimal("10.25000000"),
+            Decimal("20.25000000"),
+        }
