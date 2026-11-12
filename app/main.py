@@ -3757,3 +3757,9 @@ def portfolio_valuation(
                 "are withheld when an active holding has no stored NAV; XIRR is also withheld when NAV inputs are stale."
             ),
         }
+
+
+# Operator-only historical NAV backfill routes. Execution is locked by default.
+from app.nav_history_api import router as nav_history_backfill_router
+
+app.include_router(nav_history_backfill_router)
