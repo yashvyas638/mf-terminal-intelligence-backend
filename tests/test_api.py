@@ -12,6 +12,32 @@ from app.db import IngestionSnapshot, NavObservation, PortfolioTransaction, Port
 from app.main import app
 
 
+class _RoleResult:
+    def __init__(self, role):
+        self.role = role
+
+    def scalar_one(self):
+        return self.role
+
+
+class _RoleSession:
+    def __init__(self, role):
+        self.role = role
+
+    def execute(self, statement):
+        return _RoleResult(self.role)
+
+
+@pytest.mark.parametrize("role", ["anon", "authenticated"])
+def test_production_database_role_guard_rejects_supabase_client_roles(role):
+    with pytest.raises(RuntimeError, match="trusted server-side PostgreSQL role"):
+        main._verify_trusted_database_role(_RoleSession(role))
+
+
+def test_production_database_role_guard_accepts_server_side_role():
+    assert main._verify_trusted_database_role(_RoleSession("service_role")) == "service_role"
+
+
 def test_protected_endpoints_fail_closed_when_key_is_missing(monkeypatch):
     monkeypatch.delenv("API_KEY", raising=False)
     client = TestClient(app)
