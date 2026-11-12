@@ -1109,16 +1109,16 @@ def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkey
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
     client = TestClient(app)
     csv_a = (
-        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\\n"
-        "INE002A01018,Example Bank Ltd,5.25,Equity,Financial Services\\n"
-        "INE009A01021,Example Technology Ltd,3.50,Equity,Information Technology\\n"
-        ",Net Current Assets,2.00,Cash,\\n"
+        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\n"
+        "INE002A01018,Example Bank Ltd,5.25,Equity,Financial Services\n"
+        "INE009A01021,Example Technology Ltd,3.50,Equity,Information Technology\n"
+        ",Net Current Assets,2.00,Cash,\n"
     )
     csv_b = (
-        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\\n"
-        "INE002A01018,Example Bank Ltd,3.00,Equity,Financial Services\\n"
-        "INE009A01021,Example Technology Ltd,1.00,Equity,Information Technology\\n"
-        "INE123A01016,Other Listed Company,5.00,Equity,Industrials\\n"
+        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\n"
+        "INE002A01018,Example Bank Ltd,3.00,Equity,Financial Services\n"
+        "INE009A01021,Example Technology Ltd,1.00,Equity,Information Technology\n"
+        "INE123A01016,Other Listed Company,5.00,Equity,Industrials\n"
     )
 
     def import_payload(code, as_of, text):
