@@ -671,7 +671,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             scheme_name="Explorer Debt Direct Growth",
             amc="Explorer AMC",
             category_group="Debt Scheme",
-            category="Short Duration Fund",
+            category="Short Term Fund",
             asset_class="Debt",
             plan_type="Direct",
             option_type="Growth",
@@ -714,7 +714,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             amc="Explorer AMC",
             category_group="Life Cycle Funds",
             category="Life Cycle Fund with Maturity of 10 Years",
-            asset_class="Life Cycle",
+            asset_class=None,
             plan_type="Direct",
             option_type="Growth",
             isin_growth=None,
@@ -739,8 +739,8 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "Power Select" not in facets.json()["categories"]
     assert "PowerUp" not in facets.json()["sub_categories"]
     assert "Life Cycle Funds" in facets.json()["categories"]
-    assert "Life Cycle" in facets.json()["asset_classes"]
-    assert "Life Cycle Fund with Maturity of 10 Years" in facets.json()["sub_categories"]
+    assert "Life Cycle" not in facets.json()["asset_classes"]
+    assert not any(value.startswith("Life Cycle Fund with Maturity") for value in facets.json()["sub_categories"])
     assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
