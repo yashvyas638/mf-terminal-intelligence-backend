@@ -1822,7 +1822,7 @@ def monthly_fund_leaderboard(
         current_value = monthly_map.get(selected_month)
         if current_value is not None:
             taxonomy = _scheme_taxonomy(scheme)
-            if not taxonomy.get("category_group"):
+            if not taxonomy.get("category_group") or not taxonomy.get("category"):
                 continue
             current_items.append({
                 "scheme_code": scheme.scheme_code,
@@ -1844,7 +1844,7 @@ def monthly_fund_leaderboard(
         if value is None:
             continue
         taxonomy = _scheme_taxonomy(scheme)
-        if not taxonomy.get("category_group"):
+        if not taxonomy.get("category_group") or not taxonomy.get("category"):
             continue
         key = (taxonomy.get("category_group"), taxonomy.get("category"), scheme.plan_type, scheme.option_type)
         previous_groups.setdefault(key, []).append({"scheme_code": scheme.scheme_code, "value": value})
