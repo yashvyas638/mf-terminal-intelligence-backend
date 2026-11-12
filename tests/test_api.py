@@ -1989,3 +1989,33 @@ def test_refresh_wrapper_preserves_cross_instance_in_progress_status(monkeypatch
         "status": "in_progress",
         "reason": "another_instance_refreshing",
     }
+
+
+
+def test_postgresql_research_snapshot_advisory_lock_is_exclusive():
+    from sqlalchemy import text
+
+    first = SessionLocal()
+    second = SessionLocal()
+    if first.get_bind().dialect.name != "postgresql":
+        first.close()
+        second.close()
+        pytest.skip("PostgreSQL advisory locks are production-specific")
+
+    lock_key = main.RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY
+    acquire_sql = text("SELECT pg_try_advisory_xact_lock(:lock_key)")
+    try:
+        assert first.execute(acquire_sql, {"lock_key": lock_key}).scalar_one() is True
+        assert second.execute(acquire_sql, {"lock_key": lock_key}).scalar_one() is False
+        second.rollback()
+
+        first.commit()
+        assert second.execute(acquire_sql, {"lock_key": lock_key}).scalar_one() is True
+        second.commit()
+    finally:
+        for session in (first, second):
+            try:
+                session.rollback()
+            except Exception:
+                session.rollback()
+            session.close()
