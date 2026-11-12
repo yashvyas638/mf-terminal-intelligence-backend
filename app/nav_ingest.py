@@ -87,6 +87,9 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
                 if group:
                     current_category_group, current_category, current_asset_class = group, sub, asset
                     metadata_present = True
+                else:
+                    current_category_group, current_category, current_asset_class = None, None, None
+                    metadata_present = True
                 # An unrecognized section heading must never become an AMC name.
                 continue
             # AMFI AMC headers are plain text, usually ending in "Mutual Fund".
