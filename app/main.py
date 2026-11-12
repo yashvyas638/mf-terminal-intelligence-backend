@@ -32,6 +32,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.db import (
+    FundWatchlistItem,
     IngestionSnapshot,
     NavObservation,
     NavObservationRevision,
@@ -182,6 +183,14 @@ def require_api_key(x_api_key: str | None) -> None:
         raise HTTPException(503, "Server operator key must contain at least 32 characters")
     if not x_api_key or not secrets.compare_digest(x_api_key, expected):
         raise HTTPException(401, "Sign in to access this endpoint")
+
+
+def require_authenticated_user() -> str:
+    """Return the verified Supabase identity; operator API keys cannot own user data."""
+    user_id = _authenticated_user_id.get()
+    if not user_id:
+        raise HTTPException(401, "Sign in with a personal account to use your fund watchlist")
+    return user_id
 
 
 def _require_portfolio_owner(db: Any, portfolio_id: int) -> Portfolio:
@@ -931,6 +940,10 @@ class PortfolioCreate(BaseModel):
         return self
 
 
+class WatchlistCreate(BaseModel):
+    scheme_code: int = Field(gt=0)
+
+
 class TransactionCreate(BaseModel):
     scheme_code: int = Field(gt=0)
     transaction_type: Literal["BUY", "SELL"]
@@ -982,6 +995,91 @@ class RebalanceRequest(BaseModel):
         if total != Decimal("100"):
             raise ValueError("target percentages must sum to exactly 100")
         return self
+
+
+@app.get("/v1/watchlist")
+def list_fund_watchlist() -> dict[str, Any]:
+    """Return only the verified user's saved funds and their latest stored NAV."""
+    user_id = require_authenticated_user()
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(FundWatchlistItem, Scheme)
+            .join(Scheme, Scheme.scheme_code == FundWatchlistItem.scheme_code)
+            .where(FundWatchlistItem.owner_user_id == user_id)
+            .order_by(desc(FundWatchlistItem.created_at), FundWatchlistItem.id.desc())
+        ).all()
+        codes = [item.scheme_code for item, _ in rows]
+        latest_by_code: dict[int, NavObservation] = {}
+        if codes:
+            latest_rows = db.execute(
+                select(NavObservation)
+                .where(NavObservation.scheme_code.in_(codes))
+                .order_by(NavObservation.scheme_code, desc(NavObservation.nav_date))
+            ).scalars().all()
+            for nav in latest_rows:
+                latest_by_code.setdefault(nav.scheme_code, nav)
+        return {
+            "count": len(rows),
+            "items": [
+                {
+                    "scheme_code": item.scheme_code,
+                    "scheme_name": scheme.scheme_name,
+                    "plan_type": scheme.plan_type,
+                    "option_type": scheme.option_type,
+                    "category": scheme.category,
+                    "asset_class": scheme.asset_class,
+                    "added_at": item.created_at.isoformat(),
+                    "latest_nav": str(latest_by_code[item.scheme_code].nav_value)
+                    if item.scheme_code in latest_by_code else None,
+                    "nav_date": latest_by_code[item.scheme_code].nav_date.isoformat()
+                    if item.scheme_code in latest_by_code else None,
+                }
+                for item, scheme in rows
+            ],
+        }
+
+
+@app.post("/v1/watchlist", status_code=201)
+def add_fund_to_watchlist(payload: WatchlistCreate) -> dict[str, Any]:
+    """Save a scheme for the verified user; duplicate additions are explicit conflicts."""
+    user_id = require_authenticated_user()
+    with SessionLocal() as db:
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found")
+        item = FundWatchlistItem(
+            owner_user_id=user_id,
+            scheme_code=payload.scheme_code,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(item)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "This fund is already in your watchlist") from None
+        return {
+            "scheme_code": item.scheme_code,
+            "status": "added",
+            "added_at": item.created_at.isoformat(),
+        }
+
+
+@app.delete("/v1/watchlist/{scheme_code}")
+def remove_fund_from_watchlist(scheme_code: int) -> dict[str, Any]:
+    """Remove only the authenticated user's saved copy of a fund."""
+    user_id = require_authenticated_user()
+    with SessionLocal() as db:
+        item = db.execute(
+            select(FundWatchlistItem).where(
+                FundWatchlistItem.owner_user_id == user_id,
+                FundWatchlistItem.scheme_code == scheme_code,
+            )
+        ).scalar_one_or_none()
+        if item is None:
+            raise HTTPException(404, "Watchlist item not found")
+        db.delete(item)
+        db.commit()
+        return {"scheme_code": scheme_code, "status": "removed"}
 
 
 _STATEMENT_COLUMNS = {
