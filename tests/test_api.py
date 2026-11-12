@@ -8,7 +8,7 @@ import pytest
 import app.main as main
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
@@ -1950,4 +1950,40 @@ def test_history_worker_schedules_snapshot_refresh_after_worker_returns(monkeypa
     assert result["research_snapshot_refresh"] == {
         "status": "scheduled",
         "reason": "after_history_worker_completion",
+    }
+
+
+
+def test_research_snapshot_refresh_skips_when_another_postgres_instance_holds_lock(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    with SessionLocal() as lock_holder:
+        if lock_holder.get_bind().dialect.name != "postgresql":
+            pytest.skip("Cross-instance advisory lock is PostgreSQL-specific")
+        lock_holder.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": main.RESEARCH_SNAPSHOT_LOCK_KEY},
+        )
+        result = main.refresh_fund_research_snapshots(
+            x_api_key="test-api-key-that-is-at-least-32-characters-long"
+        )
+        assert result == {
+            "status": "in_progress",
+            "reason": "another_instance_refreshing",
+        }
+
+
+def test_refresh_wrapper_preserves_cross_instance_in_progress_status(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr(
+        main,
+        "refresh_fund_research_snapshots",
+        lambda **kwargs: {
+            "status": "in_progress",
+            "reason": "another_instance_refreshing",
+        },
+    )
+    result = main._refresh_research_snapshots_after_ingestion()
+    assert result == {
+        "status": "in_progress",
+        "reason": "another_instance_refreshing",
     }
