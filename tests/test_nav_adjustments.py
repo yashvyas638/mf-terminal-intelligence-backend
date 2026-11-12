@@ -108,3 +108,44 @@ def test_unverified_old_jump_only_suppresses_affected_period_and_window_metrics(
 
 def test_snapshot_adjustment_registry_is_versioned():
     assert NAV_ADJUSTMENT_REGISTRY_VERSION
+
+
+
+def test_mixed_frequency_window_suppresses_daily_risk_statistics_only():
+    latest_date = date(2022, 2, 28)
+    metrics = {
+        "period_returns": {"1M": 0.01, "3M": 0.02, "6M": 0.03, "1Y": 0.04, "3Y": None, "5Y": None},
+        "total_return": 0.02,
+        "cagr": 0.08,
+        "annualized_volatility": 0.11,
+        "volatility": 0.11,
+        "sharpe_ratio": 0.5,
+        "sortino_ratio": 0.7,
+        "max_drawdown": -0.02,
+        "positive_month_rate": 0.6,
+        "rolling_1y": {"status": "OK", "observations": 12, "positive_window_rate": 0.8},
+        "monthly_returns": [{"month": "2022-02", "return": 0.01}],
+    }
+
+    result, quality_status, flags = apply_nav_quality_gates(
+        metrics,
+        latest_date=latest_date,
+        window_days=3650,
+        discontinuities=[],
+        window_points=[
+            (date(2022, 1, 1), 100.0),
+            (date(2022, 1, 31), 101.0),
+            (date(2022, 2, 28), 102.0),
+        ],
+    )
+
+    assert quality_status == "REVIEW_REQUIRED"
+    assert result["risk_statistics_status"] == "MIXED_FREQUENCY_NOT_COMPARABLE"
+    assert result["annualized_volatility"] is None
+    assert result["volatility"] is None
+    assert result["sharpe_ratio"] is None
+    assert result["sortino_ratio"] is None
+    assert result["max_drawdown"] is None
+    assert result["total_return"] == pytest.approx(0.02)
+    assert result["period_returns"]["1Y"] == pytest.approx(0.04)
+    assert flags[0]["type"] == "mixed_frequency_risk_series"
