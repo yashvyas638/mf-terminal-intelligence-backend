@@ -2054,6 +2054,11 @@ def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
             "report_version": row.report_version,
             "generated_at": row.generated_at.isoformat(),
             "content_sha256": row.content_sha256,
+            "integrity_status": (
+                "VERIFIED"
+                if hashlib.sha256(row.content_json.encode("utf-8")).hexdigest() == row.content_sha256
+                else "HASH_MISMATCH"
+            ),
             "report": json.loads(row.content_json),
         }
 
