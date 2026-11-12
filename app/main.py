@@ -1794,7 +1794,10 @@ def monthly_fund_leaderboard(
 
     with SessionLocal() as db:
         latest_refresh = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at)).where(FundResearchSnapshot.window_days == 365)
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(
+                FundResearchSnapshot.window_days == 365,
+                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
+            )
         ).scalar_one()
         if latest_refresh is None:
             raise HTTPException(503, "Monthly research snapshots are not ready. Refresh research snapshots first.")
