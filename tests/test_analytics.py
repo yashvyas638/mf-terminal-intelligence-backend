@@ -270,3 +270,31 @@ def test_goal_projection_handles_zero_return_and_invalid_assumptions():
     assert result["scenarios"]["zero"]["projected_future_value"] == 22_000
     with pytest.raises(ValueError, match="inflation assumption"):
         project_financial_goal(100_000, 0, 0, 12, 0.25, {"base": 0.1})
+
+
+def test_period_returns_reject_stale_baseline_nav():
+    latest = date(2026, 11, 11)
+    target_5y = latest - timedelta(days=365 * 5)
+    stale_base = target_5y - timedelta(days=8)
+    points = [
+        (date(2019, 1, 1), 100.0),
+        (stale_base, 120.0),
+        (latest, 180.0),
+    ]
+    result = performance_metrics(points)
+    assert result["status"] == "OK"
+    assert result["period_returns"]["5Y"] is None
+
+
+def test_period_returns_accept_nearby_actual_baseline_nav():
+    latest = date(2026, 11, 11)
+    target_5y = latest - timedelta(days=365 * 5)
+    actual_base = target_5y - timedelta(days=3)
+    points = [
+        (date(2019, 1, 1), 100.0),
+        (actual_base, 120.0),
+        (latest, 180.0),
+    ]
+    result = performance_metrics(points)
+    assert result["status"] == "OK"
+    assert result["period_returns"]["5Y"] == pytest.approx(0.5)
