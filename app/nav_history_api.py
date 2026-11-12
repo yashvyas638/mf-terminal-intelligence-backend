@@ -41,7 +41,7 @@ class HistoryBackfillPlanRequest(BaseModel):
     start_date: date
     end_date: date
     scheme_types: list[StrictInt] = Field(default_factory=lambda: [1, 2, 3], min_length=1, max_length=3)
-    max_window_days: int = Field(default=90, ge=1, le=90)
+    max_window_days: int = Field(default=7, ge=1, le=90)
 
     @model_validator(mode="after")
     def validate_plan(self) -> "HistoryBackfillPlanRequest":
