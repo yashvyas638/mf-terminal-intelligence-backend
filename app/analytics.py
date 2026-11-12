@@ -207,7 +207,7 @@ def benchmark_comparison_metrics(
         variance_benchmark = sum((value - mean_benchmark) ** 2 for value in benchmark_returns) / (len(benchmark_returns) - 1)
         covariance = sum(
             (fund_return - mean_fund) * (benchmark_return - mean_benchmark)
-            for fund_return, benchmark_return in zip(fund_returns, benchmark_returns)
+            for fund_return, benchmark_return in zip(fund_returns, benchmark_returns, strict=True)
         ) / (len(fund_returns) - 1)
         if variance_benchmark > 0:
             beta = covariance / variance_benchmark
