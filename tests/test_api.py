@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
+from app.db import BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 
 
@@ -1358,3 +1358,73 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         json={"scenario_name": "Missing shock", "shocks": []},
     )
     assert incomplete.status_code == 422
+
+def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    identities = {
+        "goal-user-one": "00000000-0000-0000-0000-000000000055",
+        "goal-user-two": "00000000-0000-0000-0000-000000000066",
+    }
+
+    class AuthResponse:
+        status_code = 200
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+        def json(self):
+            return {"id": self.user_id}
+
+    monkeypatch.setattr(
+        main.requests,
+        "get",
+        lambda url, headers, timeout: AuthResponse(
+            identities[headers["Authorization"].removeprefix("Bearer ")]
+        ),
+    )
+    client = TestClient(app)
+    user_one = {"Authorization": "Bearer goal-user-one"}
+    user_two = {"Authorization": "Bearer goal-user-two"}
+    payload = {
+        "name": "Long-term wealth goal",
+        "target_amount_today": "10000000",
+        "target_date": "2036-01-01",
+        "current_amount": "500000",
+        "monthly_contribution": "25000",
+        "inflation_rate": 0.06,
+        "annual_return_low": 0.04,
+        "annual_return_base": 0.10,
+        "annual_return_high": 0.14,
+    }
+
+    created = client.post("/v1/goals", headers=user_one, json=payload)
+    assert created.status_code == 201, created.text
+    goal_id = created.json()["id"]
+
+    one_list = client.get("/v1/goals", headers=user_one)
+    two_list = client.get("/v1/goals", headers=user_two)
+    assert one_list.status_code == 200
+    assert len(one_list.json()["items"]) == 1
+    assert two_list.status_code == 200
+    assert two_list.json()["items"] == []
+
+    projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
+    assert projection.status_code == 200, projection.text
+    assert projection.json()["projection"]["inflation_adjusted_target"] > 10_000_000
+    assert set(projection.json()["projection"]["scenarios"]) == {"low", "base", "high"}
+
+    assert client.get(f"/v1/goals/{goal_id}/projection", headers=user_two).status_code == 404
+    assert client.put(f"/v1/goals/{goal_id}", headers=user_two, json=payload).status_code == 404
+    assert client.delete(f"/v1/goals/{goal_id}", headers=user_two).status_code == 404
+
+    updated_payload = {**payload, "monthly_contribution": "30000"}
+    updated = client.put(f"/v1/goals/{goal_id}", headers=user_one, json=updated_payload)
+    assert updated.status_code == 200
+    assert client.get("/v1/goals", headers=user_one).json()["items"][0]["monthly_contribution"] == "30000.00"
+    assert client.delete(f"/v1/goals/{goal_id}", headers=user_one).status_code == 200
+
+    with SessionLocal() as db:
+        assert db.query(PortfolioGoal).filter_by(owner_user_id=identities["goal-user-one"]).count() == 0
