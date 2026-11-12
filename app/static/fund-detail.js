@@ -19,6 +19,22 @@ function navLineChart(points) {
     '<text x="702" y="210" text-anchor="end" fill="#687585" font-size="11">' + esc(points[points.length - 1].date) + '</text></svg></div>';
 }
 
+function evidencePackPanel(result) {
+  if (!result || result.generation_status !== "EVIDENCE_ONLY_NO_LLM_GENERATION") {
+    return '<div class="panel"><h3>Source evidence pack</h3><p class="muted">Evidence pack unavailable: ' + esc(result?.message || "request failed") + '</p></div>';
+  }
+  const sourceById = Object.fromEntries((result.sources || []).map(source => [source.source_id, source]));
+  const items = (result.evidence || []).map(item => {
+    const source = sourceById[item.source_id];
+    return '<div class="metricrow"><div><strong>' + esc(item.claim) + '</strong><div class="muted">' + esc(item.evidence_type) + (source ? ' · ' + esc(source.title) : '') + '</div><div class="muted">' + esc(typeof item.value === "object" ? JSON.stringify(item.value) : item.value) + '</div></div></div>';
+  }).join("") || '<p class="muted">No source-backed evidence is available in the selected period.</p>';
+  const sources = (result.sources || []).map(source =>
+    '<li><a href="' + esc(source.url) + '" target="_blank" rel="noopener noreferrer">' + esc(source.title) + '</a> · ' + esc(source.source_type) + (source.as_of_date || source.effective_nav_date ? ' · As of ' + esc(source.as_of_date || source.effective_nav_date) : '') + '</li>'
+  ).join("") || '<li class="muted">No source documents attached.</li>';
+  const gaps = (result.data_gaps || []).map(gap => '<li>' + esc(gap) + '</li>').join("");
+  return '<div class="panel"><div class="detailhead"><h3>Source evidence pack</h3><span class="tag">Evidence only · No AI claims generated</span></div><div class="metriclist">' + items + '</div><h4>Sources</h4><ul>' + sources + '</ul>' + (gaps ? '<h4>Data gaps</h4><ul>' + gaps + '</ul>' : '') + '<p class="footnote">Generated ' + esc(result.generated_at) + '. Any downstream AI summary must preserve these source references and distinguish source facts from derived calculations.</p></div>';
+}
+
 function benchmarkComparisonPanel(result) {
   if (!result || result.status === "UNMAPPED") {
     return '<div class="panel"><h3>Benchmark TRI comparison</h3><p class="muted">No verified active benchmark mapping is available for this scheme. The system will not guess a benchmark from the fund category.</p></div>';
@@ -53,6 +69,10 @@ window.renderFundDetail = async function(code, days) {
     api("/v1/analytics/research/" + encodeURIComponent(code) + "?days=" + days),
     api("/v1/nav/history/" + encodeURIComponent(code) + "?days=" + days),
     api("/v1/analytics/research/" + encodeURIComponent(code) + "/benchmark?days=" + days).catch(error => ({
+      status: "UNAVAILABLE",
+      message: error.message
+    })),
+    api("/v1/analytics/research/" + encodeURIComponent(code) + "/evidence?days=" + days).catch(error => ({
       status: "UNAVAILABLE",
       message: error.message
     }))
@@ -112,6 +132,7 @@ window.renderFundDetail = async function(code, days) {
     '<div class="panel"><h3>Rolling 3Y returns</h3><div class="muted">Windows: ' + (rolling3y.observations ?? 0) + ' · Positive: ' + (rolling3y.positive_windows ?? 0) + ' · Negative/zero: ' + (rolling3y.negative_or_zero_windows ?? 0) + '</div>' +
     '<div class="tablewrap"><table style="min-width:500px"><thead><tr><th>Start</th><th>End</th><th>Total return</th><th>Annualised</th></tr></thead><tbody>' + rollingRows(rolling3y) + '</tbody></table></div></div>' +
     benchmarkComparisonPanel(benchmark) +
+    evidencePackPanel(arguments[3]) +
     '<div class="notice">Data limitations: ' + (research.data_limitations || []).map(esc).join(" ") + ' AMC, category, AUM, expense ratio, holdings and manager history are not supplied by the current AMFI NAV source.</div>';
   $("addProfileWatchlist").onclick = () => addToWatchlist(Number(scheme.scheme_code)).catch(error => note(error.message, true));
   $("backToScreener").onclick = () => activate("screener");
