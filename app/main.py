@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 
 import json
 import logging
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc, func, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
@@ -109,14 +110,82 @@ def research_dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "research.html")
 
 
+_authenticated_user_id: ContextVar[str | None] = ContextVar("authenticated_user_id", default=None)
+
+
+@app.middleware("http")
+async def supabase_user_authentication(request, call_next):
+    """Validate browser sessions with Supabase Auth; never trust decoded JWT claims alone."""
+    path = request.url.path
+    if not path.startswith("/v1/") or path == "/v1/nav/refresh":
+        return await call_next(request)
+
+    # Retain the server-side operator key for existing trusted automation and tests.
+    expected = os.getenv("API_KEY", "")
+    supplied = request.headers.get("X-API-Key", "")
+    if expected and len(expected) >= 32 and supplied and secrets.compare_digest(supplied, expected):
+        return await call_next(request)
+
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        return JSONResponse({"detail": "Please sign in to continue."}, status_code=401)
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    publishable_key = os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
+    if not supabase_url or not publishable_key:
+        logger.error("supabase_auth_not_configured")
+        return JSONResponse({"detail": "Sign-in is temporarily unavailable. Please contact the app administrator."}, status_code=503)
+
+    token = authorization[7:].strip()
+    if not token or len(token) > 8192:
+        return JSONResponse({"detail": "Invalid or expired session. Please sign in again."}, status_code=401)
+
+    try:
+        response = requests.get(
+            f"{supabase_url}/auth/v1/user",
+            headers={"apikey": publishable_key, "Authorization": f"Bearer {token}"},
+            timeout=(3, 8),
+        )
+        if response.status_code != 200:
+            return JSONResponse({"detail": "Your session has expired. Please sign in again."}, status_code=401)
+        user_id = str(response.json().get("id", "")).strip()
+        if not user_id:
+            return JSONResponse({"detail": "Unable to verify your account. Please sign in again."}, status_code=401)
+    except requests.RequestException:
+        logger.warning("supabase_auth_verification_unavailable", exc_info=True)
+        return JSONResponse({"detail": "Sign-in verification is temporarily unavailable. Please retry."}, status_code=503)
+    except (ValueError, TypeError):
+        return JSONResponse({"detail": "Invalid sign-in response. Please sign in again."}, status_code=401)
+
+    context_token = _authenticated_user_id.set(user_id)
+    try:
+        request.state.user_id = user_id
+        return await call_next(request)
+    finally:
+        _authenticated_user_id.reset(context_token)
+
+
 def require_api_key(x_api_key: str | None) -> None:
+    """Permit a verified Supabase user or a trusted server-side operator key."""
+    if _authenticated_user_id.get():
+        return
     expected = os.getenv("API_KEY")
     if not expected:
-        raise HTTPException(503, "API_KEY is not configured; protected endpoints are disabled")
+        raise HTTPException(503, "Server operator authentication is not configured")
     if len(expected) < 32:
-        raise HTTPException(503, "API_KEY must contain at least 32 characters; protected endpoints are disabled")
+        raise HTTPException(503, "Server operator key must contain at least 32 characters")
     if not x_api_key or not secrets.compare_digest(x_api_key, expected):
-        raise HTTPException(401, "Missing or invalid X-API-Key")
+        raise HTTPException(401, "Sign in to access this endpoint")
+
+
+def _require_portfolio_owner(db: Any, portfolio_id: int) -> Portfolio:
+    portfolio = db.get(Portfolio, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(404, "Portfolio not found")
+    user_id = _authenticated_user_id.get()
+    if user_id and portfolio.owner_user_id != user_id:
+        raise HTTPException(404, "Portfolio not found")
+    return portfolio
 
 
 def _read_bounded_amfi_response(response: Any, max_bytes: int = 30_000_000) -> bytes:
@@ -865,6 +934,9 @@ def _lock_portfolio(db: Any, portfolio_id: int) -> Portfolio:
     ).scalar_one_or_none()
     if portfolio is None:
         raise HTTPException(404, "Portfolio not found")
+    user_id = _authenticated_user_id.get()
+    if user_id and portfolio.owner_user_id != user_id:
+        raise HTTPException(404, "Portfolio not found")
     return portfolio
 
 
@@ -1015,7 +1087,7 @@ def create_portfolio(
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
     with SessionLocal() as db:
-        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, created_at=datetime.now(timezone.utc))
+        portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, owner_user_id=_authenticated_user_id.get(), created_at=datetime.now(timezone.utc))
         db.add(portfolio)
         db.commit()
         db.refresh(portfolio)
@@ -1028,7 +1100,11 @@ def list_portfolios(
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
     with SessionLocal() as db:
-        rows = db.execute(select(Portfolio).order_by(Portfolio.created_at.desc())).scalars().all()
+        portfolio_query = select(Portfolio).order_by(Portfolio.created_at.desc())
+        user_id = _authenticated_user_id.get()
+        if user_id:
+            portfolio_query = portfolio_query.where(Portfolio.owner_user_id == user_id)
+        rows = db.execute(portfolio_query).scalars().all()
         return {"count": len(rows), "items": [{"id": p.id, "name": p.name, "currency": p.currency, "created_at": p.created_at.isoformat()} for p in rows]}
 
 
@@ -1076,8 +1152,7 @@ def list_portfolio_transactions(
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
     with SessionLocal() as db:
-        if db.get(Portfolio, portfolio_id) is None:
-            raise HTTPException(404, "Portfolio not found")
+        _require_portfolio_owner(db, portfolio_id)
         rows = db.execute(
             select(PortfolioTransaction)
             .where(PortfolioTransaction.portfolio_id == portfolio_id)
@@ -1273,6 +1348,7 @@ def void_portfolio_transaction(
         transaction = db.get(PortfolioTransaction, transaction_id)
         if transaction is None or transaction.portfolio_id != portfolio_id:
             raise HTTPException(404, "Portfolio transaction not found")
+        _require_portfolio_owner(db, portfolio_id)
         if transaction.voided_at is not None:
             raise HTTPException(409, "Portfolio transaction is already voided")
         transaction.voided_at = datetime.now(timezone.utc)
@@ -1424,9 +1500,7 @@ def portfolio_valuation(
     from app.analytics import xirr
 
     with SessionLocal() as db:
-        portfolio = db.get(Portfolio, portfolio_id)
-        if portfolio is None:
-            raise HTTPException(404, "Portfolio not found")
+        portfolio = _require_portfolio_owner(db, portfolio_id)
         txns = db.execute(
             select(PortfolioTransaction)
             .where(PortfolioTransaction.portfolio_id == portfolio_id, PortfolioTransaction.voided_at.is_(None))
