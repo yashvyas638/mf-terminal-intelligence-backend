@@ -44,6 +44,7 @@ from app.db import (
     NavObservationRevision,
     Portfolio,
     PortfolioImportBatch,
+    PortfolioGoal,
     PortfolioTransaction,
     PortfolioTransactionAudit,
     Scheme,
@@ -51,7 +52,7 @@ from app.db import (
     SessionLocal,
     init_db,
 )
-from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, research_metrics
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
@@ -1139,6 +1140,29 @@ class HoldingShock(BaseModel):
     shock_pct: Decimal = Field(ge=Decimal("-100"), le=Decimal("100"))
 
 
+class GoalCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    target_amount_today: Decimal = Field(gt=Decimal("0"), le=Decimal("100000000000"))
+    target_date: date
+    current_amount: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("100000000000"))
+    monthly_contribution: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("1000000000"))
+    inflation_rate: float = Field(default=0.06, ge=0, le=0.20)
+    annual_return_low: float = Field(default=0.04, ge=-0.20, le=0.30)
+    annual_return_base: float = Field(default=0.10, ge=-0.20, le=0.35)
+    annual_return_high: float = Field(default=0.14, ge=-0.20, le=0.40)
+
+    @model_validator(mode="after")
+    def validate_goal(self) -> "GoalCreateRequest":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("goal name cannot be blank")
+        if self.target_date <= date.today():
+            raise ValueError("target date must be in the future")
+        if not self.annual_return_low <= self.annual_return_base <= self.annual_return_high:
+            raise ValueError("return assumptions must satisfy low <= base <= high")
+        return self
+
+
 class PortfolioStressRequest(BaseModel):
     scenario_name: str = Field(min_length=2, max_length=120)
     shocks: list[HoldingShock] = Field(min_length=1, max_length=100)
@@ -1684,6 +1708,154 @@ def compare_fund_with_benchmark(
             "as_of_date": as_of.isoformat(),
             "comparisons": comparisons,
             "limitations": limitations,
+        }
+
+
+@app.get("/v1/goals")
+def list_portfolio_goals() -> dict[str, Any]:
+    """List only goals owned by the verified Supabase user."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goals = db.execute(
+            select(PortfolioGoal)
+            .where(PortfolioGoal.owner_user_id == owner_id)
+            .order_by(PortfolioGoal.target_date, PortfolioGoal.id)
+        ).scalars().all()
+        return {
+            "count": len(goals),
+            "items": [
+                {
+                    "id": goal.id,
+                    "name": goal.name,
+                    "target_amount_today": str(goal.target_amount_today),
+                    "target_date": goal.target_date.isoformat(),
+                    "current_amount": str(goal.current_amount),
+                    "monthly_contribution": str(goal.monthly_contribution),
+                    "inflation_rate": goal.inflation_rate,
+                    "annual_return_low": goal.annual_return_low,
+                    "annual_return_base": goal.annual_return_base,
+                    "annual_return_high": goal.annual_return_high,
+                    "created_at": goal.created_at.isoformat(),
+                    "updated_at": goal.updated_at.isoformat(),
+                }
+                for goal in goals
+            ],
+        }
+
+
+@app.post("/v1/goals", status_code=201)
+def create_portfolio_goal(payload: GoalCreateRequest) -> dict[str, Any]:
+    """Create a private financial goal with explicitly user-supplied assumptions."""
+    owner_id = require_authenticated_user()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        goal = PortfolioGoal(
+            owner_user_id=owner_id,
+            name=payload.name,
+            target_amount_today=payload.target_amount_today,
+            target_date=payload.target_date,
+            current_amount=payload.current_amount,
+            monthly_contribution=payload.monthly_contribution,
+            inflation_rate=payload.inflation_rate,
+            annual_return_low=payload.annual_return_low,
+            annual_return_base=payload.annual_return_base,
+            annual_return_high=payload.annual_return_high,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(goal)
+        db.commit()
+        return {"id": goal.id, "status": "created", "owner_scope": "private"}
+
+
+@app.put("/v1/goals/{goal_id}")
+def update_portfolio_goal(goal_id: int, payload: GoalCreateRequest) -> dict[str, Any]:
+    """Replace a goal's assumptions only for the authenticated owner."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goal = db.execute(
+            select(PortfolioGoal).where(
+                PortfolioGoal.id == goal_id,
+                PortfolioGoal.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if goal is None:
+            raise HTTPException(404, "Goal not found")
+        goal.name = payload.name
+        goal.target_amount_today = payload.target_amount_today
+        goal.target_date = payload.target_date
+        goal.current_amount = payload.current_amount
+        goal.monthly_contribution = payload.monthly_contribution
+        goal.inflation_rate = payload.inflation_rate
+        goal.annual_return_low = payload.annual_return_low
+        goal.annual_return_base = payload.annual_return_base
+        goal.annual_return_high = payload.annual_return_high
+        goal.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"id": goal.id, "status": "updated"}
+
+
+@app.delete("/v1/goals/{goal_id}")
+def delete_portfolio_goal(goal_id: int) -> dict[str, Any]:
+    """Delete only the authenticated owner's goal."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goal = db.execute(
+            select(PortfolioGoal).where(
+                PortfolioGoal.id == goal_id,
+                PortfolioGoal.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if goal is None:
+            raise HTTPException(404, "Goal not found")
+        db.delete(goal)
+        db.commit()
+        return {"id": goal_id, "status": "deleted"}
+
+
+@app.get("/v1/goals/{goal_id}/projection")
+def project_portfolio_goal(goal_id: int) -> dict[str, Any]:
+    """Return low/base/high goal scenarios without implying guaranteed returns."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goal = db.execute(
+            select(PortfolioGoal).where(
+                PortfolioGoal.id == goal_id,
+                PortfolioGoal.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if goal is None:
+            raise HTTPException(404, "Goal not found")
+        today = datetime.now(timezone.utc).date()
+        months = max(
+            0,
+            (goal.target_date.year - today.year) * 12
+            + goal.target_date.month - today.month
+            - (1 if goal.target_date.day < today.day else 0),
+        )
+        projection = project_financial_goal(
+            target_amount_today=float(goal.target_amount_today),
+            current_amount=float(goal.current_amount),
+            monthly_contribution=float(goal.monthly_contribution),
+            months=months,
+            inflation_rate=goal.inflation_rate,
+            annual_return_scenarios={
+                "low": goal.annual_return_low,
+                "base": goal.annual_return_base,
+                "high": goal.annual_return_high,
+            },
+        )
+        return {
+            "goal_id": goal.id,
+            "goal_name": goal.name,
+            "target_date": goal.target_date.isoformat(),
+            "currency": "INR",
+            "projection": projection,
+            "limitations": [
+                "Return and inflation rates are user-entered assumptions, not forecasts or guarantees.",
+                "Taxes, fund expenses, exit loads and contribution interruptions are not included.",
+                "This projection is not a personalised investment recommendation.",
+            ],
         }
 
 
