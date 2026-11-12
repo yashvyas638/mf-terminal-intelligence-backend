@@ -564,6 +564,9 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
                 last_seen_at=now,
                 plan_type="Direct",
                 option_type="Growth",
+                category_group="Equity Scheme",
+                category="Large Cap Fund",
+                asset_class="Equity",
             ))
         snapshot = IngestionSnapshot(
             source_url="https://example.invalid/nav",
@@ -617,12 +620,14 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
     assert evidence_json["data_gaps"]
 
     screener = client.get(
-        "/v1/analytics/screener?plan_type=Direct&option_type=Growth&limit=10",
+        "/v1/analytics/screener?category_group=Equity+Scheme&sub_category=Large+Cap+Fund&plan_type=Direct&option_type=Growth&limit=10",
         headers=headers,
     )
     assert screener.status_code == 200
     assert screener.json()["total_matching"] == 1
     assert screener.json()["items"][0]["scheme_code"] == scheme_code
+    assert screener.json()["items"][0]["category_group"] == "Equity Scheme"
+    assert screener.json()["items"][0]["category"] == "Large Cap Fund"
     assert screener.json()["items"][0]["return_1y"] is not None
     assert client.get("/v1/analytics/screener").status_code == 401
 
