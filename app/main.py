@@ -24,7 +24,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import desc, func, or_, select, text, tuple_
+from sqlalchemy import delete, desc, func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -32,6 +32,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.db import (
+    FundResearchSnapshot,
     FundWatchlistItem,
     IngestionSnapshot,
     NavObservation,
@@ -837,6 +838,104 @@ def scheme_research(
         }
 
 
+@app.post("/v1/analytics/screener/refresh")
+def refresh_fund_research_snapshots(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Rebuild shared, source-backed ranking snapshots; restricted to the operator key."""
+    expected = os.getenv("API_KEY", "")
+    if len(expected) < 32:
+        raise HTTPException(503, "Server operator authentication is not configured")
+    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(401, "Operator key required to rebuild research snapshots")
+
+    refreshed_at = datetime.now(timezone.utc)
+    windows = (365, 1095, 1825, 3650)
+    history_floor = refreshed_at.date() - timedelta(days=max(windows))
+    snapshot_rows: list[FundResearchSnapshot] = []
+    schemes_processed = 0
+    min_as_of: date | None = None
+    max_as_of: date | None = None
+
+    def append_scheme_snapshot(
+        scheme_code: int,
+        points: list[tuple[date, float]],
+    ) -> None:
+        nonlocal schemes_processed, min_as_of, max_as_of
+        if not points:
+            return
+        schemes_processed += 1
+        as_of = points[-1][0]
+        min_as_of = as_of if min_as_of is None else min(min_as_of, as_of)
+        max_as_of = as_of if max_as_of is None else max(max_as_of, as_of)
+        for window_days in windows:
+            cutoff = as_of - timedelta(days=window_days)
+            window_points = [(d, value) for d, value in points if d >= cutoff]
+            metrics = research_metrics(window_points)
+            period = metrics.get("period_returns", {})
+            rolling = metrics.get("rolling_1y", {})
+            snapshot_rows.append(FundResearchSnapshot(
+                scheme_code=scheme_code,
+                window_days=window_days,
+                nav_as_of_date=as_of,
+                refreshed_at=refreshed_at,
+                observations=int(metrics.get("observations", 0)),
+                metrics_json=json.dumps(metrics, ensure_ascii=False, allow_nan=False),
+                return_1m=period.get("1M"),
+                return_1y=period.get("1Y"),
+                return_3y=period.get("3Y"),
+                cagr=metrics.get("cagr"),
+                volatility=metrics.get("annualized_volatility"),
+                sharpe_ratio=metrics.get("sharpe_ratio"),
+                sortino_ratio=metrics.get("sortino_ratio"),
+                max_drawdown=metrics.get("max_drawdown"),
+                positive_month_rate=metrics.get("positive_month_rate"),
+                rolling_1y_positive_rate=rolling.get("positive_window_rate"),
+            ))
+
+    with SessionLocal() as db:
+        statement = (
+            select(NavObservation.scheme_code, NavObservation.nav_date, NavObservation.nav_value)
+            .where(NavObservation.nav_date >= history_floor)
+            .order_by(NavObservation.scheme_code, NavObservation.nav_date)
+            .execution_options(stream_results=True, yield_per=10000)
+        )
+        result = db.execute(statement)
+        current_code: int | None = None
+        current_points: list[tuple[date, float]] = []
+        for scheme_code, nav_date, nav_value in result:
+            if current_code is not None and scheme_code != current_code:
+                append_scheme_snapshot(current_code, current_points)
+                current_points = []
+            current_code = scheme_code
+            current_points.append((nav_date, float(nav_value)))
+        if current_code is not None:
+            append_scheme_snapshot(current_code, current_points)
+
+        if not snapshot_rows:
+            raise HTTPException(409, "No NAV history is available to build research snapshots")
+
+        # Delete + insert is one transaction: readers see the old complete
+        # snapshot set until the replacement set commits successfully.
+        db.execute(delete(FundResearchSnapshot))
+        for offset in range(0, len(snapshot_rows), 2000):
+            db.add_all(snapshot_rows[offset:offset + 2000])
+            db.flush()
+        db.commit()
+
+    return {
+        "status": "refreshed",
+        "schemes_processed": schemes_processed,
+        "snapshot_rows_written": len(snapshot_rows),
+        "windows_days": list(windows),
+        "nav_as_of_date_min": min_as_of.isoformat() if min_as_of else None,
+        "nav_as_of_date_max": max_as_of.isoformat() if max_as_of else None,
+        "refreshed_at": refreshed_at.isoformat(),
+        "methodology_version": "nav-research-v1",
+        "note": "Snapshots use stored AMFI NAV observations only; no benchmark TRI or distribution adjustment is implied.",
+    }
+
+
 @app.get("/v1/analytics/screener")
 def fund_screener(
     q: str | None = Query(default=None, max_length=120),
@@ -844,16 +943,47 @@ def fund_screener(
     asset_class: str | None = Query(default=None, max_length=40),
     plan_type: str | None = Query(default=None, max_length=20),
     option_type: str | None = Query(default=None, max_length=20),
-    days: int = Query(default=1095, ge=30, le=3650),
+    days: int = Query(default=1095, ge=365, le=3650),
+    sort_by: Literal[
+        "return_1m", "return_1y", "return_3y", "cagr", "volatility",
+        "sharpe_ratio", "sortino_ratio", "max_drawdown",
+        "positive_month_rate", "rolling_1y_positive_rate",
+    ] = "return_1y",
+    sort_order: Literal["asc", "desc"] = "desc",
+    min_observations: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
-    """Paginated NAV-based screener. Sort in UI only within the returned page."""
+    """Globally ranked screener over the latest committed precomputed NAV snapshots."""
     require_api_key(x_api_key)
-    since = date.today() - timedelta(days=days)
+    if days not in {365, 1095, 1825, 3650}:
+        raise HTTPException(422, "days must be one of 365, 1095, 1825 or 3650")
+
+    sort_columns = {
+        "return_1m": FundResearchSnapshot.return_1m,
+        "return_1y": FundResearchSnapshot.return_1y,
+        "return_3y": FundResearchSnapshot.return_3y,
+        "cagr": FundResearchSnapshot.cagr,
+        "volatility": FundResearchSnapshot.volatility,
+        "sharpe_ratio": FundResearchSnapshot.sharpe_ratio,
+        "sortino_ratio": FundResearchSnapshot.sortino_ratio,
+        "max_drawdown": FundResearchSnapshot.max_drawdown,
+        "positive_month_rate": FundResearchSnapshot.positive_month_rate,
+        "rolling_1y_positive_rate": FundResearchSnapshot.rolling_1y_positive_rate,
+    }
+    sort_column = sort_columns[sort_by]
+    ordering = sort_column.desc().nullslast() if sort_order == "desc" else sort_column.asc().nullslast()
+
     with SessionLocal() as db:
-        query = select(Scheme)
+        query = (
+            select(FundResearchSnapshot, Scheme)
+            .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+            .where(
+                FundResearchSnapshot.window_days == days,
+                FundResearchSnapshot.observations >= min_observations,
+            )
+        )
         if q:
             term = q.strip()[:120]
             if term.isdigit():
@@ -868,52 +998,65 @@ def fund_screener(
             query = query.where(Scheme.plan_type == plan_type)
         if option_type:
             query = query.where(Scheme.option_type == option_type)
-        total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
-        schemes = db.execute(query.order_by(Scheme.scheme_name).offset(offset).limit(limit)).scalars().all()
-        codes = [scheme.scheme_code for scheme in schemes]
-        nav_rows = db.execute(
-            select(NavObservation)
-            .where(NavObservation.scheme_code.in_(codes), NavObservation.nav_date >= since)
-            .order_by(NavObservation.scheme_code, NavObservation.nav_date)
-        ).scalars().all() if codes else []
-        grouped: dict[int, list[NavObservation]] = {code: [] for code in codes}
-        for row in nav_rows:
-            grouped[row.scheme_code].append(row)
+
+        total = db.execute(
+            select(func.count()).select_from(query.subquery())
+        ).scalar_one()
+        rows = db.execute(
+            query.order_by(ordering, Scheme.scheme_name.asc(), Scheme.scheme_code.asc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        latest_refresh = db.execute(
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(
+                FundResearchSnapshot.window_days == days
+            )
+        ).scalar_one()
+        if latest_refresh is None:
+            raise HTTPException(
+                503,
+                "Global research ranking is not ready yet. The scheduled research snapshot has not completed.",
+            )
+
         items = []
-        for scheme in schemes:
-            rows = grouped[scheme.scheme_code]
-            metrics = research_metrics([(row.nav_date, float(row.nav_value)) for row in rows])
-            latest = rows[-1] if rows else None
-            period = metrics.get("period_returns", {})
+        for snapshot, scheme in rows:
+            metrics = json.loads(snapshot.metrics_json)
             items.append({
+                "rank": offset + len(items) + 1,
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
                 "category": scheme.category,
                 "asset_class": scheme.asset_class,
                 "plan_type": scheme.plan_type,
                 "option_type": scheme.option_type,
-                "latest_nav": str(latest.nav_value) if latest else None,
-                "nav_date": latest.nav_date.isoformat() if latest else None,
-                "observations": len(rows),
-                "return_1m": period.get("1M"),
-                "return_1y": period.get("1Y"),
-                "return_3y": period.get("3Y"),
-                "volatility": metrics.get("annualized_volatility"),
-                "sharpe_ratio": metrics.get("sharpe_ratio"),
-                "sortino_ratio": metrics.get("sortino_ratio"),
-                "max_drawdown": metrics.get("max_drawdown"),
-                "positive_month_rate": metrics.get("positive_month_rate"),
-                "rolling_1y_positive_rate": metrics.get("rolling_1y", {}).get("positive_window_rate"),
+                "latest_nav": str(metrics.get("latest_nav")) if metrics.get("latest_nav") is not None else None,
+                "nav_date": snapshot.nav_as_of_date.isoformat(),
+                "observations": snapshot.observations,
+                "return_1m": snapshot.return_1m,
+                "return_1y": snapshot.return_1y,
+                "return_3y": snapshot.return_3y,
+                "cagr": snapshot.cagr,
+                "volatility": snapshot.volatility,
+                "sharpe_ratio": snapshot.sharpe_ratio,
+                "sortino_ratio": snapshot.sortino_ratio,
+                "max_drawdown": snapshot.max_drawdown,
+                "positive_month_rate": snapshot.positive_month_rate,
+                "rolling_1y_positive_rate": snapshot.rolling_1y_positive_rate,
                 "metrics_status": metrics.get("status"),
             })
+
         return {
             "count": len(items),
             "total_matching": total,
             "limit": limit,
             "offset": offset,
             "days_requested": days,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "min_observations": min_observations,
+            "refreshed_at": latest_refresh.isoformat(),
             "items": items,
-            "sorting_note": "The browser sorts the current page only. Use filters and pagination; a global ranked screener requires a precomputed research snapshot.",
+            "sorting_note": "Ranks are calculated across all matching stored research snapshots before pagination; ties use scheme name and scheme code. Only observed NAV data is used.",
             "classification_coverage": {
                 "category_populated": sum(bool(item["category"]) for item in items),
                 "asset_class_populated": sum(bool(item["asset_class"]) for item in items),
@@ -921,24 +1064,12 @@ def fund_screener(
                 "option_type_populated": sum(bool(item["option_type"]) for item in items),
             },
             "limitations": [
-                "AMFI NAV ingestion supplies scheme name, ISIN and (in the expanded feed) plan/option labels; it does not supply reliable AMC/category/asset-class classifications.",
-                "Do not interpret NAV-only return as distribution-adjusted total return.",
-                "This is a research screener, not an investment recommendation or trade instruction.",
+                "Metrics use stored AMFI NAV observations and are not distribution-adjusted total returns.",
+                "Benchmark TRI, alpha, beta, tracking error and information ratio are unavailable until verified benchmark total-return data is integrated.",
+                "Category and asset-class filters depend on independently verified scheme classification metadata.",
+                "The as-of NAV date can differ by scheme; inspect nav_date and observations before comparing funds.",
             ],
         }
-
-
-class PortfolioCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    currency: str = Field(default="INR", pattern="^[A-Z]{3}$")
-
-    @model_validator(mode="after")
-    def normalize_name(self) -> "PortfolioCreate":
-        self.name = self.name.strip()
-        if not self.name:
-            raise ValueError("portfolio name cannot be blank")
-        return self
-
 
 class WatchlistCreate(BaseModel):
     scheme_code: int = Field(gt=0)
