@@ -65,6 +65,7 @@ from app.nav_history_backfill import (
     create_storage_optimized_history_plan,
     run_history_backfill_batch,
 )
+from app.scheme_metadata import refresh_scheme_metadata
 from app.fund_taxonomy import (
     canonical_asset_class,
     canonical_group,
@@ -310,10 +311,24 @@ async def lifespan(_: FastAPI):
             db.execute(text("SELECT 1"))
             _verify_trusted_database_role(db)
         _maybe_plan_historical_backfill_from_environment()
-        if os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() == "true":
+        history_requested = (
+            os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() == "true"
+        )
+        metadata_requested = (
+            os.getenv("AMFI_SCHEME_METADATA_REFRESH_ON_START", "").strip().lower() == "true"
+        )
+        if history_requested and metadata_requested:
+            raise RuntimeError(
+                "Run either historical NAV backfill or scheme metadata refresh on a deployment, not both"
+            )
+        if metadata_requested:
+            metadata_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_refresh_scheme_metadata_from_environment)
+            )
+            metadata_task.add_done_callback(_log_scheme_metadata_task_result)
+        if history_requested:
             # Do not hold API readiness on AMFI's external HTTP response. The
-            # checkpoint is marked running before the worker leaves this thread;
-            # the normal service can become healthy while the bounded batch runs.
+            # bounded checkpoint worker runs in a background thread.
             history_task = asyncio.create_task(
                 asyncio.to_thread(_maybe_run_historical_backfill_batch_from_environment)
             )
@@ -520,6 +535,97 @@ def _fetch_amfi_payload(max_attempts: int = 3) -> tuple[bytes, dict[str, Any]]:
                 if callable(close_response):
                     close_response()
     raise requests.RequestException(f"AMFI request failed after retries: {type(last_error).__name__ if last_error else 'unknown'}")
+
+
+def _refresh_scheme_metadata_from_amfi() -> dict[str, Any]:
+    """Refresh scheme-master metadata from the current AMFI feed without NAV writes."""
+    raw_payload, source_meta = _fetch_amfi_payload()
+    try:
+        payload = raw_payload.decode("utf-8-sig", errors="strict")
+    except UnicodeDecodeError:
+        raise RuntimeError("AMFI scheme metadata feed is not valid UTF-8") from None
+    records, report = parse_amfi_nav_text(payload)
+    if report["records_valid"] < MINIMUM_VALID_RECORDS:
+        raise RuntimeError(
+            f"AMFI metadata feed had only {report['records_valid']} valid rows"
+        )
+    latest_nav_date = date.fromisoformat(report["max_nav_date"])
+    nav_age_days = (date.today() - latest_nav_date).days
+    if nav_age_days > MAX_NAV_STALENESS_DAYS:
+        raise RuntimeError(
+            f"AMFI metadata feed is stale by {nav_age_days} days"
+        )
+    metadata_records = [
+        record for record in records
+        if record.metadata_present or record.plan_type or record.option_type
+    ]
+    if not metadata_records:
+        raise RuntimeError("AMFI feed contained no explicit scheme metadata to refresh")
+
+    result = refresh_scheme_metadata(
+        metadata_records,
+        datetime.now(timezone.utc),
+    )
+    response = {
+        "status": "refreshed",
+        **result,
+        "payload_sha256": report["payload_sha256"],
+        "http_status": source_meta["http_status"],
+        "bytes_received": source_meta["bytes_received"],
+        "nav_as_of_date": report["max_nav_date"],
+        "metadata_source_rows": len(metadata_records),
+        "invalid_nav_rows": report["invalid_rows"],
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "nav_observations_written": 0,
+    }
+    logger.warning(
+        "amfi_scheme_metadata_refresh_completed",
+        extra={
+            "scheme_records_seen": result["scheme_records_seen"],
+            "scheme_rows_created": result["scheme_rows_created"],
+            "scheme_rows_updated": result["scheme_rows_updated"],
+            "category_group_populated": result["category_group_populated"],
+            "category_unclassified": result["category_unclassified"],
+            "plan_type_populated": result["plan_type_populated"],
+            "option_type_populated": result["option_type_populated"],
+            "payload_sha256": report["payload_sha256"],
+        },
+    )
+    return response
+
+
+def _maybe_refresh_scheme_metadata_from_environment() -> dict[str, Any] | None:
+    """Run scheme metadata refresh only under two explicit deployment gates."""
+    if os.getenv("AMFI_SCHEME_METADATA_REFRESH_ON_START", "").strip().lower() != "true":
+        return None
+    if os.getenv("AMFI_SCHEME_METADATA_REFRESH_ENABLED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "Scheme metadata refresh requires AMFI_SCHEME_METADATA_REFRESH_ENABLED=true"
+        )
+    if os.getenv("AMFI_SCHEME_METADATA_CONTRACT_VERIFIED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "Scheme metadata refresh requires AMFI_SCHEME_METADATA_CONTRACT_VERIFIED=true"
+        )
+    return _refresh_scheme_metadata_from_amfi()
+
+
+def _log_scheme_metadata_task_result(task: asyncio.Task[Any]) -> None:
+    try:
+        result = task.result()
+        logger.warning(
+            "amfi_scheme_metadata_background_task_completed",
+            extra={
+                "status": result.get("status"),
+                "scheme_records_seen": result.get("scheme_records_seen"),
+                "scheme_rows_created": result.get("scheme_rows_created"),
+                "scheme_rows_updated": result.get("scheme_rows_updated"),
+                "category_group_populated": result.get("category_group_populated"),
+            },
+        )
+    except asyncio.CancelledError:
+        logger.warning("amfi_scheme_metadata_background_task_cancelled")
+    except Exception:
+        logger.exception("amfi_scheme_metadata_background_task_failed")
 
 
 def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datetime) -> dict[str, Any]:
@@ -778,6 +884,25 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
             "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
             "note": "Retrieval freshness and NAV effective-date freshness are separate measures.",
         }
+
+
+@app.post("/v1/schemes/metadata/refresh")
+def refresh_scheme_metadata_endpoint(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Refresh the shared scheme master from AMFI without writing NAV observations."""
+    require_api_key(x_api_key)
+    try:
+        return _refresh_scheme_metadata_from_amfi()
+    except (requests.RequestException, ValueError, RuntimeError) as exc:
+        logger.warning(
+            "amfi_scheme_metadata_refresh_failed error_type=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            502,
+            f"AMFI scheme metadata refresh failed: {type(exc).__name__}; existing metadata was not changed where the transaction rolled back",
+        ) from None
 
 
 @app.get("/v1/nav/facets")

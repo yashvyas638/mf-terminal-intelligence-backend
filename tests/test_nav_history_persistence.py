@@ -187,3 +187,28 @@ def test_postgres_persists_full_amfi_option_description():
                 db.execute(delete(IngestionSnapshot).where(IngestionSnapshot.id == snapshot_id))
             if checkpoint_id is not None:
                 db.execute(delete(NavBackfillCheckpoint).where(NavBackfillCheckpoint.id == checkpoint_id))
+
+
+
+def test_updates_existing_scheme_plan_and_option_from_archive(factory):
+    checkpoint_id = _seed(factory)
+    now = datetime.now(timezone.utc)
+    with factory.begin() as db:
+        db.add(Scheme(
+            scheme_code=119551,
+            scheme_name="Old Example Fund",
+            first_seen_at=now,
+            last_seen_at=now,
+            plan_type=None,
+            option_type=None,
+        ))
+    record = _record()
+    record.plan_type = "Direct Plan"
+    record.option_type = "IDCW - Payout & Re-investment of Income Distribution cum capital withdrawal option"
+    persist_historical_nav_window(
+        checkpoint_id, [record], _report(), now, session_factory=factory,
+    )
+    with factory() as db:
+        scheme = db.get(Scheme, 119551)
+        assert scheme.plan_type == "Direct Plan"
+        assert scheme.option_type == record.option_type
