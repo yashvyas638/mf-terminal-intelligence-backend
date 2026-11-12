@@ -270,7 +270,23 @@ jobs:
                   "unique_scheme_codes": historical_report["unique_scheme_codes"],
                   "schema_variant": historical_report["schema_variant"],
                   "invalid_rows": historical_report["invalid_rows"],
-                  "payload_sha256": historical_report["payload_sha256"],
+                  "max_scheme_name_length": max(len(row.scheme_name) for row in historical_records),
+                  "max_isin_length": max(
+                      max(len(row.isin_growth or ""), len(row.isin_dividend_reinvestment or ""))
+                      for row in historical_records
+                  ),
+                  "max_plan_type_length": max(len(row.plan_type or "") for row in historical_records),
+                  "max_option_type_length": max(len(row.option_type or "") for row in historical_records),
+                  "oversized_plan_types": sorted({
+                      row.plan_type for row in historical_records
+                      if row.plan_type and len(row.plan_type) > 20
+                  }),
+                  "oversized_option_types": sorted({
+                      row.option_type for row in historical_records
+                      if row.option_type and len(row.option_type) > 20
+                  }),
+                  "max_nav_value": str(max(row.nav for row in historical_records)),
+                  "payload_sha256": historical_report["payload_sha256"]
               },
               "database_writes": 0,
           }, indent=2))
