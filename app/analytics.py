@@ -292,7 +292,7 @@ def portfolio_risk_metrics(
             "max_drawdown": None,
         }
 
-    daily_returns: list[tuple[date, float]] = []
+    daily_returns: list[tuple[date, date, float]] = []
     for previous_date, current_date in zip(common_dates, common_dates[1:], strict=False):
         if (current_date - previous_date).days > 7:
             continue
@@ -300,7 +300,7 @@ def portfolio_risk_metrics(
             weight * (values[current_date] / values[previous_date] - 1.0)
             for weight, values in normalized
         )
-        daily_returns.append((current_date, portfolio_return))
+        daily_returns.append((previous_date, current_date, portfolio_return))
 
     if len(daily_returns) < minimum_observations:
         return {
@@ -314,7 +314,7 @@ def portfolio_risk_metrics(
             "methodology": "Exact common NAV dates only; no interpolation or forward-fill.",
         }
 
-    returns = [value for _, value in daily_returns]
+    returns = [value for _, _, value in daily_returns]
     mean_return = sum(returns) / len(returns)
     variance = sum((value - mean_return) ** 2 for value in returns) / (len(returns) - 1)
     daily_volatility = math.sqrt(variance)
@@ -331,33 +331,45 @@ def portfolio_risk_metrics(
     historical_var_95 = max(0.0, -var_threshold)
     historical_cvar_95 = max(0.0, -sum(tail_returns) / len(tail_returns))
 
-    portfolio_index = 100.0
-    indexed_points = [(daily_returns[0][0], portfolio_index)]
-    for observed_date, daily_return in daily_returns:
-        portfolio_index *= 1 + daily_return
-        indexed_points.append((observed_date, portfolio_index))
+    drawdowns = []
+    segment_index = 100.0
+    segment_points = [(daily_returns[0][0], segment_index)]
+    previous_end = daily_returns[0][0]
+    for start_date, end_date, daily_return in daily_returns:
+        if start_date != previous_end:
+            if len(segment_points) > 1:
+                drawdowns.append(max_drawdown(segment_points))
+            segment_index = 100.0
+            segment_points = [(start_date, segment_index)]
+        segment_index *= 1 + daily_return
+        segment_points.append((end_date, segment_index))
+        previous_end = end_date
+    if len(segment_points) > 1:
+        drawdowns.append(max_drawdown(segment_points))
 
     def worst_horizon(days: int) -> float | None:
-        if len(returns) < days:
+        if len(daily_returns) < days:
             return None
-        compounded = [
-            math.prod(1 + value for value in returns[index:index + days]) - 1
-            for index in range(len(returns) - days + 1)
-        ]
-        return min(compounded)
+        compounded = []
+        for index in range(len(daily_returns) - days + 1):
+            window = daily_returns[index:index + days]
+            if any(window[position][0] != window[position - 1][1] for position in range(1, len(window))):
+                continue
+            compounded.append(math.prod(1 + item[2] for item in window) - 1)
+        return min(compounded) if compounded else None
 
     return {
         "status": "OK",
         "common_observations": len(common_dates),
         "daily_return_observations": len(daily_returns),
         "start_date": daily_returns[0][0].isoformat(),
-        "end_date": daily_returns[-1][0].isoformat(),
+        "end_date": daily_returns[-1][1].isoformat(),
         "annualized_volatility": annualized_volatility,
         "downside_deviation": downside_deviation,
         "sharpe_ratio": sharpe,
         "historical_var_95": historical_var_95,
         "historical_cvar_95": historical_cvar_95,
-        "max_drawdown": max_drawdown(indexed_points),
+        "max_drawdown": min(drawdowns) if drawdowns else None,
         "worst_1d_return": min(returns),
         "worst_5d_return": worst_horizon(5),
         "worst_21d_return": worst_horizon(21),
