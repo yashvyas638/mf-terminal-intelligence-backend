@@ -66,6 +66,20 @@ def test_plan_is_idempotent_and_scheme_type_is_part_of_checkpoint_key(factory):
         assert len({row.window_key for row in rows}) == 2
 
 
+def test_default_plan_uses_seven_day_windows(factory):
+    result = create_history_backfill_plan(
+        date(2026, 1, 1), date(2026, 1, 16), (1,), session_factory=factory
+    )
+    assert result["windows_per_scheme_type"] == 3
+    with factory() as db:
+        rows = db.execute(select(NavBackfillCheckpoint).order_by(NavBackfillCheckpoint.start_date)).scalars().all()
+        assert [(row.start_date, row.end_date) for row in rows] == [
+            (date(2026, 1, 1), date(2026, 1, 7)),
+            (date(2026, 1, 8), date(2026, 1, 14)),
+            (date(2026, 1, 15), date(2026, 1, 16)),
+        ]
+
+
 def test_batch_commits_nav_and_checkpoint_then_status_reports_totals(factory):
     create_history_backfill_plan(
         date(2026, 1, 1), date(2026, 1, 7), (1,), session_factory=factory

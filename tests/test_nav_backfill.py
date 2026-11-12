@@ -4,16 +4,17 @@ import pytest
 
 from app.nav_backfill import (
     AMFI_MAX_HISTORY_WINDOW_DAYS,
+    AMFI_RECOMMENDED_HISTORY_WINDOW_DAYS,
     HistoryWindow,
     pending_history_windows,
     plan_history_windows,
 )
 
 
-def test_history_windows_are_contiguous_and_maximum_90_days():
+def test_history_windows_are_contiguous_and_maximum_90_days_when_requested():
     start = date(2026, 1, 1)
     end = date(2026, 7, 1)
-    windows = plan_history_windows(start, end)
+    windows = plan_history_windows(start, end, max_window_days=90)
     # The inclusive range contains 182 calendar days: 90 + 90 + 2.
     assert [window.day_count for window in windows] == [90, 90, 2]
     assert windows[0].start_date == start
@@ -23,6 +24,12 @@ def test_history_windows_are_contiguous_and_maximum_90_days():
     for previous, current in zip(windows, windows[1:], strict=False):
         assert current.start_date == date.fromordinal(previous.end_date.toordinal() + 1)
     assert all(window.day_count <= AMFI_MAX_HISTORY_WINDOW_DAYS for window in windows)
+
+
+def test_default_window_is_conservative_seven_days():
+    assert AMFI_RECOMMENDED_HISTORY_WINDOW_DAYS == 7
+    windows = plan_history_windows(date(2026, 1, 1), date(2026, 1, 16))
+    assert [window.day_count for window in windows] == [7, 7, 2]
 
 
 def test_single_day_range_produces_one_single_day_window():
