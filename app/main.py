@@ -3175,7 +3175,7 @@ def portfolio_holdings_lookthrough(
     max_disclosure_age_days: int = Query(default=180, ge=30, le=730),
 ) -> dict[str, Any]:
     """Aggregate verified constituent and sector exposures across owned fund holdings."""
-    owner_id = require_authenticated_user()
+    require_authenticated_user()
     valuation = portfolio_valuation(portfolio_id, None)
     as_of = datetime.now(timezone.utc).date()
     total_value = Decimal(str(valuation.get("current_value") or "0"))
