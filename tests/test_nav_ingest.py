@@ -242,3 +242,47 @@ Axis Mutual Fund
     assert records[3].asset_class is None
     assert records[4].category_group is None
     assert records[4].category is None
+
+
+def test_normalizes_current_amfi_passive_and_money_market_headers():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Exchange Traded Funds (ETFs) - Debt ETF)
+AMFI ETF Mutual Fund
+150001;-;-;Example Debt ETF;10.1234;11-Nov-2026
+Open Ended Schemes(Other Scheme - Index Funds)
+AMFI Index Mutual Fund
+150002;-;-;Example Index Fund;10.1234;11-Nov-2026
+Open Ended Schemes(Other Scheme - Other ETFs)
+AMFI Other ETF Mutual Fund
+150003;-;-;Example Other ETF;10.1234;11-Nov-2026
+Open Ended Schemes(Money Market)
+AMFI Debt Mutual Fund
+150004;-;-;Example Money Market Scheme;10.1234;11-Nov-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+
+    assert records[0].category_group == "Other Schemes"
+    assert records[0].category == "Debt ETF"
+    assert records[0].asset_class == "Other"
+    assert records[1].category_group == "Other Schemes"
+    assert records[1].category == "Index Funds / ETFs"
+    assert records[2].category_group == "Other Schemes"
+    assert records[2].category == "Other ETF"
+    assert records[3].category_group == "Debt Scheme"
+    assert records[3].category == "Money Market Fund"
+    assert records[3].asset_class == "Debt"
+
+
+def test_keeps_discontinued_solution_oriented_and_children_groups_unranked():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Solution Oriented Scheme - Retirement Fund)
+150005;-;-;Example Retirement Fund;10.1234;11-Nov-2026
+Open Ended Schemes(Children's Fund - Childrens' Fund)
+150006;-;-;Example Children's Fund;10.1234;11-Nov-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+
+    assert records[0].category_group is None
+    assert records[0].category is None
+    assert records[1].category_group is None
+    assert records[1].category is None
