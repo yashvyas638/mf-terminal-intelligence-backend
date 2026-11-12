@@ -24,13 +24,22 @@ The repository has a useful backend foundation, but it is not yet the complete M
 - GitHub Actions daily latest-NAV refresh schedule is configured for Monday–Saturday at 17:15 UTC (22:45 IST). Required repository secrets and successful scheduled runs are not independently verified here.
 - Historical NAV HTTP adapter is not enabled: AMFI's official page states a maximum 90-day download window, but the exact request parameters and response contract still need a live official-form capture and fixture validation.
 
+## Fund Explorer classification contract
+
+- The AMFI `NAVAll.txt` file is a grouped feed, not a flat table. The parser now carries AMC and scheme-section headers forward to each scheme row.
+- Scheme group is stored as one of the canonical broad groups: Equity Scheme, Debt Scheme, Hybrid Scheme or Other Scheme. Asset class is derived only from that official group.
+- A sub-category (for example, Large Cap Fund or Short Duration Fund) is stored only when AMFI explicitly supplies the second part of a modern `Group - Sub-category` header. Legacy single-label headers map to a broad group only; the parser does not invent a sub-category from the scheme's marketing name.
+- Fund Explorer and Research Terminal expose separate Scheme Group and Sub-category filters. The `Power Select` tab label is renamed `Fund Screener`; it is a screen name, not a mutual-fund category.
+- Facets exclude unrecognized group and asset-class labels, and sub-categories without a canonical group. This prevents marketing labels or arbitrary database values from becoming categories.
+- Existing scheme-master rows receive the corrected classification on the next successful AMFI NAV refresh. The parser and persistence regression tests cover AMC capture, modern/legacy headings, Equity/Debt/Hybrid mapping and rejection of a deliberately invalid `PowerUp` category label.
+
 ## Major product gaps
 
 | Area | Current state | Missing before product-grade |
 |---|---|---|
 | Authentication | Dashboard and Research Terminal flows implemented in this PR; live E2E pending | Verified provider settings, email delivery, redirect configuration and two-account browser test |
 | Home | Portfolio-first command centre with consolidated value/cost/unrealized P&L, per-portfolio XIRR and NAV freshness (this PR; end-to-end pending) | Activity feed, alerts, goal progress and proactive actionable insights |
-| Fund Explorer | Search, AMC/category/asset-class/plan/option filters, facets and server-side pagination (this PR; classification facets depend on stored metadata coverage) | Watchlist, benchmark metadata and global metric-ranked screening |
+| Fund Explorer | Search, canonical scheme-group/sub-category/asset-class/AMC/plan/option filters, AMFI-header metadata extraction and server-side pagination | Watchlist, benchmark metadata and live-verified category coverage |
 | Fund profile | Scheme metadata, NAV-derived metrics, coverage and historical NAV line chart (this PR; end-to-end pending) | Factsheet, AUM, expense ratio, manager, benchmark TRI, exit load, documents and distribution-adjusted return history |
 | Research | NAV-derived CAGR/volatility/drawdown and ratios | Full verified historical NAV, calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
