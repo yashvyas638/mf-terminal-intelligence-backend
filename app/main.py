@@ -524,6 +524,7 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             )
             raise HTTPException(500, "NAV snapshot persistence failed; diagnostic error types were recorded; existing accepted data was preserved where the transaction rolled back") from None
         snapshot = persisted["snapshot"]
+        research_snapshot_refresh = _refresh_research_snapshots_after_ingestion()
         elapsed_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
         logger.info(
             "nav_refresh_committed snapshot_id=%s schemes=%s nav_inserted=%s nav_corrected=%s nav_unchanged=%s persist_ms=%s elapsed_ms=%s",
@@ -538,6 +539,7 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
             "nav_rows_unchanged": persisted["nav_rows_unchanged"],
             "nav_corrections_recorded": persisted["nav_corrections_recorded"],
             "nav_rows_upserted": persisted["nav_rows_inserted"] + persisted["nav_rows_updated"],
+            "research_snapshot_refresh": research_snapshot_refresh,
             "validation": report,
         }
 
@@ -1030,6 +1032,34 @@ def refresh_fund_research_snapshots(
         "methodology_version": "nav-research-v1",
         "note": "Snapshots use stored AMFI NAV observations only; no benchmark TRI or distribution adjustment is implied.",
     }
+
+
+def _refresh_research_snapshots_after_ingestion() -> dict[str, Any]:
+    """Refresh global rankings after a committed daily NAV ingest.
+
+    A research snapshot failure must not undo accepted NAV rows. Surface a safe
+    status to the operator so the rebuild can be retried independently.
+    """
+    try:
+        result = refresh_fund_research_snapshots(x_api_key=os.getenv("API_KEY"))
+        logger.info(
+            "research_snapshot_refresh_after_nav_ingestion status=refreshed schemes=%s rows=%s",
+            result.get("schemes_processed"),
+            result.get("snapshot_rows_written"),
+        )
+        return {
+            "status": "refreshed",
+            "schemes_processed": result.get("schemes_processed"),
+            "snapshot_rows_written": result.get("snapshot_rows_written"),
+            "refreshed_at": result.get("refreshed_at"),
+        }
+    except Exception as exc:
+        logger.warning(
+            "research_snapshot_refresh_after_nav_ingestion_failed error_type=%s",
+            type(exc).__name__,
+            exc_info=True,
+        )
+        return {"status": "deferred", "error_type": type(exc).__name__}
 
 
 @app.get("/v1/analytics/screener")
