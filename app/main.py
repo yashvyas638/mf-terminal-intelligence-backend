@@ -263,13 +263,16 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     # Historical backfill writes NAV observations directly rather than through
     # the daily refresh endpoint. Reuse the single gate that verifies both
     # settled checkpoints and the full-resolution 5Y baseline buffer.
-    research_refresh: dict[str, Any] = {
-        "status": "deferred",
-        "reason": "history_backfill_failed",
-    }
-    if failed == 0:
-        research_refresh = _maybe_refresh_research_after_history_completion()
-    result["research_snapshot_refresh"] = research_refresh
+    # Keep the history worker bounded and return control to the application
+    # before the CPU- and database-intensive research snapshot rebuild starts.
+    # The completion callback schedules exactly one refresh after this worker
+    # exits; running it here as well duplicated the full rebuild and could keep
+    # startup workers alive through rolling deploys.
+    result["research_snapshot_refresh"] = (
+        {"status": "scheduled", "reason": "after_history_worker_completion"}
+        if failed == 0
+        else {"status": "deferred", "reason": "history_backfill_failed"}
+    )
 
     first_failure = next(
         (item for item in results if item.get("status") == "failed"),
