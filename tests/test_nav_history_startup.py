@@ -160,3 +160,29 @@ def test_history_plan_startup_hook_supports_storage_optimized_hybrid_mode(monkey
         date(2025, 11, 1),
         (1, 2, 3),
     )]
+
+
+
+@pytest.mark.asyncio
+async def test_history_background_task_does_not_block_async_startup(monkeypatch):
+    import asyncio
+    import time
+
+    started = asyncio.Event()
+    finished = asyncio.Event()
+
+    def slow_worker():
+        started_loop.call_soon_threadsafe(started.set)
+        time.sleep(0.25)
+        started_loop.call_soon_threadsafe(finished.set)
+        return {"status": "completed", "selected": 1, "completed": 1, "failed": 0}
+
+    started_loop = asyncio.get_running_loop()
+    task = asyncio.create_task(asyncio.to_thread(slow_worker))
+    task.add_done_callback(main._log_history_backfill_task_result)
+
+    # The event loop remains responsive while the synchronous AMFI worker runs.
+    await asyncio.wait_for(started.wait(), timeout=0.1)
+    assert not finished.is_set()
+    await asyncio.wait_for(finished.wait(), timeout=1)
+    assert (await task)["completed"] == 1
