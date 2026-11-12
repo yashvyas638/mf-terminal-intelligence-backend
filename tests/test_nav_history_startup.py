@@ -124,3 +124,39 @@ def test_history_batch_startup_hook_runs_only_bounded_batch(monkeypatch):
         "enabled": True,
         "source_contract_verified": True,
     }]
+
+
+
+def test_history_plan_startup_hook_supports_storage_optimized_hybrid_mode(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_PLAN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_PLAN_MODE", "hybrid")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_START_DATE", "2021-11-12")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_END_DATE", "2026-11-11")
+    monkeypatch.setenv("AMFI_HISTORY_MONTHLY_START_DATE", "2021-11-19")
+    monkeypatch.setenv("AMFI_HISTORY_DAILY_START_DATE", "2025-11-01")
+    expected = {
+        "status": "planned",
+        "monthly_windows_per_scheme_type": 48,
+        "daily_windows_per_scheme_type": 54,
+        "checkpoints_paused": 782,
+        "checkpoints_created": 306,
+        "network_requests_made": 0,
+    }
+    calls = []
+
+    def fake_plan(full_start, full_end, monthly_start, daily_start, scheme_types):
+        calls.append((full_start, full_end, monthly_start, daily_start, scheme_types))
+        return expected
+
+    monkeypatch.setattr(main, "create_storage_optimized_history_plan", fake_plan)
+    result = main._maybe_plan_historical_backfill_from_environment()
+
+    assert result == expected
+    assert calls == [(
+        date(2021, 11, 12),
+        date(2026, 11, 11),
+        date(2021, 11, 19),
+        date(2025, 11, 1),
+        (1, 2, 3),
+    )]
