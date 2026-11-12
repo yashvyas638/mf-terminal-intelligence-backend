@@ -118,6 +118,7 @@ def apply_nav_quality_gates(
     latest_date: date,
     window_days: int,
     discontinuities: list[dict[str, Any]],
+    window_points: Iterable[tuple[date, float]] = (),
 ) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
     """Suppress only period/window metrics crossed by an unverified NAV jump."""
     periods = dict(metrics.get("period_returns") or {})
@@ -138,6 +139,14 @@ def apply_nav_quality_gates(
     window_events = [
         event for event in discontinuities if event["nav_date"] >= window_start
     ]
+    window_rows = list(window_points)
+    gap_days = [
+        (current_date - previous_date).days
+        for (previous_date, _), (current_date, _) in zip(window_rows, window_rows[1:])
+    ]
+    long_gaps = [gap for gap in gap_days if gap > 7]
+    mixed_frequency_risk = bool(long_gaps)
+
     if window_events:
         for key in (
             "total_return",
@@ -161,6 +170,25 @@ def apply_nav_quality_gates(
             for item in (metrics.get("monthly_returns") or [])
             if item.get("month") not in event_months
         ]
+        metrics["risk_statistics_status"] = "REVIEW_REQUIRED"
+
+    if mixed_frequency_risk:
+        for key in (
+            "annualized_volatility",
+            "volatility",
+            "sharpe_ratio",
+            "sortino_ratio",
+            "max_drawdown",
+        ):
+            metrics[key] = None
+        if not window_events:
+            metrics["risk_statistics_status"] = "MIXED_FREQUENCY_NOT_COMPARABLE"
+
+    if not window_events and not mixed_frequency_risk:
+        metrics["risk_statistics_status"] = (
+            "OK" if metrics.get("annualized_volatility") is not None
+            else "INSUFFICIENT_DAILY_OBSERVATIONS"
+        )
 
     metrics["period_returns"] = periods
     relevant_events = {
@@ -187,6 +215,17 @@ def apply_nav_quality_gates(
                 "gap_days": event["gap_days"],
                 "affected_periods": affected,
                 "affects_window_metrics": event in window_events,
+            }
+        )
+
+    if mixed_frequency_risk:
+        quality_flags.append(
+            {
+                "type": "mixed_frequency_risk_series",
+                "max_observation_gap_days": max(long_gaps),
+                "gaps_over_seven_days": len(long_gaps),
+                "affected_periods": [],
+                "affects_window_metrics": True,
             }
         )
 
