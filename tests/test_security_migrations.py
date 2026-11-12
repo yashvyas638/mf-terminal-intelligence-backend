@@ -5,7 +5,7 @@ from app.db import engine
 
 
 @pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
-def test_supabase_client_roles_cannot_access_public_tables():
+def test_supabase_client_roles_have_only_rls_scoped_read_access():
     with engine.connect() as connection:
         # Exercise default privileges after the lockdown migration using objects created by postgres.
         connection.exec_driver_sql(
@@ -21,14 +21,35 @@ def test_supabase_client_roles_cannot_access_public_tables():
         tables = connection.execute(text(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
         )).scalars().all()
-        for role in ("anon", "authenticated"):
-            for table in tables:
-                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
-                    allowed = connection.execute(
-                        text("SELECT has_table_privilege(:role, :table_name, :privilege)"),
-                        {"role": role, "table_name": f"public.{table}", "privilege": privilege},
-                    ).scalar_one()
-                    assert not allowed, f"{role} unexpectedly has {privilege} on public.{table}"
+        readable = {
+            "schemes", "nav_observations", "portfolios", "portfolio_transactions",
+            "portfolio_transaction_audit", "portfolio_import_batches",
+        }
+        for table in tables:
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+                allowed = connection.execute(
+                    text("SELECT has_table_privilege(:role, :table_name, :privilege)"),
+                    {"role": "anon", "table_name": f"public.{table}", "privilege": privilege},
+                ).scalar_one()
+                assert not allowed, f"anon unexpectedly has {privilege} on public.{table}"
+                authenticated_allowed = connection.execute(
+                    text("SELECT has_table_privilege('authenticated', :table_name, :privilege)"),
+                    {"table_name": f"public.{table}", "privilege": privilege},
+                ).scalar_one()
+                expected = privilege == "SELECT" and table in readable
+                assert authenticated_allowed == expected, (
+                    f"authenticated privilege mismatch for {privilege} on public.{table}"
+                )
+
+        rls_tables = set(connection.execute(text(
+            "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity"
+        )).scalars())
+        assert {
+            "alembic_version", "schemes", "ingestion_snapshots", "portfolios",
+            "nav_observations", "portfolio_transactions", "portfolio_transaction_audit",
+            "nav_observation_revisions", "portfolio_import_batches",
+        }.issubset(rls_tables)
 
         sequences = connection.execute(text(
             "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'"
