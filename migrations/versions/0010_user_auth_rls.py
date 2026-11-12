@@ -15,8 +15,12 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
-        op.add_column("portfolios", sa.Column("owner_user_id", sa.String(length=36), nullable=True))
-        op.create_index("ix_portfolios_owner_user_id", "portfolios", ["owner_user_id"], unique=False)
+        columns = {column["name"] for column in sa.inspect(bind).get_columns("portfolios")}
+        if "owner_user_id" not in columns:
+            op.add_column("portfolios", sa.Column("owner_user_id", sa.String(length=36), nullable=True))
+        indexes = {index["name"] for index in sa.inspect(bind).get_indexes("portfolios")}
+        if "ix_portfolios_owner_user_id" not in indexes:
+            op.create_index("ix_portfolios_owner_user_id", "portfolios", ["owner_user_id"], unique=False)
         return
 
     columns = {column["name"] for column in sa.inspect(bind).get_columns("portfolios")}
