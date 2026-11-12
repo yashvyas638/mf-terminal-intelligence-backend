@@ -141,7 +141,8 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
         eligible = [(d, v) for d, v in rows if d <= target_date]
         # Never silently substitute a materially older NAV for the requested
         # period baseline. Weekends and holidays are fine; long data gaps are not.
-        if not eligible or (target_date - eligible[-1][0]).days > 7:
+        max_baseline_gap_days = 35 if label in {"3Y", "5Y"} else 7
+        if not eligible or (target_date - eligible[-1][0]).days > max_baseline_gap_days:
             periods[label] = None
         else:
             periods[label] = values[-1] / eligible[-1][1] - 1
