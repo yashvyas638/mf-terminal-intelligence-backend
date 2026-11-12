@@ -27,6 +27,13 @@ def test_parses_historical_eight_column_layout_without_misreading_nav():
     assert report["source_url"] == AMFI_HISTORY_URL
     assert report["records_valid"] == 2
     assert report["quality_status"] == "PASS"
+    assert report["header_verified"] is True
+
+
+def test_rejects_data_rows_without_recognised_archive_header():
+    payload = "119551;Example Equity Fund;INF204K01K15;INF204K01K23;89.1234;85;89;21-Oct-2026"
+    with pytest.raises(ValueError, match="missing the recognised eight-column header"):
+        parse_amfi_history_text(payload)
 
 
 def test_supports_bom_and_alternate_numeric_date_format():
