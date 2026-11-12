@@ -147,8 +147,16 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
             plan_type = _clean(parts[columns["plan"]]) if "plan" in columns else None
             option_type = _clean(parts[columns["option"]]) if "option" in columns else None
 
-            if code <= 0 or not name or not nav.is_finite() or nav <= 0:
-                raise ValueError("scheme code, name and positive NAV are required")
+            if code <= 0:
+                raise ValueError("scheme code must be positive")
+            if not name:
+                raise ValueError("scheme name is missing")
+            if not nav.is_finite():
+                raise ValueError("NAV is not a finite number")
+            if nav <= 0:
+                raise ValueError(
+                    f"NAV must be positive for persistence (received {parts[columns['nav']]!r})"
+                )
             if nav_date > date.today():
                 raise ValueError("NAV date cannot be in the future")
 
