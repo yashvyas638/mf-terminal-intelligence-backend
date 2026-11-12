@@ -675,6 +675,20 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             first_seen_at=now,
             last_seen_at=now,
         ),
+        Scheme(
+            scheme_code=999973,
+            scheme_name="PowerUp Marketing Label Fund",
+            amc="Unclassified AMC",
+            category_group="Power Select",
+            category="PowerUp",
+            asset_class="B",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
     ]
     with SessionLocal() as db:
         for scheme in fixtures:
@@ -689,6 +703,9 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "Explorer AMC" in facets.json()["amcs"]
     assert "Equity Scheme" in facets.json()["categories"]
     assert "Flexi Cap Fund" in facets.json()["sub_categories"]
+    assert "Power Select" not in facets.json()["categories"]
+    assert "PowerUp" not in facets.json()["sub_categories"]
+    assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
         "/v1/nav/schemes",
