@@ -100,7 +100,7 @@ def test_reports_malformed_numeric_candidate_without_dropping_valid_rows():
 
 def test_zero_nav_is_counted_with_explicit_reason_and_never_emitted():
     payload = LEGACY_SAMPLE + (
-        "130001;Liquidated Fund;INF0000000001;;0.0000;0;0;21-Oct-2026\\n"
+        "130001;Liquidated Fund;INF0000000001;;0.0000;0;0;21-Oct-2026\n"
     )
     records, report = parse_amfi_history_text(payload)
     assert len(records) == 2
