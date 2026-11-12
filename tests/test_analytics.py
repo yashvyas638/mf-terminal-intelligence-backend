@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.analytics import max_drawdown, performance_metrics, rolling_return_series, research_metrics, xirr
+from app.analytics import benchmark_comparison_metrics, max_drawdown, performance_metrics, rolling_return_series, research_metrics, xirr
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
@@ -99,3 +99,48 @@ def test_drawdown_profile_marks_unrecovered_drawdown_open():
     assert result["worst_recovery_days"] is None
     assert result["longest_underwater_days"] == 22
     assert result["current_drawdown"] == pytest.approx(-0.125)
+
+def test_benchmark_comparison_uses_exact_common_dates_and_reports_risk_statistics():
+    start = date(2025, 1, 1)
+    fund_points = []
+    benchmark_points = []
+    fund_value = 100.0
+    benchmark_value = 100.0
+    for index in range(80):
+        observed = start + timedelta(days=index)
+        fund_value *= 1 + 0.001 + (index % 5) * 0.0002
+        benchmark_value *= 1 + 0.0006 + (index % 7) * 0.00015
+        fund_points.append((observed, fund_value))
+        if index not in {11, 12, 13, 14, 15, 16, 17, 18}:
+            benchmark_points.append((observed, benchmark_value))
+
+    result = benchmark_comparison_metrics(fund_points, benchmark_points)
+    assert result["status"] == "OK"
+    assert result["common_observations"] == 72
+    assert result["risk_return_observations"] == 71
+    assert result["fund_total_return"] > result["benchmark_total_return"]
+    assert result["risk_statistics_status"] == "OK"
+    assert result["tracking_error"] is not None
+    assert result["information_ratio"] is not None
+    assert "No forward-fill or interpolation" in result["methodology"]
+
+
+def test_benchmark_comparison_does_not_interpolate_or_fabricate_daily_risk_statistics():
+    start = date(2025, 1, 1)
+    fund_points = [(start + timedelta(days=index), 100 + index) for index in range(80)]
+    benchmark_points = [(start + timedelta(days=index), 100 + index * 0.8) for index in range(0, 80, 3)]
+    result = benchmark_comparison_metrics(fund_points, benchmark_points)
+    assert result["common_observations"] == len(benchmark_points)
+    assert result["risk_return_observations"] == 0
+    assert result["risk_statistics_status"] == "INSUFFICIENT_DAILY_OBSERVATIONS"
+    assert result["beta"] is None
+    assert result["tracking_error"] is None
+
+
+def test_benchmark_comparison_returns_insufficient_data_without_common_dates():
+    result = benchmark_comparison_metrics(
+        [(date(2025, 1, 1), 100.0), (date(2025, 1, 2), 101.0)],
+        [(date(2025, 1, 3), 100.0), (date(2025, 1, 4), 101.0)],
+    )
+    assert result["status"] == "INSUFFICIENT_DATA"
+    assert result["common_observations"] == 0
