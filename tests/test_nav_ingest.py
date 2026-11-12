@@ -154,7 +154,7 @@ Open Ended Schemes(Equity Scheme - PowerUp)
 
 def test_maps_2026_life_cycle_group_separately_from_other_schemes():
     payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
-Open Ended Schemes(Life Cycle Funds)
+Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
 120589;INF109K01480;-;Life Cycle Fund 2036;23.4567;21-Oct-2026
 """
     records, _ = parse_amfi_nav_text(payload)
