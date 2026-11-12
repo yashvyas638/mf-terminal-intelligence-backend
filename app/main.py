@@ -1492,6 +1492,8 @@ def refresh_fund_research_snapshots(
                 window_days=window_days,
                 discontinuities=discontinuities,
             )
+            if adjustments_applied and data_quality_status == "PASS":
+                data_quality_status = "ADJUSTED"
             period = metrics.get("period_returns", {})
             rolling = metrics.get("rolling_1y", {})
             compact_metrics = {
