@@ -758,7 +758,7 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
         headers=headers,
     )
     assert page.status_code == 200
-    assert page.json()["total_matching"] == 3
+    assert page.json()["total_matching"] == 5  # scheme-name and AMC matches, including two additional taxonomy fixtures
     assert len(page.json()["items"]) == 2
     assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
 
