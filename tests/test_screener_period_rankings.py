@@ -41,7 +41,7 @@ def test_screener_sorts_and_returns_every_displayed_period(monkeypatch, sort_by,
         db.commit()
         db.add(FundResearchSnapshot(
             scheme_code=scheme_code,
-            window_days=3650,
+            window_days=1825,
             nav_as_of_date=date.today(),
             refreshed_at=now,
             observations=39,
@@ -74,7 +74,7 @@ def test_screener_sorts_and_returns_every_displayed_period(monkeypatch, sort_by,
         db.commit()
 
     response = TestClient(app).get(
-        f"/v1/analytics/screener?days=3650&sort_by={sort_by}&q={scheme_code}",
+        f"/v1/analytics/screener?days=1825&sort_by={sort_by}&q={scheme_code}",
         headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
     )
     assert response.status_code == 200, response.text

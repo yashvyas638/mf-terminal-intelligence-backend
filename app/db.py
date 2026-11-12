@@ -241,7 +241,7 @@ class FundResearchSnapshot(Base):
     rolling_1y_positive_rate: Mapped[float | None] = mapped_column(Float)
     __table_args__ = (
         UniqueConstraint("scheme_code", "window_days", name="uq_fund_research_scheme_window"),
-        CheckConstraint("window_days IN (365, 1095, 1825, 3650)", name="ck_fund_research_window_days"),
+        CheckConstraint("window_days IN (30, 365, 1095, 1825)", name="ck_fund_research_window_days"),
         CheckConstraint("observations >= 0", name="ck_fund_research_observations_nonnegative"),
         Index("ix_fund_research_window_return_1y", "window_days", "return_1y"),
         Index("ix_fund_research_window_return_3m", "window_days", "return_3m"),

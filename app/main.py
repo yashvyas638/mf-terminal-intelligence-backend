@@ -1433,7 +1433,7 @@ def refresh_fund_research_snapshots(
         raise HTTPException(401, "Operator key required to rebuild research snapshots")
 
     refreshed_at = datetime.now(timezone.utc)
-    windows = (365, 1095, 1825, 3650)
+    windows = (30, 365, 1095, 1825)
     # Keep an extra 35-day baseline lookback outside each nominal window.
     # The NAV performance window remains exact; earlier observations are used
     # only to resolve the requested target-date NAV without forward-fill.
@@ -1609,7 +1609,7 @@ def fund_screener(
     asset_class: str | None = Query(default=None, max_length=40),
     plan_type: str | None = Query(default=None, max_length=20),
     option_type: str | None = Query(default=None, max_length=20),
-    days: int = Query(default=1095, ge=365, le=3650),
+    days: int = Query(default=1095, ge=30, le=1825),
     sort_by: Literal[
         "return_1m", "return_3m", "return_6m", "return_1y", "return_3y", "return_5y", "cagr", "volatility",
         "sharpe_ratio", "sortino_ratio", "max_drawdown",
@@ -1623,8 +1623,8 @@ def fund_screener(
 ) -> dict[str, Any]:
     """Globally ranked screener over the latest committed precomputed NAV snapshots."""
     require_api_key(x_api_key)
-    if days not in {365, 1095, 1825, 3650}:
-        raise HTTPException(422, "days must be one of 365, 1095, 1825 or 3650")
+    if days not in {30, 365, 1095, 1825}:
+        raise HTTPException(422, "days must be one of 30, 365, 1095 or 1825")
 
     # Bootstrap the shared ranking cache on the first authenticated research visit.
     # This is idempotent and only runs when no precomputed snapshot exists.

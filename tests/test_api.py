@@ -1103,6 +1103,14 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     )
     assert filtered.status_code == 200
     assert all(item["observations"] >= 300 for item in filtered.json()["items"])
+    one_month = client.get(
+        "/v1/analytics/screener?q=Global+Rank&days=30&sort_by=return_1m",
+        headers=headers,
+    )
+    assert one_month.status_code == 200
+    assert one_month.json()["items"][0]["scheme_code"] == scheme_codes[0]
+    assert one_month.json()["items"][0]["category_rank"] == 1
+
     insufficient_5y = client.get(
         "/v1/analytics/screener?q=Global+Rank&days=1825&sort_by=return_5y",
         headers=headers,
@@ -1112,6 +1120,8 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
 
     invalid_window = client.get("/v1/analytics/screener?days=500", headers=headers)
     assert invalid_window.status_code == 422
+    unsupported_10y = client.get("/v1/analytics/screener?days=3650", headers=headers)
+    assert unsupported_10y.status_code == 422
 
     with SessionLocal() as db:
         persisted = db.query(FundResearchSnapshot).filter(
