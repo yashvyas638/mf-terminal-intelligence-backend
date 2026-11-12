@@ -97,6 +97,11 @@ def persist_historical_nav_window(
                     scheme.isin_dividend_reinvestment = (
                         record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
                     )
+                    # The current AMFI archive schema carries plan and option
+                    # metadata even though it does not carry category headings.
+                    # Preserve existing values when an older archive variant omits them.
+                    scheme.plan_type = record.plan_type or scheme.plan_type
+                    scheme.option_type = record.option_type or scheme.option_type
                     scheme.last_seen_at = now
             db.flush()
 
