@@ -227,8 +227,11 @@ class FundResearchSnapshot(Base):
     observations: Mapped[int] = mapped_column(Integer, nullable=False)
     metrics_json: Mapped[str] = mapped_column(Text, nullable=False)
     return_1m: Mapped[float | None] = mapped_column(Float)
+    return_3m: Mapped[float | None] = mapped_column(Float)
+    return_6m: Mapped[float | None] = mapped_column(Float)
     return_1y: Mapped[float | None] = mapped_column(Float)
     return_3y: Mapped[float | None] = mapped_column(Float)
+    return_5y: Mapped[float | None] = mapped_column(Float)
     cagr: Mapped[float | None] = mapped_column(Float)
     volatility: Mapped[float | None] = mapped_column(Float)
     sharpe_ratio: Mapped[float | None] = mapped_column(Float)
@@ -241,6 +244,9 @@ class FundResearchSnapshot(Base):
         CheckConstraint("window_days IN (365, 1095, 1825, 3650)", name="ck_fund_research_window_days"),
         CheckConstraint("observations >= 0", name="ck_fund_research_observations_nonnegative"),
         Index("ix_fund_research_window_return_1y", "window_days", "return_1y"),
+        Index("ix_fund_research_window_return_3m", "window_days", "return_3m"),
+        Index("ix_fund_research_window_return_6m", "window_days", "return_6m"),
+        Index("ix_fund_research_window_return_5y", "window_days", "return_5y"),
         Index("ix_fund_research_window_sharpe", "window_days", "sharpe_ratio"),
         Index("ix_fund_research_window_cagr", "window_days", "cagr"),
     )
