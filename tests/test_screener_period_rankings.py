@@ -37,6 +37,7 @@ def test_screener_sorts_and_returns_every_displayed_period(monkeypatch, sort_by,
                 plan_type="Direct",
                 option_type="Growth",
             ))
+        db.flush()
         db.add(FundResearchSnapshot(
             scheme_code=scheme_code,
             window_days=3650,
