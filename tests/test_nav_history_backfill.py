@@ -323,7 +323,11 @@ def test_month_end_batch_persists_only_latest_observation_per_scheme_month(facto
     assert result["completed"] == 1
     with factory() as db:
         checkpoint = db.execute(
-            select(NavBackfillCheckpoint).where(NavBackfillCheckpoint.sampling_mode == "month_end")
+            select(NavBackfillCheckpoint).where(
+                NavBackfillCheckpoint.sampling_mode == "month_end",
+                NavBackfillCheckpoint.start_date == date(2021, 11, 19),
+                NavBackfillCheckpoint.end_date == date(2021, 11, 30),
+            )
         ).scalar_one()
         nav_rows = db.execute(select(NavObservation).order_by(NavObservation.scheme_code)).scalars().all()
         assert checkpoint.records_valid == 2
