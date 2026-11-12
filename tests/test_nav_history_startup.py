@@ -510,3 +510,53 @@ def test_history_refresh_skips_rebuild_when_current_four_window_snapshots_exist(
     assert main._maybe_refresh_research_after_history_completion() == {
         "status": "already_current",
     }
+
+
+
+def test_research_snapshots_are_current_requires_latest_adjustment_registry(monkeypatch):
+    from app.nav_adjustments import NAV_ADJUSTMENT_REGISTRY_VERSION
+
+    class Result:
+        def __init__(self, scalar=None, row=None):
+            self._scalar = scalar
+            self._row = row
+
+        def scalar_one(self):
+            return self._scalar
+
+        def scalar_one_or_none(self):
+            return self._scalar
+
+        def one(self):
+            return self._row
+
+    class FakeSession:
+        def __init__(self, version):
+            self.results = [
+                Result(scalar=date(2026, 11, 11)),
+                Result(row=(4, 4, date(2026, 11, 11))),
+                Result(scalar={"nav_adjustment_registry_version": version}),
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement):
+            return self.results.pop(0)
+
+    monkeypatch.setattr(
+        main,
+        "SessionLocal",
+        lambda: FakeSession(NAV_ADJUSTMENT_REGISTRY_VERSION),
+    )
+    assert main._research_snapshots_are_current() is True
+
+    monkeypatch.setattr(
+        main,
+        "SessionLocal",
+        lambda: FakeSession("older-registry"),
+    )
+    assert main._research_snapshots_are_current() is False

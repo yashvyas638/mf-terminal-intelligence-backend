@@ -68,6 +68,12 @@ from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
 from app.reporting import build_portfolio_report_pdf
+from app.nav_adjustments import (
+    NAV_ADJUSTMENT_REGISTRY_VERSION,
+    apply_nav_quality_gates,
+    apply_verified_nav_adjustments,
+    detect_nav_discontinuities,
+)
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 from app.nav_history_backfill import (
     create_history_backfill_plan,
@@ -353,12 +359,26 @@ def _research_snapshots_are_current() -> bool:
                 func.max(FundResearchSnapshot.nav_as_of_date),
             )
         ).one()
+        sample_metrics = db.execute(
+            select(FundResearchSnapshot.metrics_json).limit(1)
+        ).scalar_one_or_none()
+    if isinstance(sample_metrics, str):
+        try:
+            sample_metrics = json.loads(sample_metrics)
+        except (TypeError, ValueError):
+            sample_metrics = None
+    registry_version = (
+        sample_metrics.get("nav_adjustment_registry_version")
+        if isinstance(sample_metrics, dict)
+        else None
+    )
     return bool(
         snapshot_rows
         and snapshot_windows == 4
         and latest_nav_date is not None
         and snapshot_nav_date is not None
         and snapshot_nav_date >= latest_nav_date
+        and registry_version == NAV_ADJUSTMENT_REGISTRY_VERSION
     )
 
 
@@ -1450,21 +1470,40 @@ def refresh_fund_research_snapshots(
         nonlocal schemes_processed, min_as_of, max_as_of
         if not points:
             return
+        adjusted_points, adjustments_applied = apply_verified_nav_adjustments(
+            scheme_code,
+            points,
+        )
+        discontinuities = detect_nav_discontinuities(adjusted_points)
         schemes_processed += 1
-        as_of = points[-1][0]
+        as_of = adjusted_points[-1][0]
         min_as_of = as_of if min_as_of is None else min(min_as_of, as_of)
         max_as_of = as_of if max_as_of is None else max(max_as_of, as_of)
         for window_days in windows:
             cutoff = as_of - timedelta(days=window_days)
-            window_points = [(d, value) for d, value in points if d >= cutoff]
+            window_points = [(d, value) for d, value in adjusted_points if d >= cutoff]
             metrics = research_snapshot_metrics(
                 window_points,
-                period_baseline_rows=points,
+                period_baseline_rows=adjusted_points,
             )
+            metrics, data_quality_status, quality_flags = apply_nav_quality_gates(
+                metrics,
+                latest_date=as_of,
+                window_days=window_days,
+                discontinuities=discontinuities,
+                window_points=window_points,
+            )
+            if adjustments_applied and data_quality_status == "PASS":
+                data_quality_status = "ADJUSTED"
             period = metrics.get("period_returns", {})
             rolling = metrics.get("rolling_1y", {})
             compact_metrics = {
                 "status": metrics.get("status"),
+                "data_quality_status": data_quality_status,
+                "risk_statistics_status": metrics.get("risk_statistics_status"),
+                "quality_flags": quality_flags,
+                "nav_adjustments_applied": adjustments_applied,
+                "nav_adjustment_registry_version": NAV_ADJUSTMENT_REGISTRY_VERSION,
                 "observations": metrics.get("observations", 0),
                 "start_date": metrics.get("start_date"),
                 "end_date": metrics.get("end_date"),
@@ -1477,7 +1516,11 @@ def refresh_fund_research_snapshots(
                     "positive_window_rate": rolling.get("positive_window_rate"),
                 },
                 "monthly_returns": metrics.get("monthly_returns", []) if window_days == 365 else [],
-                "methodology": "NAV-only research snapshot; no benchmark TRI or distribution adjustment.",
+                "methodology": (
+                    "NAV-only research snapshot; verified unit-scale adjustments applied; "
+                    "unverified NAV discontinuities suppress affected period/window metrics; "
+                    "no benchmark TRI or distribution adjustment."
+                ),
             }
             snapshot_rows.append(FundResearchSnapshot(
                 scheme_code=scheme_code,
@@ -1626,20 +1669,13 @@ def fund_screener(
     if days not in {30, 365, 1095, 1825}:
         raise HTTPException(422, "days must be one of 30, 365, 1095 or 1825")
 
-    # Bootstrap the shared ranking cache on the first authenticated research visit.
-    # This is idempotent and only runs when no precomputed snapshot exists.
-    with SessionLocal() as db:
-        has_research_snapshots = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at)).where(
-                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS)
-            )
-        ).scalar_one()
-    if has_research_snapshots is None:
-        bootstrap = _refresh_research_snapshots_after_ingestion()
-        if bootstrap.get("status") != "refreshed":
+    # Never serve snapshots built against an older NAV-adjustment registry.
+    if not _research_snapshots_are_current():
+        bootstrap = _maybe_refresh_research_after_history_completion()
+        if bootstrap.get("status") not in {"refreshed", "already_current"}:
             raise HTTPException(
                 503,
-                "Fund rankings are being prepared from accepted NAV history. Please retry shortly.",
+                "Fund rankings are being prepared from accepted NAV history and verified corporate-action data. Please retry shortly.",
             )
 
     sort_columns = {
@@ -1809,6 +1845,10 @@ def fund_screener(
                 "positive_month_rate": snapshot.positive_month_rate,
                 "rolling_1y_positive_rate": snapshot.rolling_1y_positive_rate,
                 "metrics_status": metrics.get("status"),
+                "data_quality_status": metrics.get("data_quality_status", "PASS"),
+                "risk_statistics_status": metrics.get("risk_statistics_status"),
+                "quality_flags": metrics.get("quality_flags", []),
+                "nav_adjustments_applied": metrics.get("nav_adjustments_applied", []),
             })
 
         return {
@@ -1905,19 +1945,12 @@ def monthly_fund_leaderboard(
     if sub_category:
         query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, sub_category)))
 
-    with SessionLocal() as db:
-        latest_refresh = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at)).where(
-                FundResearchSnapshot.window_days == 365,
-                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
-            )
-        ).scalar_one()
-    if latest_refresh is None:
-        bootstrap = _refresh_research_snapshots_after_ingestion()
-        if bootstrap.get("status") != "refreshed":
+    if not _research_snapshots_are_current():
+        bootstrap = _maybe_refresh_research_after_history_completion()
+        if bootstrap.get("status") not in {"refreshed", "already_current"}:
             raise HTTPException(
                 503,
-                "Monthly fund rankings are being prepared from accepted NAV history. Please retry shortly.",
+                "Monthly fund rankings are being prepared from accepted NAV history and verified corporate-action data. Please retry shortly.",
             )
 
     with SessionLocal() as db:

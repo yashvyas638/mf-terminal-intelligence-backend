@@ -984,6 +984,7 @@ def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypat
 def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refresh(monkeypatch):
     """Global rank is stable across pages, filters and selected metric order."""
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr(main, "_research_snapshots_are_current", lambda: True)
     init_db()
     now = datetime.now(timezone.utc)
     as_of = date(2026, 11, 10)
@@ -1186,6 +1187,7 @@ def test_nav_ingestion_remains_successful_when_research_snapshot_refresh_fails(m
 
 def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movement(monkeypatch):
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setattr(main, "_research_snapshots_are_current", lambda: True)
     init_db()
     now = datetime.now(timezone.utc)
     codes = (999961, 999962, 999963, 999964, 999965, 999966, 999967)
