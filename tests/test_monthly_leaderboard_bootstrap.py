@@ -63,6 +63,44 @@ def test_monthly_leaderboard_bootstraps_missing_research_snapshots(monkeypatch):
                 positive_month_rate=0.6,
                 rolling_1y_positive_rate=0.7,
             ))
+            db.add(Scheme(
+                scheme_code=99187655,
+                scheme_name="Unclassified Monthly Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                category_group="Equity Scheme",
+                category=None,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+            db.add(FundResearchSnapshot(
+                scheme_code=99187655,
+                window_days=365,
+                nav_as_of_date=date.today(),
+                refreshed_at=now,
+                observations=12,
+                metrics_json=json.dumps({
+                    "monthly_returns": [
+                        {"month": "2026-09", "return": 0.01},
+                        {"month": "2026-10", "return": 0.08},
+                    ],
+                }),
+                return_1m=0.02,
+                return_3m=0.04,
+                return_6m=0.07,
+                return_1y=0.13,
+                return_3y=None,
+                return_5y=None,
+                cagr=0.13,
+                volatility=0.15,
+                sharpe_ratio=0.9,
+                sortino_ratio=1.1,
+                max_drawdown=-0.1,
+                positive_month_rate=0.6,
+                rolling_1y_positive_rate=0.7,
+            ))
         return {
             "status": "refreshed",
             "schemes_processed": 1,
