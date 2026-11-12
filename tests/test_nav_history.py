@@ -96,3 +96,15 @@ def test_reports_malformed_numeric_candidate_without_dropping_valid_rows():
     assert len(records) == 2
     assert report["invalid_rows"] == 1
     assert sum(report["invalid_issue_counts"].values()) == 1
+
+
+def test_zero_nav_is_counted_with_explicit_reason_and_never_emitted():
+    payload = LEGACY_SAMPLE + (
+        "130001;Liquidated Fund;INF0000000001;;0.0000;0;0;21-Oct-2026\\n"
+    )
+    records, report = parse_amfi_history_text(payload)
+    assert len(records) == 2
+    assert report["invalid_rows"] == 1
+    assert report["invalid_issue_counts"] == {
+        "NAV must be positive for persistence (received '0.0000')": 1
+    }
