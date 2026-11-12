@@ -48,7 +48,7 @@ SUBCATEGORIES_BY_GROUP = {
     }),
     "Other Schemes": frozenset({
         "Index Funds / ETFs", "FoFs (Overseas/Domestic)",
-        "Equity ETF", "ETFs investing overseas", "Gold ETF",
+        "Debt ETF", "Equity ETF", "ETFs investing overseas", "Gold ETF",
         "Hybrid ETF", "Other ETF", "Silver ETF",
     }),
 }
@@ -101,6 +101,10 @@ _SUBCATEGORY_ALIASES = {
     _key("10 Year Constant Maturity Gilt Fund"): "10-year Constant Maturity Gilt Fund",
     _key("Floating Rate Fund"): "Floating Interest Rates Fund",
     _key("Index Funds/ ETFs"): "Index Funds / ETFs",
+    _key("Index Funds"): "Index Funds / ETFs",
+    _key("Money Market"): "Money Market Fund",
+    _key("Other ETFs"): "Other ETF",
+    _key("Gold ETFs"): "Gold ETF",
     _key("FoFs (Domestic)"): "FoFs (Overseas/Domestic)",
     _key("FoFs (Overseas)"): "FoFs (Overseas/Domestic)",
     _key("FoF Domestic"): "FoFs (Overseas/Domestic)",
@@ -124,8 +128,12 @@ def classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, s
     if group is None:
         return None, None, None
     subcategory = None
-    if separator and subcategory_raw.strip():
-        key = _key(subcategory_raw)
+    # Some official AMFI section headings contain only a category label
+    # (for example "Money Market" or "Index Funds") rather than a
+    # "group - subcategory" pair. Resolve only explicit, allow-listed labels.
+    subcategory_label = subcategory_raw if separator else group_raw
+    if subcategory_label.strip():
+        key = _key(subcategory_label)
         candidate = _SUBCATEGORY_ALIASES.get(key)
         if candidate is None:
             candidate = next(
