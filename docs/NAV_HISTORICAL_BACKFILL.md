@@ -8,7 +8,7 @@
 - The inspected official report uses a six-column semicolon-delimited header: scheme code, two ISIN fields, scheme name, NAV and date. The parser now has a fixture based on actual rows from this official report.
 - Official NAV Download page: https://www.amfiindia.com/net-asset-value/nav-download
 
-The latest NAV report format is fixture-tested. This does not establish that the historical NAV form uses the same endpoint or identical payload contract. The historical form's HTTP method, endpoint parameters, fund/type identifiers, response headers and payload variants remain unverified. No guessed query string is wired into production.
+The latest NAV report format is fixture-tested. This does not establish that the historical NAV form uses the same endpoint or identical payload contract. The candidate portal request observed in independent community implementations is a GET to `https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx` with `tp`, `frmdt` and `todt` query parameters, returning an eight-column semicolon-delimited history layout. This is not an official AMFI API specification: the exact `tp` mapping, response behavior, and date/selection semantics still require a live comparison against the official History form before production use. The isolated adapter in `app/nav_history_source.py` implements bounded requests and strict response validation, but is not connected to a scheduled or production backfill.
 
 ## Delivered
 
@@ -25,10 +25,10 @@ The latest NAV report format is fixture-tested. This does not establish that the
 2. Verify response format and that it matches selected AMC/type/date filters.
 3. Add parser fixtures from that official historical response.
 4. Add durable per-window checkpoints, attempt count, source hash, row counts and error class; mark complete only after transaction commit.
-5. Add idempotent persistence keyed by scheme code + NAV effective date, retaining correction provenance.
-6. Add bounded retries, backoff, rate limiting, pause/resume and operator visibility.
-7. Reconcile planned windows, fetched windows, parsed rows, inserted/updated/unchanged rows and per-scheme coverage.
-8. Run full migration and workload in staging before production backfill.
+6. Add idempotent persistence keyed by scheme code + NAV effective date, retaining correction provenance.
+7. Add bounded retries, backoff, rate limiting, pause/resume and operator visibility.
+8. Reconcile planned windows, fetched windows, parsed rows, inserted/updated/unchanged rows and per-scheme coverage.
+9. Run full migration and workload in staging before production backfill.
 
 ## Safety
 
