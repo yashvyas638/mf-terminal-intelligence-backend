@@ -103,6 +103,7 @@ def test_unverified_old_jump_only_suppresses_affected_period_and_window_metrics(
     assert long_window["annualized_volatility"] is None
     assert long_window["max_drawdown"] is None
     assert long_window["rolling_1y"]["status"] == "REVIEW_REQUIRED"
+    assert long_window["monthly_returns"] == []
 
 
 def test_snapshot_adjustment_registry_is_versioned():
