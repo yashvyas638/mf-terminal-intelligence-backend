@@ -26,10 +26,10 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 </style>
 </head>
 <body>
-<header><div class="brand">MF TERMINAL<small>FUND RESEARCH WORKSPACE</small></div><div class="toolbar"><input id="apiKey" type="password" placeholder="Server API key" aria-label="Server API key"><button id="connect">Connect</button><a href="/">← Overview</a></div></header>
+<header><div class="brand">MF TERMINAL<small>FUND RESEARCH WORKSPACE</small></div><div class="toolbar"><input id="apiKey" type="password" placeholder="Server API key" aria-label="Server API key"><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#687585;white-space:nowrap"><input id="rememberKey" type="checkbox" style="width:15px;height:15px;padding:0"> Remember on this device</label><button id="connect">Connect</button><a href="/">← Overview</a></div></header>
 <main class="wrap">
 <div class="eyebrow">Research / India mutual funds</div><h1>Fund Explorer & Research</h1><p class="sub">Screen the stored scheme universe, inspect NAV-derived performance and study rolling-return behaviour.</p>
-<div class="notice" id="notice">Connect with your server API key to load stored research data. Metrics are calculated from accepted AMFI NAV observations; unavailable reference data is shown as unavailable, never estimated.</div>
+<div class="notice" id="notice">Connect with your server API key to load stored research data. Select “Remember on this device” to avoid entering it again on this browser. Metrics are calculated from accepted AMFI NAV observations; unavailable reference data is shown as unavailable, never estimated.</div>
 <div class="tabs"><button class="active" data-tab="screener">Power Select · Screener</button><button data-tab="profile">Fund Research Profile</button></div>
 <section id="screener" class="panel">
 <div class="toolbar">
