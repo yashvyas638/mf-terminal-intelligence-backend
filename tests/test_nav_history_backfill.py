@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -74,6 +74,8 @@ def test_batch_commits_nav_and_checkpoint_then_status_reports_totals(factory):
         limit=1,
         fetcher=lambda window, scheme_type: ([_record()], _report()),
         session_factory=factory,
+        enabled=True,
+        source_contract_verified=True,
     )
     assert result["completed"] == 1
     assert result["failed"] == 0
@@ -96,6 +98,8 @@ def test_failed_window_is_recorded_and_can_be_retried(factory):
     failed = run_history_backfill_batch(
         fetcher=lambda window, scheme_type: (_ for _ in ()).throw(TimeoutError()),
         session_factory=factory,
+        enabled=True,
+        source_contract_verified=True,
     )
     assert failed["failed"] == 1
     with factory() as db:
@@ -107,6 +111,8 @@ def test_failed_window_is_recorded_and_can_be_retried(factory):
     retried = run_history_backfill_batch(
         fetcher=lambda window, scheme_type: ([_record()], _report()),
         session_factory=factory,
+        enabled=True,
+        source_contract_verified=True,
     )
     assert retried["completed"] == 1
     with factory() as db:
@@ -117,8 +123,17 @@ def test_failed_window_is_recorded_and_can_be_retried(factory):
 
 def test_empty_or_invalid_batch_limits_are_rejected(factory):
     with pytest.raises(ValueError, match="limit"):
-        run_history_backfill_batch(limit=0, session_factory=factory)
+        run_history_backfill_batch(
+            limit=0, session_factory=factory, enabled=True, source_contract_verified=True
+        )
     with pytest.raises(ValueError, match="scheme_types"):
         create_history_backfill_plan(
             date(2026, 1, 1), date(2026, 1, 7), (), session_factory=factory
         )
+
+
+def test_backfill_is_disabled_without_both_explicit_release_gates(factory):
+    with pytest.raises(RuntimeError, match="disabled"):
+        run_history_backfill_batch(session_factory=factory, source_contract_verified=True)
+    with pytest.raises(RuntimeError, match="not been verified"):
+        run_history_backfill_batch(session_factory=factory, enabled=True)
