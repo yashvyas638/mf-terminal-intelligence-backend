@@ -451,8 +451,16 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
         try:
             persisted = _persist_nav_snapshot(records, report, now)
             persist_ms = int((time.perf_counter() - persist_started) * 1000)
-        except Exception:
-            raise HTTPException(500, "NAV snapshot persistence failed; existing accepted data was preserved where the transaction rolled back") from None
+        except Exception as exc:
+            # Preserve a useful production diagnostic without logging SQL parameters,
+            # connection strings, or source payload contents.
+            database_error = getattr(exc, "orig", None)
+            logger.error(
+                "nav_snapshot_persistence_failed error_type=%s database_error_type=%s",
+                type(exc).__name__,
+                type(database_error).__name__ if database_error is not None else "none",
+            )
+            raise HTTPException(500, "NAV snapshot persistence failed; diagnostic error types were recorded; existing accepted data was preserved where the transaction rolled back") from None
         snapshot = persisted["snapshot"]
         elapsed_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
         logger.info(
