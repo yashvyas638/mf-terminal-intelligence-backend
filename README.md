@@ -156,3 +156,14 @@ Live Supabase access findings and the containment migration are tracked in [P0 S
 ## NAV ingestion diagnostics
 
 The service emits structured lifecycle diagnostics for refresh start, source HTTP metadata, validation totals, freshness/minimum-record gates, database transaction failures and successful snapshot commits. Logs exclude API keys, database URLs and raw feed contents. `GET /health` confirms only basic database connectivity; use authenticated `GET /v1/nav/status` and the snapshot ID/quality details to verify actual ingestion.
+
+
+### Historical NAV backfill (operator-only, gated)
+
+AMFI's official NAV Download page documents a maximum 90-day date range per history download. The backfill planner therefore keeps the hard 90-day validation limit but defaults to conservative 7-day windows to bound response size and make retries/resume granular. The planner is idempotent and makes no network requests; each window has a durable checkpoint. A bounded worker batch can be resumed after a timeout or process restart. Historical fetching remains disabled unless both `AMFI_HISTORY_CONTRACT_VERIFIED=true` and `AMFI_HISTORY_BACKFILL_ENABLED=true` are explicitly configured after a live source-contract check.
+
+- `POST /v1/nav/backfill/plan` — create checkpoints (default 7-day windows; configurable up to 90 days), no AMFI request.
+- `GET /v1/nav/backfill/status` — inspect pending/running/failed/complete windows and inserted/corrected/unchanged totals.
+- `POST /v1/nav/backfill/run` — run a bounded batch only after both release gates are enabled; operator key required.
+
+Do not enable the execution gates solely because CI passes. First verify a live response from the official AMFI NAV History form for each scheme type and reconcile its response dates and row layout. The public AMFI page confirms the 90-day maximum: https://www.amfiindia.com/net-asset-value/nav-download.
