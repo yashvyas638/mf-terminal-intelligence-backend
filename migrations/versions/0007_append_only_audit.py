@@ -32,7 +32,7 @@ def upgrade() -> None:
         RETURNS trigger
         LANGUAGE plpgsql
         SET search_path = pg_catalog, public
-        AS $
+        AS $$
         BEGIN
             RAISE EXCEPTION 'Financial audit/provenance records are append-only';
         END;
@@ -59,7 +59,7 @@ def upgrade() -> None:
         RETURNS trigger
         LANGUAGE plpgsql
         SET search_path = pg_catalog, public
-        AS $
+        AS $$
         BEGIN
             IF TG_OP = 'DELETE' THEN
                 RAISE EXCEPTION 'Portfolio transaction facts cannot be deleted; use audited void';
