@@ -50,7 +50,7 @@ jobs:
                   "portfolioValuationStatus", "holdingCount", "holdingRows",
                   "portfolioRiskStatus", "portfolioRiskDays", "loadPortfolioRisk",
                   "portfolioRiskResult", "stressScenarioName", "stressShockPct",
-                  "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult", "generatePortfolioReport", "portfolioReportResult",
+                  "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult", "generatePortfolioReport", "portfolioReportResult", "refreshPortfolioReports", "portfolioReportCount", "portfolioReportHistory",
                   "transactionForm", "transactionRows", "transactionCount",
                   "transactionMessage", "addTransaction", "refreshTransactions",
                   "goalsWorkspace", "goalForm", "goalName", "goalTarget", "goalDate",
