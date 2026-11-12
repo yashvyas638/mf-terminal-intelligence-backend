@@ -136,6 +136,19 @@ def classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, s
         key = _key(subcategory_label)
         candidate = _SUBCATEGORY_ALIASES.get(key)
         if candidate is None:
+            # AMFI may append a sector/theme descriptor after the SEBI
+            # category, e.g. "Sectoral Fund - Financial Services". Keep
+            # the first, explicitly allow-listed category token; never use
+            # the descriptor or a scheme marketing name as a category.
+            primary_label = subcategory_label.split(" - ", 1)[0].strip()
+            primary_key = _key(primary_label)
+            candidate = _SUBCATEGORY_ALIASES.get(primary_key)
+            if candidate is None:
+                candidate = next(
+                    (item for item in SUBCATEGORIES_BY_GROUP[group] if _key(item) == primary_key),
+                    None,
+                )
+        if candidate is None:
             candidate = next(
                 (item for item in SUBCATEGORIES_BY_GROUP[group] if _key(item) == key),
                 None,
