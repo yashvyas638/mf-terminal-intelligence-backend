@@ -21,7 +21,7 @@ from typing import Any, Literal
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import Body, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, desc, func, or_, select, text, tuple_
@@ -32,6 +32,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.db import (
+    BenchmarkIndex,
+    BenchmarkObservation,
+    BenchmarkObservationRevision,
     FundResearchSnapshot,
     FundWatchlistItem,
     IngestionSnapshot,
@@ -42,10 +45,12 @@ from app.db import (
     PortfolioTransaction,
     PortfolioTransactionAudit,
     Scheme,
+    SchemeBenchmarkAssignment,
     SessionLocal,
     init_db,
 )
-from app.analytics import performance_metrics, research_metrics
+from app.analytics import benchmark_comparison_metrics, performance_metrics, research_metrics
+from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 logger = logging.getLogger("mf_terminal.nav")
@@ -192,6 +197,15 @@ def require_authenticated_user() -> str:
     if not user_id:
         raise HTTPException(401, "Sign in with a personal account to use your fund watchlist")
     return user_id
+
+
+def require_operator_api_key(x_api_key: str | None) -> None:
+    """Require the dedicated server operator key, even when a user session is present."""
+    expected = os.getenv("API_KEY", "")
+    if len(expected) < 32:
+        raise HTTPException(503, "Server operator authentication is not configured")
+    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(401, "Operator key required for this action")
 
 
 def _require_portfolio_owner(db: Any, portfolio_id: int) -> Portfolio:
@@ -1102,6 +1116,42 @@ class WatchlistCreate(BaseModel):
     scheme_code: int = Field(gt=0)
 
 
+class BenchmarkImportRequest(BaseModel):
+    benchmark_code: str = Field(min_length=2, max_length=80, pattern="^[A-Z0-9][A-Z0-9_-]+$")
+    benchmark_name: str = Field(min_length=2, max_length=240)
+    variant: Literal["TRI", "NTR"]
+    csv_text: str = Field(min_length=10, max_length=5_000_000)
+
+    @model_validator(mode="after")
+    def normalize_benchmark_identity(self) -> "BenchmarkImportRequest":
+        self.benchmark_code = self.benchmark_code.strip().upper()
+        self.benchmark_name = self.benchmark_name.strip()
+        if not self.benchmark_name:
+            raise ValueError("benchmark name cannot be blank")
+        return self
+
+
+class SchemeBenchmarkAssignmentCreate(BaseModel):
+    scheme_code: int = Field(gt=0)
+    benchmark_code: str = Field(min_length=2, max_length=80, pattern="^[A-Z0-9][A-Z0-9_-]+$")
+    tier: int = Field(ge=1, le=2)
+    valid_from: date
+    valid_to: date | None = None
+    source_document_url: str = Field(min_length=12, max_length=1000)
+    source_document_sha256: str = Field(pattern="^[a-fA-F0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_assignment_evidence(self) -> "SchemeBenchmarkAssignmentCreate":
+        self.benchmark_code = self.benchmark_code.strip().upper()
+        self.source_document_url = self.source_document_url.strip()
+        self.source_document_sha256 = self.source_document_sha256.lower()
+        if not self.source_document_url.startswith("https://"):
+            raise ValueError("benchmark mapping evidence must use an HTTPS source document URL")
+        if self.valid_to is not None and self.valid_to < self.valid_from:
+            raise ValueError("valid_to cannot be earlier than valid_from")
+        return self
+
+
 class TransactionCreate(BaseModel):
     scheme_code: int = Field(gt=0)
     transaction_type: Literal["BUY", "SELL"]
@@ -1255,6 +1305,345 @@ def remove_fund_from_watchlist(scheme_code: int) -> dict[str, Any]:
         db.delete(item)
         db.commit()
         return {"scheme_code": scheme_code, "status": "removed"}
+
+
+@app.get("/v1/benchmarks")
+def list_benchmarks(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """List benchmark variants and their stored observation coverage."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        indices = db.execute(
+            select(BenchmarkIndex).order_by(BenchmarkIndex.provider, BenchmarkIndex.benchmark_name, BenchmarkIndex.variant)
+        ).scalars().all()
+        items = []
+        for index in indices:
+            coverage = db.execute(
+                select(
+                    func.count(BenchmarkObservation.id),
+                    func.min(BenchmarkObservation.observation_date),
+                    func.max(BenchmarkObservation.observation_date),
+                ).where(BenchmarkObservation.benchmark_code == index.benchmark_code)
+            ).one()
+            items.append({
+                "benchmark_code": index.benchmark_code,
+                "benchmark_name": index.benchmark_name,
+                "provider": index.provider,
+                "variant": index.variant,
+                "source_url": index.source_url,
+                "observations": coverage[0],
+                "first_date": coverage[1].isoformat() if coverage[1] else None,
+                "last_date": coverage[2].isoformat() if coverage[2] else None,
+                "last_seen_at": index.last_seen_at.isoformat(),
+            })
+        return {"count": len(items), "items": items}
+
+
+@app.post("/v1/benchmarks/import-csv")
+def import_benchmark_csv(
+    payload: BenchmarkImportRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Import an official Nifty Indices TRI/NTR CSV export with correction provenance."""
+    require_operator_api_key(x_api_key)
+    try:
+        points, report = parse_nifty_tri_csv(payload.csv_text, payload.variant)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+    source_name = report.get("source_index_name")
+    normalise_name = lambda value: "".join(ch.lower() for ch in value if ch.isalnum())
+    if source_name and normalise_name(source_name) != normalise_name(payload.benchmark_name):
+        raise HTTPException(422, "CSV index name does not match the requested benchmark name")
+
+    source_sha256 = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
+    retrieved_at = datetime.now(timezone.utc)
+    inserted = corrected = unchanged = 0
+
+    with SessionLocal() as db:
+        benchmark = db.get(BenchmarkIndex, payload.benchmark_code)
+        if benchmark is not None and (
+            benchmark.variant != payload.variant
+            or normalise_name(benchmark.benchmark_name) != normalise_name(payload.benchmark_name)
+        ):
+            raise HTTPException(409, "Benchmark code already exists with a different name or return variant")
+        if benchmark is None:
+            benchmark = BenchmarkIndex(
+                benchmark_code=payload.benchmark_code,
+                benchmark_name=payload.benchmark_name,
+                provider="NSE Indices Ltd.",
+                variant=payload.variant,
+                source_url=NIFTY_HISTORICAL_DATA_URL,
+                created_at=retrieved_at,
+                last_seen_at=retrieved_at,
+            )
+            db.add(benchmark)
+            db.flush()
+        else:
+            benchmark.last_seen_at = retrieved_at
+
+        existing_rows = db.execute(
+            select(BenchmarkObservation).where(
+                BenchmarkObservation.benchmark_code == payload.benchmark_code,
+                BenchmarkObservation.observation_date >= points[0].observation_date,
+                BenchmarkObservation.observation_date <= points[-1].observation_date,
+            )
+        ).scalars().all()
+        existing_by_date = {row.observation_date: row for row in existing_rows}
+
+        for point in points:
+            existing = existing_by_date.get(point.observation_date)
+            if existing is None:
+                db.add(BenchmarkObservation(
+                    benchmark_code=payload.benchmark_code,
+                    observation_date=point.observation_date,
+                    index_value=point.index_value,
+                    source_sha256=source_sha256,
+                    retrieved_at=retrieved_at,
+                ))
+                inserted += 1
+            elif Decimal(existing.index_value) != point.index_value:
+                db.add(BenchmarkObservationRevision(
+                    benchmark_code=payload.benchmark_code,
+                    observation_date=point.observation_date,
+                    previous_value=existing.index_value,
+                    replacement_value=point.index_value,
+                    previous_source_sha256=existing.source_sha256,
+                    replacement_source_sha256=source_sha256,
+                    corrected_at=retrieved_at,
+                ))
+                existing.index_value = point.index_value
+                existing.source_sha256 = source_sha256
+                existing.retrieved_at = retrieved_at
+                corrected += 1
+            else:
+                existing.source_sha256 = source_sha256
+                existing.retrieved_at = retrieved_at
+                unchanged += 1
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Concurrent benchmark import conflict; retry the import") from None
+
+    return {
+        "status": "imported",
+        "benchmark_code": payload.benchmark_code,
+        "benchmark_name": payload.benchmark_name,
+        "provider": "NSE Indices Ltd.",
+        "variant": payload.variant,
+        "source_url": NIFTY_HISTORICAL_DATA_URL,
+        "source_sha256": source_sha256,
+        "inserted_rows": inserted,
+        "corrected_rows": corrected,
+        "unchanged_rows": unchanged,
+        **report,
+    }
+
+
+@app.post("/v1/benchmarks/assignments", status_code=201)
+def create_scheme_benchmark_assignment(
+    payload: SchemeBenchmarkAssignmentCreate,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Register a source-documented mapping; it remains pending until reviewed."""
+    require_operator_api_key(x_api_key)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found")
+        benchmark = db.get(BenchmarkIndex, payload.benchmark_code)
+        if benchmark is None:
+            raise HTTPException(404, "Benchmark index not found")
+        overlap = db.execute(
+            select(SchemeBenchmarkAssignment).where(
+                SchemeBenchmarkAssignment.scheme_code == payload.scheme_code,
+                SchemeBenchmarkAssignment.tier == payload.tier,
+                SchemeBenchmarkAssignment.valid_from <= (payload.valid_to or date.max),
+                or_(
+                    SchemeBenchmarkAssignment.valid_to.is_(None),
+                    SchemeBenchmarkAssignment.valid_to >= payload.valid_from,
+                ),
+            )
+        ).scalar_one_or_none()
+        if overlap is not None:
+            raise HTTPException(409, "An assignment already overlaps this scheme, tier and effective date range")
+        assignment = SchemeBenchmarkAssignment(
+            scheme_code=payload.scheme_code,
+            benchmark_code=payload.benchmark_code,
+            tier=payload.tier,
+            valid_from=payload.valid_from,
+            valid_to=payload.valid_to,
+            source_document_url=payload.source_document_url,
+            source_document_sha256=payload.source_document_sha256,
+            verification_status="PENDING",
+            created_at=now,
+        )
+        db.add(assignment)
+        db.commit()
+        return {
+            "assignment_id": assignment.id,
+            "scheme_code": assignment.scheme_code,
+            "benchmark_code": assignment.benchmark_code,
+            "tier": assignment.tier,
+            "valid_from": assignment.valid_from.isoformat(),
+            "valid_to": assignment.valid_to.isoformat() if assignment.valid_to else None,
+            "verification_status": assignment.verification_status,
+            "source_document_url": assignment.source_document_url,
+            "source_document_sha256": assignment.source_document_sha256,
+        }
+
+
+@app.post("/v1/benchmarks/assignments/{assignment_id}/verify")
+def verify_scheme_benchmark_assignment(
+    assignment_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Mark a mapping verified only after an operator has checked its cited document."""
+    require_operator_api_key(x_api_key)
+    with SessionLocal() as db:
+        assignment = db.get(SchemeBenchmarkAssignment, assignment_id)
+        if assignment is None:
+            raise HTTPException(404, "Benchmark assignment not found")
+        if assignment.verification_status == "REJECTED":
+            raise HTTPException(409, "A rejected benchmark assignment cannot be verified")
+        assignment.verification_status = "VERIFIED"
+        assignment.verified_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "assignment_id": assignment.id,
+            "scheme_code": assignment.scheme_code,
+            "benchmark_code": assignment.benchmark_code,
+            "tier": assignment.tier,
+            "verification_status": assignment.verification_status,
+            "verified_at": assignment.verified_at.isoformat(),
+        }
+
+
+@app.get("/v1/benchmarks/assignments/{scheme_code}")
+def list_scheme_benchmark_assignments(
+    scheme_code: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Show effective-dated benchmark mappings and their verification evidence."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(SchemeBenchmarkAssignment, BenchmarkIndex)
+            .join(BenchmarkIndex, BenchmarkIndex.benchmark_code == SchemeBenchmarkAssignment.benchmark_code)
+            .where(SchemeBenchmarkAssignment.scheme_code == scheme_code)
+            .order_by(SchemeBenchmarkAssignment.tier, SchemeBenchmarkAssignment.valid_from.desc())
+        ).all()
+        return {
+            "scheme_code": scheme_code,
+            "count": len(rows),
+            "items": [
+                {
+                    "assignment_id": assignment.id,
+                    "benchmark_code": benchmark.benchmark_code,
+                    "benchmark_name": benchmark.benchmark_name,
+                    "provider": benchmark.provider,
+                    "variant": benchmark.variant,
+                    "tier": assignment.tier,
+                    "valid_from": assignment.valid_from.isoformat(),
+                    "valid_to": assignment.valid_to.isoformat() if assignment.valid_to else None,
+                    "verification_status": assignment.verification_status,
+                    "verified_at": assignment.verified_at.isoformat() if assignment.verified_at else None,
+                    "source_document_url": assignment.source_document_url,
+                    "source_document_sha256": assignment.source_document_sha256,
+                }
+                for assignment, benchmark in rows
+            ],
+        }
+
+
+@app.get("/v1/analytics/research/{scheme_code}/benchmark")
+def compare_fund_with_benchmark(
+    scheme_code: int,
+    days: int = Query(default=3650, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Compare fund NAV with its verified effective-dated benchmark TRI assignments."""
+    require_api_key(x_api_key)
+    as_of = datetime.now(timezone.utc).date()
+    since = as_of - timedelta(days=days)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found")
+        assignments = db.execute(
+            select(SchemeBenchmarkAssignment, BenchmarkIndex)
+            .join(BenchmarkIndex, BenchmarkIndex.benchmark_code == SchemeBenchmarkAssignment.benchmark_code)
+            .where(
+                SchemeBenchmarkAssignment.scheme_code == scheme_code,
+                SchemeBenchmarkAssignment.verification_status == "VERIFIED",
+                SchemeBenchmarkAssignment.valid_from <= as_of,
+                or_(
+                    SchemeBenchmarkAssignment.valid_to.is_(None),
+                    SchemeBenchmarkAssignment.valid_to >= as_of,
+                ),
+            )
+            .order_by(SchemeBenchmarkAssignment.tier)
+        ).all()
+        if not assignments:
+            return {
+                "scheme_code": scheme_code,
+                "scheme_name": scheme.scheme_name,
+                "status": "UNMAPPED",
+                "message": "No verified active benchmark mapping is available for this scheme.",
+                "comparisons": [],
+            }
+
+        fund_rows = db.execute(
+            select(NavObservation.nav_date, NavObservation.nav_value)
+            .where(
+                NavObservation.scheme_code == scheme_code,
+                NavObservation.nav_date >= since,
+            )
+            .order_by(NavObservation.nav_date)
+        ).all()
+        fund_points = [(row.nav_date, float(row.nav_value)) for row in fund_rows]
+        comparisons = []
+        for assignment, benchmark in assignments:
+            benchmark_rows = db.execute(
+                select(BenchmarkObservation.observation_date, BenchmarkObservation.index_value)
+                .where(
+                    BenchmarkObservation.benchmark_code == benchmark.benchmark_code,
+                    BenchmarkObservation.observation_date >= since,
+                )
+                .order_by(BenchmarkObservation.observation_date)
+            ).all()
+            benchmark_points = [(row.observation_date, float(row.index_value)) for row in benchmark_rows]
+            metrics = benchmark_comparison_metrics(fund_points, benchmark_points)
+            comparisons.append({
+                "benchmark_code": benchmark.benchmark_code,
+                "benchmark_name": benchmark.benchmark_name,
+                "provider": benchmark.provider,
+                "variant": benchmark.variant,
+                "tier": assignment.tier,
+                "source_document_url": assignment.source_document_url,
+                "source_document_sha256": assignment.source_document_sha256,
+                "metrics": metrics,
+            })
+
+        limitations = [
+            "Only exact common NAV and benchmark dates are compared; no interpolation or forward-fill is used.",
+            "Alpha, beta, tracking error and information ratio require at least 30 adjacent common-date return pairs no more than seven calendar days apart.",
+            "Scheme benchmark mappings are effective-dated and only operator-verified mappings are used.",
+        ]
+        if (scheme.option_type or "").lower() not in {"growth", "reinvestment"}:
+            limitations.append("This scheme option may distribute cash; NAV-only fund returns are not distribution-adjusted and should not be compared as investor total returns.")
+        return {
+            "scheme_code": scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "status": "OK",
+            "days_requested": days,
+            "as_of_date": as_of.isoformat(),
+            "comparisons": comparisons,
+            "limitations": limitations,
+        }
 
 
 _STATEMENT_COLUMNS = {
