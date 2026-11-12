@@ -54,7 +54,7 @@ jobs:
               "app/static/research.html": {
                   "researchAuthForm", "authEmail", "authPassword", "signIn", "signUp",
                   "resetPassword", "signOut", "researchRecoveryPanel", "newPassword",
-                  "saveNewPassword", "authStatus", "notice", "fundRows",
+                  "saveNewPassword", "authStatus", "notice", "fundRows", "watchlist", "watchlistRows", "refreshWatchlist",
               },
           }
           for filename, required in contracts.items():
