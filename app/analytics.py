@@ -29,6 +29,90 @@ def max_drawdown(values: list[float]) -> float | None:
     return worst
 
 
+def drawdown_profile(points: Iterable[tuple[date, float]]) -> dict:
+    """Describe the worst peak-to-trough loss and recovery using observed NAV dates.
+
+    Durations are calendar days between actual observations. An unrecovered
+    drawdown is reported as open; no interpolation or assumed recovery is used.
+    """
+    rows = _clean_series(points)
+    if len(rows) < 2:
+        return {"status": "INSUFFICIENT_DATA"}
+
+    peak_date, peak_value = rows[0]
+    worst = 0.0
+    worst_peak_date = peak_date
+    worst_trough_date = peak_date
+    worst_recovery_date = None
+    worst_recovery_days = None
+    active_trough_date = None
+    active_trough_value = peak_value
+    longest_underwater_days = 0
+    longest_underwater_peak = peak_date
+    longest_underwater_recovery = None
+
+    for current_date, current_value in rows[1:]:
+        if current_value >= peak_value:
+            if active_trough_date is not None:
+                duration = (current_date - peak_date).days
+                if duration > longest_underwater_days:
+                    longest_underwater_days = duration
+                    longest_underwater_peak = peak_date
+                    longest_underwater_recovery = current_date
+                active_trough_date = None
+            peak_date, peak_value = current_date, current_value
+            active_trough_value = current_value
+            continue
+
+        drawdown = current_value / peak_value - 1.0
+        if active_trough_date is None:
+            active_trough_date = current_date
+            active_trough_value = current_value
+        elif current_value < active_trough_value:
+            active_trough_date = current_date
+            active_trough_value = current_value
+
+        if drawdown < worst:
+            worst = drawdown
+            worst_peak_date = peak_date
+            worst_trough_date = current_date
+            worst_recovery_date = None
+            worst_recovery_days = None
+
+    if active_trough_date is not None:
+        duration = (rows[-1][0] - peak_date).days
+        if duration > longest_underwater_days:
+            longest_underwater_days = duration
+            longest_underwater_peak = peak_date
+            longest_underwater_recovery = None
+
+    if worst < 0:
+        for current_date, current_value in rows:
+            if current_date > worst_trough_date and current_value >= next(
+                value for observed_date, value in rows if observed_date == worst_peak_date
+            ):
+                worst_recovery_date = current_date
+                worst_recovery_days = (current_date - worst_peak_date).days
+                break
+
+    latest_date, latest_value = rows[-1]
+    latest_peak = max(value for _, value in rows)
+    return {
+        "status": "OK",
+        "max_drawdown": worst,
+        "worst_peak_date": worst_peak_date.isoformat(),
+        "worst_trough_date": worst_trough_date.isoformat(),
+        "worst_recovery_date": worst_recovery_date.isoformat() if worst_recovery_date else None,
+        "worst_recovery_days": worst_recovery_days,
+        "longest_underwater_days": longest_underwater_days,
+        "longest_underwater_peak_date": longest_underwater_peak.isoformat(),
+        "longest_underwater_recovery_date": longest_underwater_recovery.isoformat() if longest_underwater_recovery else None,
+        "current_drawdown": latest_value / latest_peak - 1.0,
+        "as_of_date": latest_date.isoformat(),
+        "methodology": "Calendar-day durations between observed NAV dates; recovery requires NAV to regain the prior peak.",
+    }
+
+
 def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: float = 0.06) -> dict:
     rows = _clean_series(points)
     if len(rows) < 2:
@@ -67,7 +151,7 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
         "end_date": dates[-1].isoformat(), "span_days": span_days,
         "start_nav": values[0], "latest_nav": values[-1],
         "total_return": total_return, "cagr": cagr, "annualized_volatility": volatility,
-        "max_drawdown": max_drawdown(values), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
+        "max_drawdown": max_drawdown(values), "drawdown_profile": drawdown_profile(rows), "sharpe_ratio": sharpe, "sortino_ratio": sortino,
         "risk_free_rate_assumption": risk_free_rate, "period_returns": periods,
         "monthly_returns": monthly_returns,
     }
