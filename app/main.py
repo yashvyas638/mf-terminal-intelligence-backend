@@ -3258,12 +3258,20 @@ def portfolio_holdings_lookthrough(
             for row in rows:
                 exposure = market_value * Decimal(row.weight_pct) / Decimal("100")
                 security_key = ("ISIN:" if row.is_isin else "NAME:") + row.security_id.upper()
+                # Only ISINs are stable cross-fund identifiers. Name-derived
+                # fallback IDs are disclosure-local to avoid false issuer matches.
+                security_key = (
+                    ("ISIN:" + row.security_id.upper())
+                    if row.is_isin
+                    else ("NONISIN:" + str(disclosure.id) + ":" + row.security_id.upper())
+                )
                 aggregate = security_totals.setdefault(
                     security_key,
                     {
                         "security_id": row.security_id,
                         "security_name": row.security_name,
                         "is_isin": row.is_isin,
+                        "identity_basis": "ISIN" if row.is_isin else "DISCLOSURE_LOCAL_NAME_KEY",
                         "asset_type": row.asset_type,
                         "sector": row.sector or "Unclassified",
                         "lookthrough_value": Decimal("0"),
@@ -3284,6 +3292,7 @@ def portfolio_holdings_lookthrough(
             "security_id": item["security_id"],
             "security_name": item["security_name"],
             "is_isin": item["is_isin"],
+            "identity_basis": item["identity_basis"],
             "asset_type": item["asset_type"],
             "sector": item["sector"],
             "lookthrough_value": str(exposure_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
@@ -3356,7 +3365,8 @@ def portfolio_holdings_lookthrough(
         "methodology": (
             "Current scheme market value is multiplied by the constituent weight in the latest "
             "VERIFIED disclosure on or before the as-of date. Same securities are aggregated by "
-            "ISIN where available; non-ISIN rows are grouped by normalized source security ID. "
+            "ISIN where available; non-ISIN rows remain disclosure-local because normalized names "
+            "are not reliable cross-fund security identifiers. "
             "No holdings are inferred for missing disclosures. Stale disclosures are included "
             "but explicitly separated from fresh coverage."
         ),
