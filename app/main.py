@@ -1575,7 +1575,9 @@ def fund_screener(
     # This is idempotent and only runs when no precomputed snapshot exists.
     with SessionLocal() as db:
         has_research_snapshots = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at))
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(
+                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS)
+            )
         ).scalar_one()
     if has_research_snapshots is None:
         bootstrap = _refresh_research_snapshots_after_ingestion()
@@ -1669,7 +1671,8 @@ def fund_screener(
         ).all()
         latest_refresh = db.execute(
             select(func.max(FundResearchSnapshot.refreshed_at)).where(
-                FundResearchSnapshot.window_days == days
+                FundResearchSnapshot.window_days == days,
+                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
             )
         ).scalar_one()
         if latest_refresh is None:
@@ -1776,7 +1779,10 @@ def monthly_fund_leaderboard(
 
     with SessionLocal() as db:
         latest_refresh = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at)).where(FundResearchSnapshot.window_days == 365)
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(
+                FundResearchSnapshot.window_days == 365,
+                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
+            )
         ).scalar_one()
     if latest_refresh is None:
         bootstrap = _refresh_research_snapshots_after_ingestion()
