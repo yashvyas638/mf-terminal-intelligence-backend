@@ -1194,7 +1194,7 @@ def fund_screener(
 
 @app.get("/v1/analytics/monthly-leaderboard")
 def monthly_fund_leaderboard(
-    month: str | None = Query(default=None, pattern=r"^\\d{4}-\\d{2}$"),
+    month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     category_group: str | None = Query(default=None, max_length=80),
     plan_type: str = Query(default="Direct", pattern="^(Direct|Regular)$"),
     option_type: str = Query(default="Growth", pattern="^(Growth|IDCW)$"),
