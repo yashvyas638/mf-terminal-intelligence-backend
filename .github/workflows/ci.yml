@@ -199,7 +199,7 @@ jobs:
               url = build_amfi_history_url(window, scheme_type)
               response = requests.get(
                   url,
-                  timeout=(10, 75),
+                  timeout=(5, 25),
                   headers={
                       "User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0",
                       "Accept": "text/plain, application/octet-stream;q=0.9, */*;q=0.5",
@@ -244,7 +244,7 @@ jobs:
           historical_url = build_amfi_history_url(historical_window, 1)
           historical_response = requests.get(
               historical_url,
-              timeout=(10, 75),
+              timeout=(5, 25),
               headers={"User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0"},
           )
           historical_response.raise_for_status()
@@ -294,7 +294,7 @@ jobs:
           monthly_url = build_amfi_history_url(monthly_window, 1)
           monthly_response = requests.get(
               monthly_url,
-              timeout=(10, 75),
+              timeout=(5, 25),
               headers={"User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0"},
           )
           monthly_response.raise_for_status()
