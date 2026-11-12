@@ -169,7 +169,7 @@ jobs:
 
   validate-amfi-history-source:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -181,6 +181,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import time
           from datetime import date, datetime, timedelta
           from zoneinfo import ZoneInfo
 
@@ -191,6 +192,22 @@ jobs:
           from app.nav_history_source import build_amfi_history_url
           from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
+          def get_with_retries(url, **kwargs):
+              transient_statuses = {429, 500, 502, 503, 504}
+              for attempt in range(1, 4):
+                  try:
+                      response = get_with_retries(url, **kwargs)
+                      if response.status_code in transient_statuses and attempt < 3:
+                          response.close()
+                          time.sleep(min(2 ** (attempt - 1), 8))
+                          continue
+                      return response
+                  except (requests.Timeout, requests.ConnectionError):
+                      if attempt >= 3:
+                          raise
+                      time.sleep(min(2 ** (attempt - 1), 8))
+              raise requests.RequestException("AMFI request exhausted retry budget")
+
           end_date = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
           start_date = end_date - timedelta(days=6)
           window = HistoryWindow(start_date, end_date)
@@ -198,9 +215,9 @@ jobs:
 
           for scheme_type in (1, 2, 3):
               url = build_amfi_history_url(window, scheme_type)
-              response = requests.get(
+              response = get_with_retries(
                   url,
-                  timeout=(5, 25),
+                  timeout=(5, 60),
                   headers={
                       "User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0",
                       "Accept": "text/plain, application/octet-stream;q=0.9, */*;q=0.5",
@@ -243,9 +260,9 @@ jobs:
           print(json.dumps({"scheme_type_checks": summaries, "database_writes": 0}, indent=2))
           historical_window = HistoryWindow(date(2021, 11, 12), date(2021, 11, 18))
           historical_url = build_amfi_history_url(historical_window, 1)
-          historical_response = requests.get(
+          historical_response = get_with_retries(
               historical_url,
-              timeout=(5, 25),
+              timeout=(5, 60),
               headers={"User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0"},
           )
           historical_response.raise_for_status()
@@ -291,9 +308,9 @@ jobs:
               },
               "database_writes": 0,
           }, indent=2))
-          nav_response = requests.get(
+          nav_response = get_with_retries(
               AMFI_NAV_URL,
-              timeout=(5, 25),
+              timeout=(5, 60),
               headers={
                   "User-Agent": "MF-Terminal-Intelligence-Scheme-Metadata-Contract-Test/1.0",
                   "Accept": "text/plain, */*;q=0.8",
