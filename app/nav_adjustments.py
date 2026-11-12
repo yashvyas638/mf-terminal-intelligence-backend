@@ -124,7 +124,12 @@ def apply_nav_quality_gates(
     affected_periods: dict[str, list[dict[str, Any]]] = {}
     for label, days in _PERIOD_DAYS.items():
         target_date = latest_date - timedelta(days=days)
-        events = [event for event in discontinuities if event["nav_date"] > target_date]
+        max_baseline_gap_days = 35 if label in {"3Y", "5Y"} else 7
+        baseline_floor = target_date - timedelta(days=max_baseline_gap_days)
+        events = [
+            event for event in discontinuities
+            if event["nav_date"] > baseline_floor
+        ]
         if events:
             periods[label] = None
             affected_periods[label] = events
