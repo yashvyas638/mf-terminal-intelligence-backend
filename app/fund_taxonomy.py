@@ -6,7 +6,6 @@ a scheme marketing name or accept arbitrary text from a database row.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
 
 SCHEME_GROUP_ASSET_CLASS = {
     "Equity Scheme": "Equity",
@@ -61,11 +60,13 @@ _GROUP_ALIASES = {
     "equity scheme": "Equity Scheme",
     "equity schemes": "Equity Scheme",
     "growth": "Equity Scheme",
+    "growth scheme": "Equity Scheme",
     "elss": "Equity Scheme",
     "debt scheme": "Debt Scheme",
     "debt schemes": "Debt Scheme",
     "income debt oriented schemes": "Debt Scheme",
     "income": "Debt Scheme",
+    "income scheme": "Debt Scheme",
     "liquid": "Debt Scheme",
     "gilt": "Debt Scheme",
     "floating rate": "Debt Scheme",
@@ -73,6 +74,7 @@ _GROUP_ALIASES = {
     "hybrid scheme": "Hybrid Scheme",
     "hybrid schemes": "Hybrid Scheme",
     "balanced": "Hybrid Scheme",
+    "balanced scheme": "Hybrid Scheme",
     "life cycle": "Life Cycle Funds",
     "life cycle fund": "Life Cycle Funds",
     "life cycle funds": "Life Cycle Funds",
