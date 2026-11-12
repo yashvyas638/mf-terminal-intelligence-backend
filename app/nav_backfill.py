@@ -12,6 +12,8 @@ import hashlib
 
 
 AMFI_MAX_HISTORY_WINDOW_DAYS = 90
+# Conservative operational default to keep each all-scheme response bounded.
+AMFI_RECOMMENDED_HISTORY_WINDOW_DAYS = 7
 
 
 @dataclass(frozen=True, order=True)
@@ -36,9 +38,9 @@ def plan_history_windows(
     start_date: date,
     end_date: date,
     *,
-    max_window_days: int = AMFI_MAX_HISTORY_WINDOW_DAYS,
+    max_window_days: int = AMFI_RECOMMENDED_HISTORY_WINDOW_DAYS,
 ) -> list[HistoryWindow]:
-    """Split an inclusive date range into contiguous windows of at most 90 days."""
+    """Split an inclusive date range into contiguous, gap-free AMFI windows."""
     if not isinstance(start_date, date) or isinstance(start_date, datetime):
         raise TypeError("start_date must be a datetime.date")
     if not isinstance(end_date, date) or isinstance(end_date, datetime):
