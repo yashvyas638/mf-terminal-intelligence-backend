@@ -28,8 +28,9 @@ The repository has a useful backend foundation, but it is not yet the complete M
 
 - The AMFI `NAVAll.txt` file is a grouped feed, not a flat table. The parser now carries AMC and scheme-section headers forward to each scheme row.
 - The current SEBI framework (Circular HO/24/13/15(2)2026-IMD-RAC4/I/5764/2026, 26-Feb-2026) defines five broad groups: Equity Scheme, Debt Scheme, Hybrid Scheme, Life Cycle Funds and Other Schemes. See https://www.sebi.gov.in/sebi_data/attachdocs/feb-2026/1772079826878.pdf.
-- Asset class is derived only from the canonical broad group; Life Cycle Funds has its own Life Cycle asset-class label and is not silently folded into Other Schemes.
-- Sub-categories are accepted only from the maintained SEBI 2026 allow-list for that broad group. AMFI's explicit `Group - Sub-category` header is required; unknown suffixes such as `PowerUp` are discarded even when paired with a valid Equity Scheme group.
+- Asset class is derived only where the SEBI broad group has a single meaningful asset class. Life Cycle Funds remains a distinct scheme group and is not fabricated into an asset class.
+- Standard SEBI sub-categories are allow-listed per broad group. AMFI-provided detail labels (including Life Cycle maturity bands and ETF types) are retained only when explicitly present in the AMFI section header; they do not become additional SEBI broad groups.
+- AMFI's explicit `Group - Sub-category` header is required; unknown suffixes such as `PowerUp` are discarded even when paired with a valid Equity Scheme group.
 - Legacy AMFI group aliases are normalized only where their mapping is unambiguous. Retired Solution Oriented labels are not guessed into a current category.
 - Fund Explorer and Research Terminal expose separate Scheme Group and Sub-category filters. The `Power Select` tab label is `Fund Screener`; it is a screen name, not a mutual-fund category.
 - API responses and facets apply the same allow-list to new feed rows and stale persisted values, so arbitrary marketing labels cannot leak into fund cards, filters, watchlists or research metadata.
