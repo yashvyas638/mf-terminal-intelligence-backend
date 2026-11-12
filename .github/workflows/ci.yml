@@ -44,7 +44,7 @@ jobs:
               "app/static/dashboard.html": {
                   "authForm", "authEmail", "authPassword", "signIn", "signUp",
                   "resetPassword", "signOut", "passwordRecoveryPanel", "saveNewPassword",
-                  "newPassword", "portfolioOverview", "portfolioCurrentValue",
+                  "newPassword", "portfolioCommandCentre", "commandCentreStatus", "ccMarketValue", "ccCostBasis", "ccUnrealized", "ccPortfolioCount", "ccPortfolioCards", "portfolioOverview", "portfolioCurrentValue",
                   "portfolioCostBasis", "portfolioRealized", "portfolioUnrealized",
                   "portfolioTotalGain", "portfolioXirr", "portfolioValuationDate",
                   "portfolioValuationStatus", "holdingCount", "holdingRows",
