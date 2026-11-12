@@ -327,3 +327,78 @@ def test_research_refresh_after_history_runs_when_only_complete_or_paused(monkey
     result = main._maybe_refresh_research_after_history_completion()
     assert result == {"status": "refreshed", "schemes_processed": 100}
     assert calls == ["refresh"]
+
+
+
+def test_history_batch_refreshes_research_only_after_queue_settles(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "1")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", "10")
+    monkeypatch.setattr(
+        main,
+        "run_history_backfill_batch",
+        lambda **kwargs: {
+            "status": "completed",
+            "selected": 1,
+            "completed": 1,
+            "failed": 0,
+            "results": [],
+        },
+    )
+    monkeypatch.setattr(
+        main,
+        "history_backfill_status",
+        lambda: {"groups": [{"checkpoint_status": "complete", "windows": 5}]},
+    )
+    refresh_calls = []
+    monkeypatch.setattr(
+        main,
+        "_refresh_research_snapshots_after_ingestion",
+        lambda: refresh_calls.append(True) or {"status": "refreshed", "snapshot_rows_written": 10},
+    )
+
+    result = main._maybe_run_historical_backfill_batch_from_environment()
+
+    assert refresh_calls == [True]
+    assert result["research_snapshot_refresh"]["status"] == "refreshed"
+
+
+def test_history_batch_defers_research_refresh_while_checkpoints_remain(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "1")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", "10")
+    monkeypatch.setattr(
+        main,
+        "run_history_backfill_batch",
+        lambda **kwargs: {
+            "status": "completed",
+            "selected": 1,
+            "completed": 1,
+            "failed": 0,
+            "results": [],
+        },
+    )
+    monkeypatch.setattr(
+        main,
+        "history_backfill_status",
+        lambda: {"groups": [{"checkpoint_status": "pending", "windows": 3}]},
+    )
+    refresh_calls = []
+    monkeypatch.setattr(
+        main,
+        "_refresh_research_snapshots_after_ingestion",
+        lambda: refresh_calls.append(True) or {"status": "refreshed"},
+    )
+
+    result = main._maybe_run_historical_backfill_batch_from_environment()
+
+    assert refresh_calls == []
+    assert result["research_snapshot_refresh"] == {
+        "status": "deferred",
+        "reason": "history_windows_remaining",
+        "unfinished_windows": 3,
+    }
