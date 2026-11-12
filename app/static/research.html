@@ -30,7 +30,7 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <main class="wrap">
 <div class="eyebrow">Research / India mutual funds</div><h1>Fund Explorer & Research</h1><p class="sub">Screen the stored scheme universe, inspect NAV-derived performance and study rolling-return behaviour.</p>
 <div class="notice" id="authStatus">Sign in with your own account to access research and your private portfolios.</div><div class="notice" id="notice">Sign in to load stored research data. Metrics are calculated from accepted AMFI NAV observations; unavailable reference data is shown as unavailable, never estimated.</div>
-<div class="tabs"><button class="active" data-tab="screener">Power Select · Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button></div>
+<div class="tabs"><button class="active" data-tab="screener">Power Select · Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
 <section id="screener" class="panel">
 <div class="toolbar">
 <input id="q" type="search" placeholder="Search fund name or scheme code">
@@ -58,6 +58,15 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <div class="detailhead"><div><h2>My Fund Watchlist</h2><p class="sub">Funds saved to your account only. The same scheme can be watched independently by different users.</p></div><button id="refreshWatchlist">Refresh</button></div>
 <div class="tablewrap"><table style="min-width:850px"><thead><tr><th>Fund / Scheme</th><th>Plan</th><th>Option</th><th>Latest NAV</th><th>NAV date</th><th>Added</th><th>Action</th></tr></thead><tbody id="watchlistRows"><tr><td colspan="7" class="muted">Sign in to load your saved funds.</td></tr></tbody></table></div>
 <p class="footnote">Watchlist is a research shortlist, not a buy/sell recommendation. NAV freshness depends on the latest accepted AMFI ingestion.</p>
+</section>
+<section id="overlap" class="panel hidden">
+<div class="detailhead"><div><h2>Holdings Overlap Intelligence</h2><p class="sub">Compare the latest source-dated scheme disclosures using common ISINs. No fuzzy name matching.</p></div></div>
+<div class="toolbar">
+<input id="overlapSchemeA" type="number" min="1" placeholder="First AMFI scheme code">
+<input id="overlapSchemeB" type="number" min="1" placeholder="Second AMFI scheme code">
+<button class="primary" id="runOverlap">Compare holdings</button>
+</div>
+<div id="overlapBody" class="muted" style="margin-top:16px">Enter two scheme codes. Holdings data appears after verified AMC/AMFI portfolio CSV disclosures have been imported.</div>
 </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="/static/research.js"></script>
