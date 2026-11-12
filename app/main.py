@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import asyncio
 from contextvars import ContextVar
 
 import json
@@ -145,7 +146,8 @@ async def supabase_user_authentication(request, call_next):
         return JSONResponse({"detail": "Invalid or expired session. Please sign in again."}, status_code=401)
 
     try:
-        response = requests.get(
+        response = await asyncio.to_thread(
+            requests.get,
             f"{supabase_url}/auth/v1/user",
             headers={"apikey": publishable_key, "Authorization": f"Bearer {token}"},
             timeout=(3, 8),
@@ -158,7 +160,7 @@ async def supabase_user_authentication(request, call_next):
     except requests.RequestException:
         logger.warning("supabase_auth_verification_unavailable", exc_info=True)
         return JSONResponse({"detail": "Sign-in verification is temporarily unavailable. Please retry."}, status_code=503)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return JSONResponse({"detail": "Invalid sign-in response. Please sign in again."}, status_code=401)
 
     context_token = _authenticated_user_id.set(user_id)
