@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
+from app.db import FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
 from app.main import app
 
 
@@ -830,3 +831,108 @@ def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypat
         rows = db.query(FundWatchlistItem).all()
         assert len(rows) == 1
         assert rows[0].owner_user_id == identities["watchlist-user-two"]
+
+def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refresh(monkeypatch):
+    """Global rank is stable across pages, filters and selected metric order."""
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    as_of = date(2026, 11, 10)
+    scheme_codes = (999981, 999982)
+    with SessionLocal() as db:
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/nav",
+            retrieved_at=now,
+            payload_sha256="a" * 64,
+            records_valid=2,
+            unique_scheme_codes=2,
+            min_nav_date=as_of - timedelta(days=400),
+            max_nav_date=as_of,
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        for code, name in ((scheme_codes[0], "Global Rank Alpha"), (scheme_codes[1], "Global Rank Beta")):
+            db.add(Scheme(
+                scheme_code=code,
+                scheme_name=name,
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+        db.flush()
+        nav_rows = []
+        for index in range(401):
+            nav_date = as_of - timedelta(days=400 - index)
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_codes[0],
+                nav_date=nav_date,
+                nav_value=Decimal(str(100 + index * 0.30)),
+                source_snapshot_id=snapshot.id,
+            ))
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_codes[1],
+                nav_date=nav_date,
+                nav_value=Decimal(str(100 + index * 0.10)),
+                source_snapshot_id=snapshot.id,
+            ))
+        db.add_all(nav_rows)
+        db.commit()
+
+    client = TestClient(app)
+    assert client.post("/v1/analytics/screener/refresh").status_code == 401
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    refreshed = client.post("/v1/analytics/screener/refresh", headers=headers)
+    assert refreshed.status_code == 200, refreshed.text
+    result = refreshed.json()
+    assert result["status"] == "refreshed"
+    assert result["schemes_processed"] >= 2
+    assert result["snapshot_rows_written"] == result["schemes_processed"] * 4
+
+    first_page = client.get(
+        "/v1/analytics/screener?days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=0",
+        headers=headers,
+    )
+    second_page = client.get(
+        "/v1/analytics/screener?days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=1",
+        headers=headers,
+    )
+    assert first_page.status_code == 200, first_page.text
+    assert second_page.status_code == 200, second_page.text
+    first = first_page.json()
+    second = second_page.json()
+    assert first["total_matching"] >= 2
+    assert first["items"][0]["rank"] == 1
+    assert second["items"][0]["rank"] == 2
+    assert first["items"][0]["scheme_code"] == scheme_codes[0]
+    assert first["items"][0]["return_1y"] > second["items"][0]["return_1y"]
+    assert "before pagination" in first["sorting_note"]
+
+    ascending = client.get(
+        "/v1/analytics/screener?days=365&sort_by=return_1y&sort_order=asc&limit=2",
+        headers=headers,
+    )
+    assert ascending.status_code == 200
+    assert ascending.json()["items"][0]["scheme_code"] == scheme_codes[1]
+
+    filtered = client.get(
+        "/v1/analytics/screener?days=365&plan_type=Direct&min_observations=300",
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    assert all(item["observations"] >= 300 for item in filtered.json()["items"])
+    invalid_window = client.get("/v1/analytics/screener?days=500", headers=headers)
+    assert invalid_window.status_code == 422
+
+    with SessionLocal() as db:
+        persisted = db.query(FundResearchSnapshot).filter(
+            FundResearchSnapshot.window_days == 365
+        ).all()
+        assert len(persisted) >= 2
+        assert all(item.metrics_json for item in persisted)
