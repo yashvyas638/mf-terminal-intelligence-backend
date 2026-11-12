@@ -6,7 +6,7 @@ is enabled in a production environment.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 from typing import Any, Callable
 
@@ -100,6 +100,7 @@ def run_history_backfill_batch(
     max_attempts: int = 3,
     enabled: bool = False,
     source_contract_verified: bool = False,
+    stale_after_minutes: int = 30,
 ) -> dict[str, Any]:
     """Run a bounded number of pending/failed windows; each window commits atomically.
 
@@ -114,9 +115,28 @@ def run_history_backfill_batch(
         raise ValueError("limit must be between 1 and 20")
     if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or not 1 <= max_attempts <= 5:
         raise ValueError("max_attempts must be between 1 and 5")
+    if not isinstance(stale_after_minutes, int) or isinstance(stale_after_minutes, bool) or not 1 <= stale_after_minutes <= 240:
+        raise ValueError("stale_after_minutes must be between 1 and 240")
 
     selected: list[tuple[int, HistoryWindow, int]] = []
     with session_factory.begin() as db:
+        # Recover checkpoints left in running state after a process crash. A
+        # running request is never reclaimed until its lease-age threshold.
+        stale_before = now_factory() - timedelta(minutes=stale_after_minutes)
+        stale_rows = db.execute(
+            select(NavBackfillCheckpoint)
+            .where(
+                NavBackfillCheckpoint.status == "running",
+                NavBackfillCheckpoint.updated_at < stale_before,
+            )
+            .with_for_update(skip_locked=True)
+        ).scalars().all()
+        for stale in stale_rows:
+            stale.status = "failed"
+            stale.error_class = "StaleWorkerRecovery"
+            stale.completed_at = None
+            stale.updated_at = now_factory()
+
         rows = db.execute(
             select(NavBackfillCheckpoint)
             .where(
