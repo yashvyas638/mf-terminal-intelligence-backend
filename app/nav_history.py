@@ -191,6 +191,11 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
         raise ValueError("AMFI historical response contained no valid NAV records")
 
     dates = [record.nav_date for record in records]
+    invalid_issue_counts: dict[str, int] = {}
+    for issue in issues:
+        if issue["type"] == "invalid_nav_row":
+            detail = str(issue.get("detail", "unknown"))
+            invalid_issue_counts[detail] = invalid_issue_counts.get(detail, 0) + 1
     report = {
         "source_url": AMFI_HISTORY_URL,
         "payload_sha256": hashlib.sha256(encoded).hexdigest(),
@@ -202,6 +207,7 @@ def parse_amfi_history_text(payload: str) -> tuple[list[NavRecord], dict[str, An
         "max_nav_date": max(dates).isoformat(),
         "duplicate_rows_skipped": sum(item["type"] == "duplicate_scheme_date" for item in issues),
         "invalid_rows": sum(item["type"] == "invalid_nav_row" for item in issues),
+        "invalid_issue_counts": invalid_issue_counts,
         "issues_sample": issues[:25],
         "header_verified": header_seen,
         "schema_variant": schema_variant,
