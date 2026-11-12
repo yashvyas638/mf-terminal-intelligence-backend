@@ -1367,6 +1367,18 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert look_json["coverage"]["status"] == "COMPLETE"
     assert look_json["coverage"]["covered_weight_pct"] == pytest.approx(100.0)
     assert look_json["top_securities"][0]["security_id"] == "INE123A01016"
+    assert look_json["top_securities"][0]["identity_basis"] == "ISIN"
+    assert look_json["top_securities"][0]["fresh_disclosure_exposure_inr"] == look_json["top_securities"][0]["lookthrough_value"]
+    assert look_json["top_securities"][0]["stale_disclosure_exposure_inr"] == "0.00"
+    concentration = look_json["security_concentration"]
+    assert concentration["basis"] == "OBSERVED_VERIFIED_DISCLOSURES_ONLY"
+    assert concentration["top_1_weight_of_observed_positive_pct"] == "100.0000"
+    assert concentration["top_5_weight_of_observed_positive_pct"] == "100.0000"
+    assert concentration["hhi_points"] == "10000.00"
+    assert concentration["effective_security_count"] == "1.0000"
+    assert concentration["isin_identity_coverage_pct"] == "100.0000"
+    assert concentration["fresh_positive_disclosed_exposure_inr"] == look_json["top_securities"][0]["lookthrough_value"]
+    assert concentration["stale_positive_disclosed_exposure_inr"] == "0.00"
     assert look_json["sector_exposure"][0]["sector"] == "Financial Services"
 
     risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
