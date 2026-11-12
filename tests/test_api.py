@@ -923,6 +923,9 @@ def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypat
                 isin_dividend_reinvestment=None,
                 first_seen_at=now,
                 last_seen_at=now,
+                category_group="Equity Scheme",
+                category="Flexi Cap Fund",
+                asset_class="Equity",
                 plan_type="Direct",
                 option_type="Growth",
             ))
@@ -1070,6 +1073,8 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     assert second["items"][0]["rank"] == 2
     assert first["items"][0]["scheme_code"] == scheme_codes[0]
     assert first["items"][0]["return_1y"] > second["items"][0]["return_1y"]
+    assert first["items"][0]["category_rank"] == 1
+    assert second["items"][0]["category_rank"] == 2
     assert "before pagination" in first["sorting_note"]
 
     ascending = client.get(
@@ -1085,6 +1090,13 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     )
     assert filtered.status_code == 200
     assert all(item["observations"] >= 300 for item in filtered.json()["items"])
+    insufficient_5y = client.get(
+        "/v1/analytics/screener?q=Global+Rank&days=1825&sort_by=return_5y",
+        headers=headers,
+    )
+    assert insufficient_5y.status_code == 200
+    assert insufficient_5y.json()["total_matching"] == 0
+
     invalid_window = client.get("/v1/analytics/screener?days=500", headers=headers)
     assert invalid_window.status_code == 422
 
