@@ -11,6 +11,7 @@ permissions:
 jobs:
   test-sqlite:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -71,6 +72,7 @@ jobs:
 
   test-postgresql:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
