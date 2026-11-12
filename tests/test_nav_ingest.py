@@ -159,14 +159,14 @@ Open Ended Schemes(Life Cycle Funds)
 """
     records, _ = parse_amfi_nav_text(payload)
     assert records[0].category_group == "Life Cycle Funds"
-    assert records[0].category is None
+    assert records[0].category == "Life Cycle Fund with Maturity of 10 Years"
     assert records[0].asset_class is None
 
 
 
 def test_maps_official_other_scheme_subcategories_and_does_not_guess_retired_groups():
     other, _ = parse_amfi_nav_text(
-        "Open Ended Schemes(Other Schemes - FoFs (Overseas/Domestic))\n"
+        "Open Ended Schemes(Other Scheme - FoF Domestic)\n"
         "120590;INF109K01480;-;Domestic Fund of Funds;23.4567;21-Oct-2026\n"
     )
     retired, _ = parse_amfi_nav_text(
@@ -209,3 +209,36 @@ def test_uses_exact_sebi_hybrid_and_focused_category_labels():
     )
     assert focused[0].category == "Focused Fund (No. of Stocks)"
     assert hybrid[0].category == "Multi Asset Allocation"
+
+
+
+def test_parses_current_amfi_heading_variants_without_marketing_name_guessing():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+Open Ended Schemes(Exchange Traded Funds (ETFs) - Gold ETF)
+360 ONE Mutual Fund
+153357;INF579M01BB5;-;360 ONE Gold ETF;Direct Plan;GROWTH Option;136.0845;11-Nov-2026
+Open Ended Schemes(Fund of Funds Scheme (Domestic) - Fund of Funds Scheme (Domestic))
+Aditya Birla Sun Life Mutual Fund
+149780;INF209KB16F2;-;Aditya Birla Sun Life Silver ETF FOF;Direct Plan;GROWTH;28.7087;11-Nov-2026
+Open Ended Schemes(Hybrid Scheme - Dynamic Asset Allocation or Balanced Advantage)
+Aditya Birla Sun Life Mutual Fund
+131670;INF084M01DJ5;-;Aditya Birla Sun Life Balanced Advantage Fund;Direct Plan;GROWTH;134.28;11-Nov-2026
+Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
+ICICI Prudential Mutual Fund
+154578;INF109K1A583;-;ICICI Prudential Life Cycle Fund 2036;;;10.0797;11-Nov-2026
+Open Ended Schemes(Children’s Fund - Childrens' Fund)
+Axis Mutual Fund
+135762;INF846K01WO1;-;Axis Children's Fund;Direct Plan;Growth Option;31.0915;11-Nov-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Other Schemes"
+    assert records[0].category == "Gold ETF"
+    assert records[1].category_group == "Other Schemes"
+    assert records[1].category == "FoFs (Overseas/Domestic)"
+    assert records[2].category_group == "Hybrid Scheme"
+    assert records[2].category == "Dynamic Asset Allocation Fund"
+    assert records[3].category_group == "Life Cycle Funds"
+    assert records[3].category == "Life Cycle Fund with Maturity of 10 Years"
+    assert records[3].asset_class is None
+    assert records[4].category_group is None
+    assert records[4].category is None
