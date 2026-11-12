@@ -1737,7 +1737,7 @@ def test_production_portfolio_owner_guard_rejects_operator_key_without_user(monk
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         portfolio = Portfolio(
-            owner_user_id="private-user-00000000-0000-0000-0000-000000000001",
+            owner_user_id="00000000-0000-0000-0000-000000000001",
             name="Private production portfolio",
             currency="INR",
             created_at=now,
@@ -1755,7 +1755,7 @@ def test_production_portfolio_owner_guard_rejects_operator_key_without_user(monk
         finally:
             main._authenticated_user_id.reset(token)
 
-        token = main._authenticated_user_id.set("different-user-00000000-0000-0000-0000-000000000002")
+        token = main._authenticated_user_id.set("00000000-0000-0000-0000-000000000002")
         try:
             with pytest.raises(main.HTTPException) as exc:
                 main._require_portfolio_owner(db, portfolio_id)
@@ -1772,7 +1772,7 @@ def test_production_operator_api_key_cannot_read_or_mutate_personal_portfolios(m
     init_db()
     with SessionLocal() as db:
         portfolio = Portfolio(
-            owner_user_id="personal-owner-00000000-0000-0000-0000-000000000001",
+            owner_user_id="00000000-0000-0000-0000-000000000003",
             name="Private account",
             currency="INR",
             created_at=datetime.now(timezone.utc),
