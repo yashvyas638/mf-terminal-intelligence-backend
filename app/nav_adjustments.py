@@ -158,7 +158,7 @@ def apply_nav_quality_gates(
         event_months = {event["nav_date"].strftime("%Y-%m") for event in window_events}
         metrics["monthly_returns"] = [
             item
-            for item in metrics.get("monthly_returns", [])
+            for item in (metrics.get("monthly_returns") or [])
             if item.get("month") not in event_months
         ]
 
