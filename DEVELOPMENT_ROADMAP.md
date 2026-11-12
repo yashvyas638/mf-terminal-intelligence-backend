@@ -386,3 +386,17 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Carried forward the production startup database-role guard: query PostgreSQL `current_user` and fail closed for Supabase `anon`/`authenticated` roles. Regression tests cover both rejected roles and a trusted server-side role.
 - Foundation CI passed both SQLite and PostgreSQL jobs on commit `cac21e0e4daba3680e2bee99481e93b099d83031`. The integrated branch requires its own complete CI before review.
 - P0 remains open. No production migration, Supabase write, Render deploy or merge to `main` is authorised by this work.
+
+
+## 2026-11-12 — Production security tuning and follow-up verification
+
+- PR #12 merged as `c5fbd4149dd8b9e11319593fbccff4794548de68`; CI run #487 passed SQLite migration/lint/JavaScript/pytest and PostgreSQL migration/pytest jobs.
+- Render deployment `dep-dbqjm4g473hc7382rvt0` reached `live` on the exact merge SHA. Render logs show Alembic upgraded `0010_user_auth_rls` to `0011_research_security_tuning`; Supabase `alembic_version` independently returned `0011_research_security_tuning`.
+- Migration 0011 adds four FK/query-path indexes, wraps `auth.uid()` in scalar SELECTs for the four owner policies, and revokes browser-role EXECUTE on the two trigger-only functions.
+- Production SQL verification: both trigger-only functions report `anon_execute=false` and `authenticated_execute=false`.
+- Supabase security advisor now reports only three informational RLS-enabled/no-policy findings for internal tables (`alembic_version`, `ingestion_snapshots`, `nav_observation_revisions`). These tables are intentionally not granted to browser roles; no browser policy is intended.
+- PR #13 merged as `c765b832ff6116c28a167557af8209ca5dea480c`; CI run #490 passed SQLite and PostgreSQL. It closes a cross-user portfolio disclosure in `POST /v1/portfolios/{id}/rebalance/preview` by invoking the shared owner guard and adds a regression test using two simulated Supabase identities.
+- Render deployment for PR #13 reached `live` on exact SHA `c765b832ff6116c28a167557af8209ca5dea480c`.
+- Live Supabase catalog currently reports 14,206 scheme rows, 22,371 NAV observations, five ingestion snapshots, and zero portfolio/transaction rows. This is a structural/data-volume snapshot, not proof of full NAV history coverage or user financial-data backup.
+- Remaining P0 gates: real two-account production auth/authorization test; confirm Email provider, confirmation and redirect settings; verify all protected endpoints and browser flows; perform a non-production backup restore drill; run a live AMFI refresh and reconcile quality/coverage; document last known-good deploy/rollback.
+- Performance advisor marks newly added indexes as unused immediately after creation; do not drop them based on a zero-workload sample. Reassess after representative query workload and inspect query plans.
