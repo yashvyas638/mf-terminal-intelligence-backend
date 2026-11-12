@@ -219,18 +219,15 @@ jobs:
               "first_nonempty_lines": lines[:12],
           }, indent=2))
           header_present = any(
-              line.lower().startswith("scheme code;") and "scheme name" in line.lower()
+              line.lower().startswith("scheme code;")
+              and ("scheme name" in line.lower() or "nav name" in line.lower())
               for line in lines[:10]
           )
-          # The archive header is optional in observed public wire specs.
-          # Add the known eight-column labels only for parser validation when
-          # the real response omits a header; never alter or persist source data.
-          parser_payload = payload if header_present else (
-              "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;"
-              "ISIN Div Reinvestment;Net Asset Value;Repurchase Price;Sale Price;Date\\n"
-              + payload
-          )
-          records, report = parse_amfi_history_text(parser_payload)
+          if not header_present:
+              raise SystemExit(
+                  "AMFI response has no recognised schema header; refusing to guess NAV columns"
+              )
+          records, report = parse_amfi_history_text(payload)
           if report["records_valid"] < 1000:
               raise SystemExit(
                   f"AMFI returned only {report['records_valid']} valid rows; possible stub response"
