@@ -38,9 +38,18 @@ SUBCATEGORIES_BY_GROUP = {
         "Aggressive Hybrid Fund", "Dynamic Asset Allocation Fund",
         "Multi Asset Allocation", "Arbitrage Fund", "Equity Savings",
     }),
-    "Life Cycle Funds": frozenset(),
+    "Life Cycle Funds": frozenset({
+        "Life Cycle Fund with Maturity of 5 Years",
+        "Life Cycle Fund with Maturity of 10 Years",
+        "Life Cycle Fund with Maturity of 15 Years",
+        "Life Cycle Fund with Maturity of 20 Years",
+        "Life Cycle Fund with Maturity of 25 Years",
+        "Life Cycle Fund with Maturity of 30 Years",
+    }),
     "Other Schemes": frozenset({
         "Index Funds / ETFs", "FoFs (Overseas/Domestic)",
+        "Equity ETF", "ETFs investing overseas", "Gold ETF",
+        "Hybrid ETF", "Other ETF", "Silver ETF",
     }),
 }
 
