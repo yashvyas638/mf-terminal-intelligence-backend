@@ -227,7 +227,7 @@ def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint
         first.status = "complete"
         first.completed_at = datetime(2026, 11, 12, tzinfo=timezone.utc)
 
-    create_storage_optimized_history_plan(
+    result = create_storage_optimized_history_plan(
         date(2021, 10, 1),
         date(2026, 11, 11),
         date(2021, 11, 19),
@@ -346,7 +346,7 @@ def test_hybrid_baseline_windows_create_missing_and_reactivate_only_paused(facto
 
     # A completed baseline is immutable; a paused one must be reactivated.
     monthly_start = date(2021, 11, 19)
-    result = create_storage_optimized_history_plan(
+    create_storage_optimized_history_plan(
         date(2012, 2, 17),
         date(2026, 11, 11),
         monthly_start,
