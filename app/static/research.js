@@ -65,8 +65,15 @@ function rankMovement(value){
   return '<span class="rankmove">— 0</span>';
 }
 function renderLeaderboardCard(group,data){
-  const rows=data?.items||[];
-  const contents=rows.map((x,i)=>'<div class="leaderfund"><strong><span class="categoryrank">#'+(x.category_rank||i+1)+'</span> '+esc(x.scheme_name)+'</strong><small>'+esc(x.category||"Subcategory unavailable")+' · '+esc(x.option_type||"")+'</small><div><span class="leaderreturn">'+pct(x.monthly_return)+'</span>'+rankMovement(x.rank_change)+'</div></div>').join("");
+  const renderFunds=rows=>(rows||[]).map((x,i)=>'<div class="leaderfund"><strong><span class="categoryrank">#'+(x.category_rank||i+1)+'</span> '+esc(x.scheme_name)+'</strong><small>'+esc(x.option_type||"")+'</small><div><span class="leaderreturn">'+pct(x.monthly_return)+'</span>'+rankMovement(x.rank_change)+'</div></div>').join("");
+  const categories=data?.categories||[];
+  if(categories.length){
+    return categories.map(category=>{
+      const contents=renderFunds(category.items);
+      return '<article class="leadercard"><h3>'+esc(category.category)+'</h3><div class="groupmeta">'+esc(group)+' · '+esc(category.count)+' eligible funds · '+esc(data?.plan_type||"Direct")+' '+esc(data?.option_type||"Growth")+'</div>'+(contents||'<div class="leader-empty">No verified monthly return is available for this sub-category.</div>')+'</article>';
+    }).join("");
+  }
+  const contents=renderFunds(data?.items||[]);
   return '<article class="leadercard"><h3>'+esc(group)+'</h3><div class="groupmeta">'+esc(data?.count??0)+' eligible funds · '+esc(data?.plan_type||"Direct")+' '+esc(data?.option_type||"Growth")+'</div>'+(contents||'<div class="leader-empty">No verified monthly return is available for this month and plan.</div>')+'</article>';
 }
 async function loadCategoryLeaderboards(){
@@ -81,8 +88,9 @@ async function loadCategoryLeaderboards(){
   $("leaderboardCards").innerHTML=results.map(x=>renderLeaderboardCard(x.group,x.data)).join("");
   const first=results.find(x=>x.data)?.data;
   const errors=results.filter(x=>x.error);
+  const subcategoryCount=results.reduce((total,item)=>total+(item.data?.category_count||0),0);
   $("leaderboardFreshness").textContent=first
-    ? "Completed month: "+new Date(month+"-02T00:00:00").toLocaleDateString(undefined,{month:"long",year:"numeric"})+" · Previous comparison: "+first.previous_month+" · Snapshot refreshed "+new Date(first.refreshed_at).toLocaleString()+(errors.length?" · "+errors.length+" category request(s) unavailable":"")
+    ? "Completed month: "+new Date(month+"-02T00:00:00").toLocaleDateString(undefined,{month:"long",year:"numeric"})+" · "+subcategoryCount+" subcategories ranked · Previous comparison: "+first.previous_month+" · Snapshot refreshed "+new Date(first.refreshed_at).toLocaleString()+(errors.length?" · "+errors.length+" category request(s) unavailable":"")
     : "Monthly leaderboard data is not yet available. A fresh 365-day research snapshot with monthly return history is required.";
   return results;
 }
