@@ -738,6 +738,7 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
         f"/v1/portfolios/{portfolio_id}/transactions",
         f"/v1/portfolios/{portfolio_id}/valuation",
         f"/v1/portfolios/{portfolio_id}/risk",
+        f"/v1/portfolios/{portfolio_id}/tax-lots",
     ):
         response = client.get(path, headers=user_two)
         assert response.status_code == 404, (path, response.text)
