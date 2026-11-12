@@ -61,7 +61,6 @@ from app.holdings_risk import security_concentration_metrics
 from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 from app.fund_taxonomy import (
-    VALID_SCHEME_GROUPS,
     canonical_asset_class,
     canonical_group,
     canonical_subcategory,
