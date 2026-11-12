@@ -341,6 +341,9 @@ def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datet
                     isin_growth=record.isin_growth, isin_dividend_reinvestment=record.isin_dividend_reinvestment,
                     first_seen_at=now, last_seen_at=now,
                     plan_type=record.plan_type, option_type=record.option_type,
+                    amc=record.amc, structure=record.structure,
+                    category_group=record.category_group, category=record.category,
+                    asset_class=record.asset_class,
                 )
                 db.add(scheme)
                 existing_schemes[record.scheme_code] = scheme
@@ -352,6 +355,13 @@ def _persist_nav_snapshot(records: list[Any], report: dict[str, Any], now: datet
                 scheme.isin_dividend_reinvestment = record.isin_dividend_reinvestment or scheme.isin_dividend_reinvestment
                 scheme.plan_type = record.plan_type or scheme.plan_type
                 scheme.option_type = record.option_type or scheme.option_type
+                if record.amc:
+                    scheme.amc = record.amc
+                if record.metadata_present:
+                    scheme.structure = record.structure
+                    scheme.category_group = record.category_group
+                    scheme.category = record.category
+                    scheme.asset_class = record.asset_class
                 scheme.last_seen_at = now
         db.flush()
 
@@ -551,7 +561,7 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
 def nav_scheme_facets(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, list[str]]:
-    """Return distinct, stored scheme-master facets for the Fund Explorer filters."""
+    """Return canonical AMFI/SEBI classification facets, never marketing labels."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
         def values(column: Any) -> list[str]:
@@ -561,7 +571,8 @@ def nav_scheme_facets(
             return [str(value) for value in rows if str(value).strip()]
         return {
             "amcs": values(Scheme.amc),
-            "categories": values(Scheme.category),
+            "categories": values(Scheme.category_group),
+            "sub_categories": values(Scheme.category),
             "asset_classes": values(Scheme.asset_class),
             "plan_types": values(Scheme.plan_type),
             "option_types": values(Scheme.option_type),
@@ -573,6 +584,8 @@ def list_schemes(
     q: str | None = None,
     amc: str | None = None,
     category: str | None = None,
+    category_group: str | None = None,
+    sub_category: str | None = None,
     asset_class: str | None = None,
     plan_type: str | None = None,
     option_type: str | None = None,
@@ -597,7 +610,8 @@ def list_schemes(
                 )
         for column, value in (
             (Scheme.amc, amc),
-            (Scheme.category, category),
+            (Scheme.category_group, category_group),
+            (Scheme.category, sub_category or category),
             (Scheme.asset_class, asset_class),
             (Scheme.plan_type, plan_type),
             (Scheme.option_type, option_type),
