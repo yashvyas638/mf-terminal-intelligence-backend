@@ -40,7 +40,7 @@ def test_monthly_leaderboard_bootstraps_missing_research_snapshots(monkeypatch):
             db.add(FundResearchSnapshot(
                 scheme_code=99187654,
                 window_days=365,
-                nav_as_of_date=date(2026, 10, 30),
+                nav_as_of_date=date.today(),
                 refreshed_at=now,
                 observations=12,
                 metrics_json=json.dumps({
