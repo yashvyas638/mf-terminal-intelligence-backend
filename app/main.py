@@ -24,7 +24,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import desc, func, select, text, tuple_
+from sqlalchemy import desc, func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -515,18 +515,101 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
         }
 
 
+@app.get("/v1/nav/facets")
+def nav_scheme_facets(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, list[str]]:
+    """Return distinct, stored scheme-master facets for the Fund Explorer filters."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        def values(column: Any) -> list[str]:
+            rows = db.execute(
+                select(column).where(column.is_not(None), column != "").distinct().order_by(column)
+            ).scalars().all()
+            return [str(value) for value in rows if str(value).strip()]
+        return {
+            "amcs": values(Scheme.amc),
+            "categories": values(Scheme.category),
+            "asset_classes": values(Scheme.asset_class),
+            "plan_types": values(Scheme.plan_type),
+            "option_types": values(Scheme.option_type),
+        }
+
+
 @app.get("/v1/nav/schemes")
-def list_schemes(q: str | None = None, limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0), x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
+def list_schemes(
+    q: str | None = None,
+    amc: str | None = None,
+    category: str | None = None,
+    asset_class: str | None = None,
+    plan_type: str | None = None,
+    option_type: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Search and filter the complete ingested scheme master with stable pagination."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
         query = select(Scheme)
         if q:
-            query = query.where(Scheme.scheme_code == int(q) if q.isdigit() else Scheme.scheme_name.ilike(f"%{q[:120]}%"))
+            term = q.strip()[:120]
+            if term:
+                query = query.where(
+                    Scheme.scheme_code == int(term)
+                    if term.isdigit()
+                    else or_(
+                        Scheme.scheme_name.ilike(f"%{term}%"),
+                        Scheme.amc.ilike(f"%{term}%"),
+                    )
+                )
+        for column, value in (
+            (Scheme.amc, amc),
+            (Scheme.category, category),
+            (Scheme.asset_class, asset_class),
+            (Scheme.plan_type, plan_type),
+            (Scheme.option_type, option_type),
+        ):
+            if value and value.strip():
+                query = query.where(column.ilike(value.strip()[:120]))
         total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
-        latest_id = select(NavObservation.id).where(NavObservation.scheme_code == Scheme.scheme_code).order_by(desc(NavObservation.nav_date), desc(NavObservation.id)).limit(1).correlate(Scheme).scalar_subquery()
-        rows = db.execute(query.outerjoin(NavObservation, NavObservation.id == latest_id).add_columns(NavObservation).order_by(Scheme.scheme_name).offset(offset).limit(limit)).all()
-        return {"count": len(rows), "total_matching": total, "limit": limit, "offset": offset, "items": [{"scheme_code": scheme.scheme_code, "scheme_name": scheme.scheme_name, "isin_growth": scheme.isin_growth, "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment, "plan_type": scheme.plan_type, "option_type": scheme.option_type, "category": scheme.category, "asset_class": scheme.asset_class, "latest_nav": str(nav.nav_value) if nav else None, "nav_date": nav.nav_date.isoformat() if nav else None} for scheme, nav in rows]}
-
+        latest_id = (
+            select(NavObservation.id)
+            .where(NavObservation.scheme_code == Scheme.scheme_code)
+            .order_by(desc(NavObservation.nav_date), desc(NavObservation.id))
+            .limit(1)
+            .correlate(Scheme)
+            .scalar_subquery()
+        )
+        rows = db.execute(
+            query.outerjoin(NavObservation, NavObservation.id == latest_id)
+            .add_columns(NavObservation)
+            .order_by(Scheme.scheme_name, Scheme.scheme_code)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return {
+            "count": len(rows),
+            "total_matching": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "scheme_code": scheme.scheme_code,
+                    "scheme_name": scheme.scheme_name,
+                    "amc": scheme.amc,
+                    "isin_growth": scheme.isin_growth,
+                    "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
+                    "plan_type": scheme.plan_type,
+                    "option_type": scheme.option_type,
+                    "category": scheme.category,
+                    "asset_class": scheme.asset_class,
+                    "latest_nav": str(nav.nav_value) if nav else None,
+                    "nav_date": nav.nav_date.isoformat() if nav else None,
+                }
+                for scheme, nav in rows
+            ],
+        }
 
 @app.get("/v1/nav/history/{scheme_code}")
 def nav_history(scheme_code: int, days: int = Query(365, ge=1, le=3650), x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
