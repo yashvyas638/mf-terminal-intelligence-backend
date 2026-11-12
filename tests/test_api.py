@@ -899,11 +899,11 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     assert result["snapshot_rows_written"] == result["schemes_processed"] * 4
 
     first_page = client.get(
-        "/v1/analytics/screener?days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=0",
+        "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=0",
         headers=headers,
     )
     second_page = client.get(
-        "/v1/analytics/screener?days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=1",
+        "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=1",
         headers=headers,
     )
     assert first_page.status_code == 200, first_page.text
@@ -918,7 +918,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     assert "before pagination" in first["sorting_note"]
 
     ascending = client.get(
-        "/v1/analytics/screener?days=365&sort_by=return_1y&sort_order=asc&limit=2",
+        "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=asc&limit=2",
         headers=headers,
     )
     assert ascending.status_code == 200
