@@ -63,6 +63,11 @@ def _classify_amfi_category(raw_category: str) -> tuple[str | None, str | None, 
     else:
         return None, None, None
     sub = " ".join(subcategory.split()) if separator and subcategory.strip() else None
+    if sub and sub.casefold() in {
+        "equity scheme", "debt scheme", "hybrid scheme", "other scheme",
+        "equity schemes", "debt schemes", "hybrid schemes", "other schemes",
+    }:
+        sub = None
     return group, sub, asset
 
 
