@@ -106,8 +106,8 @@ def test_holdings_weight_reconciliation_is_explicit_not_silently_assumed():
 
 def test_sebi_format_4c_headers_and_lakh_scale_are_supported():
     points, report = parse_fund_holdings_csv(
-        "ISIN,Name of the instrument,Mkt value (Rs in lakhs),% to NAV\\n"
-        "INE002A01018,Example Bank Ltd,12.34,5.25\\n"
+        "ISIN,Name of the instrument,Mkt value (Rs in lakhs),% to NAV\n"
+        "INE002A01018,Example Bank Ltd,12.34,5.25\n"
     )
     assert points[0].security_id == "INE002A01018"
     assert points[0].weight_pct == Decimal("5.25000000")
