@@ -1372,7 +1372,9 @@ def import_benchmark_csv(
         raise HTTPException(422, str(exc)) from None
 
     source_name = report.get("source_index_name")
-    normalise_name = lambda value: "".join(ch.lower() for ch in value if ch.isalnum())
+    def normalise_name(value: str) -> str:
+        return "".join(ch.lower() for ch in value if ch.isalnum())
+
     if source_name and normalise_name(source_name) != normalise_name(payload.benchmark_name):
         raise HTTPException(422, "CSV index name does not match the requested benchmark name")
 
