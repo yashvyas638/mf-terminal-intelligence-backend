@@ -3275,11 +3275,14 @@ def portfolio_holdings_lookthrough(
                         "asset_type": row.asset_type,
                         "sector": row.sector or "Unclassified",
                         "lookthrough_value": Decimal("0"),
+                        "fresh_lookthrough_value": Decimal("0"),
+                        "stale_lookthrough_value": Decimal("0"),
                         "scheme_codes": set(),
                         "source_disclosure_ids": set(),
                     },
                 )
                 aggregate["lookthrough_value"] += exposure
+                aggregate["stale_lookthrough_value" if is_stale else "fresh_lookthrough_value"] += exposure
                 aggregate["scheme_codes"].add(scheme_code)
                 aggregate["source_disclosure_ids"].add(disclosure.id)
                 sector_key = row.sector or "Unclassified"
@@ -3296,6 +3299,8 @@ def portfolio_holdings_lookthrough(
             "asset_type": item["asset_type"],
             "sector": item["sector"],
             "lookthrough_value": str(exposure_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "fresh_disclosure_exposure_inr": str(item["fresh_lookthrough_value"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stale_disclosure_exposure_inr": str(item["stale_lookthrough_value"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
             "portfolio_weight_pct": (
                 float((exposure_value / total_value * 100).quantize(Decimal("0.0001")))
                 if valuation_complete and total_value > 0 else None
