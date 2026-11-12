@@ -107,7 +107,7 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         ["Unrealized gain / loss", _text(valuation.get("unrealized_gain_loss"))],
         ["Total gain / loss", _text(valuation.get("total_gain_loss"))],
         ["Portfolio XIRR", _text(valuation.get("xirr"))],
-        ["Valuation as of", _text(valuation.get("as_of_date"))],
+        ["Valuation as of", _text(valuation.get("valuation_date"))],
     ]
     story.extend([Paragraph("Portfolio summary", styles["SectionHeading"]), _table(summary, [70 * mm, 95 * mm])])
 
