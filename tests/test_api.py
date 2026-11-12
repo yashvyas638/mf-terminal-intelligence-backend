@@ -8,7 +8,7 @@ import pytest
 import app.main as main
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update, text
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
@@ -1954,7 +1954,9 @@ def test_history_worker_schedules_snapshot_refresh_after_worker_returns(monkeypa
 
 
 
-def test_research_snapshot_refresh_skips_when_another_postgres_instance_holds_lock(monkeypatch):
+def test_research_snapshot_refresh_skips_when_another_postgres_instance_holds_lock(
+    monkeypatch,
+):
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     with SessionLocal() as lock_holder:
         if lock_holder.get_bind().dialect.name != "postgresql":
