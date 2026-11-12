@@ -1665,20 +1665,13 @@ def fund_screener(
     if days not in {30, 365, 1095, 1825}:
         raise HTTPException(422, "days must be one of 30, 365, 1095 or 1825")
 
-    # Bootstrap the shared ranking cache on the first authenticated research visit.
-    # This is idempotent and only runs when no precomputed snapshot exists.
-    with SessionLocal() as db:
-        has_research_snapshots = db.execute(
-            select(func.max(FundResearchSnapshot.refreshed_at)).where(
-                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS)
-            )
-        ).scalar_one()
-    if has_research_snapshots is None:
-        bootstrap = _refresh_research_snapshots_after_ingestion()
-        if bootstrap.get("status") != "refreshed":
+    # Never serve snapshots built against an older NAV-adjustment registry.
+    if not _research_snapshots_are_current():
+        bootstrap = _maybe_refresh_research_after_history_completion()
+        if bootstrap.get("status") not in {"refreshed", "already_current"}:
             raise HTTPException(
                 503,
-                "Fund rankings are being prepared from accepted NAV history. Please retry shortly.",
+                "Fund rankings are being prepared from accepted NAV history and verified corporate-action data. Please retry shortly.",
             )
 
     sort_columns = {
@@ -1810,6 +1803,9 @@ def fund_screener(
                 "positive_month_rate": snapshot.positive_month_rate,
                 "rolling_1y_positive_rate": snapshot.rolling_1y_positive_rate,
                 "metrics_status": metrics.get("status"),
+                "data_quality_status": metrics.get("data_quality_status", "PASS"),
+                "quality_flags": metrics.get("quality_flags", []),
+                "nav_adjustments_applied": metrics.get("nav_adjustments_applied", []),
             })
 
         return {
