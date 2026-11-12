@@ -64,6 +64,7 @@ from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 from app.nav_history_backfill import (
     create_history_backfill_plan,
     create_storage_optimized_history_plan,
+    ensure_hybrid_baseline_windows,
     run_history_backfill_batch,
     history_backfill_status,
 )
@@ -211,6 +212,20 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
             "amfi_history_stale_lease_clamped configured_minutes=%s effective_minutes=%s",
             configured_stale_after_minutes,
             stale_after_minutes,
+        )
+
+    if os.getenv("AMFI_HISTORY_PLAN_MODE", "daily").strip().lower() == "hybrid":
+        monthly_start_raw = os.getenv("AMFI_HISTORY_MONTHLY_START_DATE", "").strip()
+        try:
+            monthly_start_date = date.fromisoformat(monthly_start_raw)
+        except ValueError as exc:
+            raise RuntimeError(
+                "Hybrid history execution requires AMFI_HISTORY_MONTHLY_START_DATE"
+            ) from exc
+        baseline_result = ensure_hybrid_baseline_windows(monthly_start_date, (1, 2, 3))
+        logger.warning(
+            "amfi_hybrid_baseline_checkpoints_ensured",
+            extra=baseline_result,
         )
 
     selected = completed = failed = 0

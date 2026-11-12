@@ -338,3 +338,67 @@ def test_month_end_batch_persists_only_latest_observation_per_scheme_month(facto
             Decimal("10.25000000"),
             Decimal("20.25000000"),
         }
+
+
+
+def test_hybrid_baseline_windows_create_missing_and_reactivate_only_paused(factory):
+    from app.nav_history_backfill import ensure_hybrid_baseline_windows
+
+    # A completed baseline is immutable; a paused one must be reactivated.
+    monthly_start = date(2021, 11, 19)
+    create_storage_optimized_history_plan(
+        date(2012, 2, 17),
+        date(2026, 11, 11),
+        monthly_start,
+        date(2025, 11, 19),
+        (1, 2, 3),
+        session_factory=factory,
+        now=datetime(2026, 11, 12, tzinfo=timezone.utc),
+    )
+    with factory.begin() as db:
+        rows = db.execute(
+            select(NavBackfillCheckpoint).where(
+                NavBackfillCheckpoint.sampling_mode == "daily",
+                NavBackfillCheckpoint.start_date.in_({
+                    date(2021, 11, 5), date(2021, 11, 12)
+                }),
+            )
+        ).scalars().all()
+        # Simulate a previous plan transition that paused the required windows.
+        for row in rows:
+            row.status = "paused"
+    refreshed = ensure_hybrid_baseline_windows(
+        monthly_start,
+        (1, 2, 3),
+        session_factory=factory,
+        now=datetime(2026, 11, 13, tzinfo=timezone.utc),
+    )
+    assert refreshed["baseline_windows_per_scheme_type"] == 2
+    assert refreshed["checkpoints_reactivated"] == 6
+    assert refreshed["checkpoints_created"] == 0
+    with factory() as db:
+        rows = db.execute(
+            select(NavBackfillCheckpoint).where(
+                NavBackfillCheckpoint.sampling_mode == "daily",
+                NavBackfillCheckpoint.start_date.in_({
+                    date(2021, 11, 5), date(2021, 11, 12)
+                }),
+            )
+        ).scalars().all()
+        assert len(rows) == 6
+        assert {row.status for row in rows} == {"pending"}
+
+
+def test_hybrid_baseline_windows_are_idempotent_and_preserve_complete(factory):
+    from app.nav_history_backfill import ensure_hybrid_baseline_windows
+
+    monthly_start = date(2021, 11, 19)
+    first = ensure_hybrid_baseline_windows(
+        monthly_start, (1, 2, 3), session_factory=factory
+    )
+    assert first["checkpoints_created"] == 6
+    second = ensure_hybrid_baseline_windows(
+        monthly_start, (1, 2, 3), session_factory=factory
+    )
+    assert second["checkpoints_created"] == 0
+    assert second["checkpoints_preserved"] == 6

@@ -116,6 +116,79 @@ def _monthly_checkpoint_key(window: HistoryWindow, scheme_type: int) -> str:
     return hashlib.sha256(raw.encode("ascii")).hexdigest()
 
 
+def ensure_hybrid_baseline_windows(
+    monthly_start_date: date,
+    scheme_types: tuple[int, ...] = (1, 2, 3),
+    *,
+    session_factory: Callable = SessionLocal,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Ensure the two full-resolution pre-monthly windows are executable.
+
+    A prior storage-plan transition may have paused these exact windows. Only
+    the six bounded baseline checkpoints are reactivated; other archive
+    checkpoints are never changed.
+    """
+    if not scheme_types or any(
+        not isinstance(value, int) or isinstance(value, bool) or value not in {1, 2, 3}
+        for value in scheme_types
+    ):
+        raise ValueError("scheme_types must contain one or more values from 1, 2, 3")
+    if len(set(scheme_types)) != len(scheme_types):
+        raise ValueError("scheme_types must not contain duplicates")
+
+    windows = plan_history_windows(
+        monthly_start_date - timedelta(days=14),
+        monthly_start_date - timedelta(days=1),
+        max_window_days=7,
+    )
+    timestamp = now or datetime.now(timezone.utc)
+    created = reactivated = preserved = 0
+    with session_factory.begin() as db:
+        for scheme_type in sorted(scheme_types):
+            for window in windows:
+                key = _checkpoint_key(window, scheme_type)
+                current = db.execute(
+                    select(NavBackfillCheckpoint).where(
+                        NavBackfillCheckpoint.window_key == key
+                    )
+                ).scalar_one_or_none()
+                if current is None:
+                    db.add(NavBackfillCheckpoint(
+                        window_key=key,
+                        scheme_type=scheme_type,
+                        start_date=window.start_date,
+                        end_date=window.end_date,
+                        source_url=build_amfi_history_url(window, scheme_type),
+                        sampling_mode="daily",
+                        status="pending",
+                        attempts=0,
+                        records_valid=0,
+                        inserted_rows=0,
+                        updated_rows=0,
+                        unchanged_rows=0,
+                        duplicate_rows=0,
+                        invalid_rows=0,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    ))
+                    created += 1
+                elif current.status == "paused":
+                    current.status = "pending"
+                    current.error_class = None
+                    current.completed_at = None
+                    current.updated_at = timestamp
+                    reactivated += 1
+                else:
+                    preserved += 1
+    return {
+        "baseline_windows_per_scheme_type": len(windows),
+        "checkpoints_created": created,
+        "checkpoints_reactivated": reactivated,
+        "checkpoints_preserved": preserved,
+    }
+
+
 def create_storage_optimized_history_plan(
     full_start_date: date,
     full_end_date: date,
