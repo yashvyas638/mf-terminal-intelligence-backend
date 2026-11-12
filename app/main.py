@@ -673,6 +673,7 @@ def scheme_detail(
             "observations_in_window": len(rows),
             "window_start": rows[0].nav_date.isoformat() if rows else None,
             "window_end": rows[-1].nav_date.isoformat() if rows else None,
+            "nav_series": [{"date": row.nav_date.isoformat(), "nav": float(row.nav_value)} for row in rows],
             "performance": performance_metrics([(row.nav_date, float(row.nav_value)) for row in rows]),
         }
 
