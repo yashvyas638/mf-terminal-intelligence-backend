@@ -101,6 +101,7 @@ class NavBackfillCheckpoint(Base):
     start_date: Mapped[object] = mapped_column(Date, nullable=False)
     end_date: Mapped[object] = mapped_column(Date, nullable=False)
     source_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    sampling_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="daily", server_default="daily")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payload_sha256: Mapped[str | None] = mapped_column(String(64))
