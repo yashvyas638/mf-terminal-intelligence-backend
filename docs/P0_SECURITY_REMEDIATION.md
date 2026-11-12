@@ -37,6 +37,12 @@ GitHub issues or logs. If Render uses Supabase Data API rather than direct
 PostgreSQL, stop and redesign the access path before deployment.
 
 ## Remaining P0 work
+### Code-level startup defence (2026-11-12)
+
+The production lifespan now queries PostgreSQL `current_user` and refuses to start when the connection identity is `anon` or `authenticated`. It allows a trusted server-side role and fails closed if the role cannot be identified. Automated tests cover both rejected client roles and an accepted server-side role. Verified on commit `cac21e0e4daba3680e2bee99481e93b099d83031`; CI run `43142960810` passed SQLite and PostgreSQL jobs.
+
+This does **not** prove which role the live Render service currently uses. The private Render environment must still be inspected before migration 0004 or any production deployment.
+
 
 - Verify Render's actual database connection role without exposing secrets.
 - Verify Supabase Data API cannot read or mutate application tables as
