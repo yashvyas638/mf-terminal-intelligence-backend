@@ -6,6 +6,7 @@ observations, not guarantees; annualisation assumes 252 trading observations/yea
 from __future__ import annotations
 
 import math
+from bisect import bisect_right
 from datetime import date
 from typing import Iterable
 
@@ -214,15 +215,11 @@ def rolling_return_series(
         endpoints.append(rows[-1])
 
     results = []
+    ordinals = [observed_date.toordinal() for observed_date, _ in rows]
     for end_date, end_value in endpoints:
         target_ordinal = end_date.toordinal() - window_days
-        candidate_index = None
-        for index, (start_date, _) in enumerate(rows):
-            if start_date.toordinal() <= target_ordinal:
-                candidate_index = index
-            else:
-                break
-        if candidate_index is None:
+        candidate_index = bisect_right(ordinals, target_ordinal) - 1
+        if candidate_index < 0:
             continue
         start_date, start_value = rows[candidate_index]
         gap_days = target_ordinal - start_date.toordinal()
