@@ -1459,9 +1459,17 @@ def refresh_fund_research_snapshots(
                 logger.info("research_snapshot_refresh_skipped reason=another_instance_refreshing")
                 return {"status": "in_progress", "reason": "another_instance_refreshing"}
 
+        fresh_scheme_codes = (
+            select(NavObservation.scheme_code)
+            .where(NavObservation.nav_date >= refreshed_at.date() - timedelta(days=MAX_NAV_STALENESS_DAYS))
+            .distinct()
+        )
         statement = (
             select(NavObservation.scheme_code, NavObservation.nav_date, NavObservation.nav_value)
-            .where(NavObservation.nav_date >= history_floor)
+            .where(
+                NavObservation.nav_date >= history_floor,
+                NavObservation.scheme_code.in_(fresh_scheme_codes),
+            )
             .order_by(NavObservation.scheme_code, NavObservation.nav_date)
             .execution_options(stream_results=True, yield_per=10000)
         )
@@ -1611,6 +1619,7 @@ def fund_screener(
         .where(
             FundResearchSnapshot.window_days == days,
             FundResearchSnapshot.observations >= min_observations,
+            FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
         )
         .subquery()
     )
@@ -1623,6 +1632,7 @@ def fund_screener(
             .where(
                 FundResearchSnapshot.window_days == days,
                 FundResearchSnapshot.observations >= min_observations,
+                FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
             )
         )
         if q:
@@ -1754,6 +1764,7 @@ def monthly_fund_leaderboard(
         .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
         .where(
             FundResearchSnapshot.window_days == 365,
+            FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
             Scheme.plan_type == plan_type,
             Scheme.option_type == option_type,
         )
