@@ -29,14 +29,16 @@ _VERIFIED_EVENTS: tuple[dict[str, Any], ...] = (
         "source_urls": (
             "https://fundsindia.com/blog/wp-content/uploads/2022/08/Attachment74998attachmentsChange-in-FV-Overnight-Fund.pdf",
             "https://www.icicipruamc.com/blob/sebi-repo/Advertisements/2026/February/Filing%20date%2010-02-2026/Release%20date%2006-02-2026/Advertisements/Annexure%203-%20Big%20Factsheet.pdf",
+            "https://stockexact.com/mutual-funds/icici-prudential-overnight-fund-direct-growth/nav-history",
         ),
         "source_note": (
             "ICICI Prudential AMC's notice changes unit face value from "
             "Rs.100 to Rs.1,000 effective 16-Aug-2022 and states that existing "
             "unit holdings are adjusted proportionately without changing "
             "holding value. The AMC factsheet records the corresponding "
-            "pre/post NAV levels. Pre-event NAVs are expressed in post-change "
-            "units by multiplying by 10."
+            "pre/post NAV levels; independent NAV history identifies the "
+            "17-Aug-2022 level reset. Pre-event NAVs are expressed in "
+            "post-change units by multiplying by 10."
         ),
     },
 )
