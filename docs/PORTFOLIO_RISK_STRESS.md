@@ -13,6 +13,21 @@
 
 VaR is the magnitude of the empirical 5th-percentile daily loss; CVaR is the magnitude of the average of observations at or below that threshold. These are backward-looking historical estimates, not forecasts or maximum-loss guarantees.
 
+## Verified holdings look-through
+
+Endpoint: `GET /v1/portfolios/{portfolio_id}/lookthrough?max_disclosure_age_days=180`
+
+- Requires a verified personal Supabase user and an owned portfolio.
+- Uses the latest VERIFIED disclosure per scheme on or before the current date.
+- Multiplies current scheme market value by source-reported constituent weights.
+- Aggregates the same constituent by ISIN when available; non-ISIN records use their source security identifier.
+- Aggregates sector exposure and reports source URL, source hash, disclosure date and age.
+- Missing disclosures are not treated as zero; stale disclosures are shown separately from fresh coverage.
+- Portfolio-weight percentages are withheld when portfolio NAV valuation is incomplete.
+- Unverified or pending disclosures are never included.
+
+This is a holdings-disclosure look-through, not a live underlying security valuation. Constituents, sector labels and disclosed weights may be stale, rounded or subject to AMC reporting conventions. The coverage block is essential context and should accompany any exposure table.
+
 ## User-defined stress endpoint
 
 `POST /v1/portfolios/{portfolio_id}/stress`
