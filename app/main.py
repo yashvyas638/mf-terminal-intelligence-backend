@@ -22,6 +22,7 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import delete, desc, func, or_, select, text, tuple_
@@ -45,6 +46,7 @@ from app.db import (
     Portfolio,
     PortfolioImportBatch,
     PortfolioGoal,
+    PortfolioReportSnapshot,
     PortfolioTransaction,
     PortfolioTransactionAudit,
     Scheme,
@@ -55,6 +57,7 @@ from app.db import (
 from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
+from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 logger = logging.getLogger("mf_terminal.nav")
@@ -1893,6 +1896,180 @@ def compare_fund_with_benchmark(
             "comparisons": comparisons,
             "limitations": limitations,
         }
+
+
+@app.post("/v1/portfolios/{portfolio_id}/reports", status_code=201)
+def create_portfolio_report_snapshot(
+    portfolio_id: int,
+    days: int = Query(default=1095, ge=30, le=3650),
+) -> dict[str, Any]:
+    """Generate and persist an immutable owner-scoped portfolio report snapshot."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+
+    # Reuse the same tested valuation, risk and FIFO calculation endpoints.
+    valuation = portfolio_valuation(portfolio_id, None)
+    risk = portfolio_historical_risk(portfolio_id, days, None)
+    tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
+    generated_at = datetime.now(timezone.utc)
+
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        holdings = valuation.get("holdings", [])
+        source_snapshot_ids = set()
+        max_nav_date = None
+        for holding in holdings:
+            code = holding.get("scheme_code")
+            nav_date = holding.get("nav_date")
+            if nav_date:
+                parsed_date = date.fromisoformat(nav_date)
+                max_nav_date = parsed_date if max_nav_date is None else max(max_nav_date, parsed_date)
+            if code:
+                latest = db.execute(
+                    select(NavObservation)
+                    .where(NavObservation.scheme_code == code)
+                    .order_by(desc(NavObservation.nav_date))
+                    .limit(1)
+                ).scalar_one_or_none()
+                if latest is not None:
+                    source_snapshot_ids.add(latest.source_snapshot_id)
+
+        sources = []
+        for snapshot_id in sorted(source_snapshot_ids):
+            snapshot = db.get(IngestionSnapshot, snapshot_id)
+            if snapshot is not None:
+                sources.append({
+                    "source_type": "AMFI_NAV_INGESTION",
+                    "source_url": snapshot.source_url,
+                    "source_sha256": snapshot.payload_sha256,
+                    "retrieved_at": snapshot.retrieved_at.isoformat(),
+                    "min_nav_date": snapshot.min_nav_date.isoformat() if snapshot.min_nav_date else None,
+                    "max_nav_date": snapshot.max_nav_date.isoformat() if snapshot.max_nav_date else None,
+                    "quality_status": snapshot.quality_status,
+                })
+
+        limitations = [
+            "Historical risk uses current market-value weights held constant over the lookback.",
+            "FIFO gains are pre-tax; no Indian tax rates, surcharge, cess, exemption or exit load is applied.",
+            "Portfolio-level benchmark TRI attribution is not included until every holding has a verified effective-dated benchmark mapping.",
+            "No future returns or goal achievement are guaranteed.",
+        ]
+        if risk.get("status") != "OK":
+            limitations.append("Portfolio risk metrics are unavailable or incomplete: " + str(risk.get("status")))
+        if valuation.get("status") not in {"OK", "VALUED"}:
+            limitations.append("Portfolio valuation has a data-quality status: " + str(valuation.get("status")))
+
+        report = {
+            "report_version": "portfolio-report-v1",
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "generated_at": generated_at.isoformat(),
+            "lookback_days": days,
+            "valuation": valuation,
+            "risk": risk,
+            "fifo_tax_lots": tax_lots,
+            "sources": sources,
+            "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
+            "limitations": limitations,
+            "methodology": {
+                "valuation": "Latest accepted AMFI NAV multiplied by remaining units.",
+                "risk": "Exact common NAV dates; no forward-fill; current weights held constant.",
+                "capital_gains": "FIFO lot matching with recorded charges; pre-tax only.",
+            },
+        }
+        content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
+        content_sha256 = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+        snapshot = PortfolioReportSnapshot(
+            portfolio_id=portfolio_id,
+            owner_user_id=owner_id,
+            generated_at=generated_at,
+            report_version="portfolio-report-v1",
+            content_json=content_json,
+            content_sha256=content_sha256,
+            source_max_nav_date=max_nav_date,
+        )
+        db.add(snapshot)
+        db.commit()
+        return {
+            "report_id": snapshot.id,
+            "portfolio_id": portfolio_id,
+            "report_version": snapshot.report_version,
+            "generated_at": snapshot.generated_at.isoformat(),
+            "source_max_nav_date": snapshot.source_max_nav_date.isoformat() if snapshot.source_max_nav_date else None,
+            "content_sha256": snapshot.content_sha256,
+            "status": "saved",
+        }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/reports")
+def list_portfolio_report_snapshots(portfolio_id: int) -> dict[str, Any]:
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        rows = db.execute(
+            select(PortfolioReportSnapshot)
+            .where(
+                PortfolioReportSnapshot.portfolio_id == portfolio_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+            .order_by(desc(PortfolioReportSnapshot.generated_at))
+        ).scalars().all()
+        return {
+            "count": len(rows),
+            "items": [
+                {
+                    "report_id": row.id,
+                    "report_version": row.report_version,
+                    "generated_at": row.generated_at.isoformat(),
+                    "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
+                    "content_sha256": row.content_sha256,
+                }
+                for row in rows
+            ],
+        }
+
+
+@app.get("/v1/reports/{report_id}")
+def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        row = db.execute(
+            select(PortfolioReportSnapshot).where(
+                PortfolioReportSnapshot.id == report_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "Report not found")
+        return {
+            "report_id": row.id,
+            "report_version": row.report_version,
+            "generated_at": row.generated_at.isoformat(),
+            "content_sha256": row.content_sha256,
+            "report": json.loads(row.content_json),
+        }
+
+
+@app.get("/v1/reports/{report_id}/pdf")
+def download_portfolio_report_pdf(report_id: int) -> Response:
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        row = db.execute(
+            select(PortfolioReportSnapshot).where(
+                PortfolioReportSnapshot.id == report_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "Report not found")
+        report = json.loads(row.content_json)
+    pdf_bytes = build_portfolio_report_pdf(report)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="portfolio-report-{report_id}.pdf"'},
+    )
 
 
 @app.get("/v1/goals")
