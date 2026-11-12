@@ -115,8 +115,13 @@ def drawdown_profile(points: Iterable[tuple[date, float]]) -> dict:
     }
 
 
-def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: float = 0.06) -> dict:
+def performance_metrics(
+    points: Iterable[tuple[date, float]],
+    risk_free_rate: float = 0.06,
+    period_baseline_points: Iterable[tuple[date, float]] | None = None,
+) -> dict:
     rows = _clean_series(points)
+    baseline_rows = _clean_series(period_baseline_points) if period_baseline_points is not None else rows
     if len(rows) < 2:
         return {"observations": len(rows), "status": "INSUFFICIENT_DATA"}
     dates = [r[0] for r in rows]
@@ -138,7 +143,7 @@ def performance_metrics(points: Iterable[tuple[date, float]], risk_free_rate: fl
     periods = {}
     for label, days in (("1M", 30), ("3M", 90), ("6M", 182), ("1Y", 365), ("3Y", 365 * 3), ("5Y", 365 * 5)):
         target_date = dates[-1] - timedelta(days=days)
-        eligible = [(d, v) for d, v in rows if d <= target_date]
+        eligible = [(d, v) for d, v in baseline_rows if d <= target_date]
         # Never silently substitute a materially older NAV for the requested
         # period baseline. Weekends and holidays are fine; long data gaps are not.
         max_baseline_gap_days = 35 if label in {"3Y", "5Y"} else 7
@@ -655,10 +660,15 @@ def rolling_return_series(
 def research_metrics(
     points: Iterable[tuple[date, float]],
     risk_free_rate: float = 0.06,
+    period_baseline_points: Iterable[tuple[date, float]] | None = None,
 ) -> dict:
-    """Combine the existing NAV performance metrics with rolling diagnostics."""
+    """Combine NAV metrics with rolling diagnostics and optional out-of-window baselines."""
     rows = _clean_series(points)
-    base = performance_metrics(rows, risk_free_rate=risk_free_rate)
+    base = performance_metrics(
+        rows,
+        risk_free_rate=risk_free_rate,
+        period_baseline_points=period_baseline_points,
+    )
     if base.get("status") != "OK":
         return {
             **base,

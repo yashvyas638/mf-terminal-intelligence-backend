@@ -312,3 +312,37 @@ def test_five_year_period_accepts_month_end_sample_within_35_day_window():
     result = performance_metrics(points)
     assert result["status"] == "OK"
     assert result["period_returns"]["5Y"] == pytest.approx(0.5)
+
+
+def test_period_return_uses_baseline_lookback_without_changing_window_total_return():
+    latest = date(2026, 11, 11)
+    target_5y = latest - timedelta(days=365 * 5)
+    actual_base = target_5y - timedelta(days=30)
+    window_points = [
+        (target_5y + timedelta(days=1), 120.0),
+        (latest, 180.0),
+    ]
+    baseline_points = [
+        (actual_base, 100.0),
+        *window_points,
+    ]
+    result = performance_metrics(
+        window_points,
+        period_baseline_points=baseline_points,
+    )
+    assert result["start_date"] == (target_5y + timedelta(days=1)).isoformat()
+    assert result["total_return"] == pytest.approx(0.5)
+    assert result["period_returns"]["5Y"] == pytest.approx(0.8)
+
+
+def test_research_metrics_accepts_actual_baseline_outside_window():
+    latest = date(2026, 11, 11)
+    target_5y = latest - timedelta(days=365 * 5)
+    actual_base = target_5y - timedelta(days=30)
+    window_points = [(target_5y + timedelta(days=1), 120.0), (latest, 180.0)]
+    baseline_points = [(actual_base, 100.0), *window_points]
+    result = research_metrics(
+        window_points,
+        period_baseline_points=baseline_points,
+    )
+    assert result["period_returns"]["5Y"] == pytest.approx(0.8)
