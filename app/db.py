@@ -332,6 +332,8 @@ class FundHoldingDisclosure(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     total_weight_pct: Mapped[object] = mapped_column(Numeric(14, 8), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     supersedes_disclosure_id: Mapped[int | None] = mapped_column(ForeignKey("fund_holding_disclosures.id"))
     __table_args__ = (
         UniqueConstraint("scheme_code", "as_of_date", "source_sha256", name="uq_holding_disclosure_source"),
