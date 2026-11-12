@@ -55,7 +55,7 @@ from app.db import (
     SessionLocal,
     init_db,
 )
-from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics, research_snapshot_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
@@ -1402,9 +1402,9 @@ def refresh_fund_research_snapshots(
         for window_days in windows:
             cutoff = as_of - timedelta(days=window_days)
             window_points = [(d, value) for d, value in points if d >= cutoff]
-            metrics = research_metrics(
+            metrics = research_snapshot_metrics(
                 window_points,
-                period_baseline_points=points,
+                period_baseline_rows=points,
             )
             period = metrics.get("period_returns", {})
             rolling = metrics.get("rolling_1y", {})
