@@ -207,6 +207,25 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     return result
 
 
+def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
+    """Consume and log the result of the non-blocking one-shot history worker."""
+    try:
+        result = task.result()
+        logger.warning(
+            "amfi_history_backfill_background_task_completed",
+            extra={
+                "status": result.get("status"),
+                "selected": result.get("selected"),
+                "completed": result.get("completed"),
+                "failed": result.get("failed"),
+            },
+        )
+    except asyncio.CancelledError:
+        logger.warning("amfi_history_backfill_background_task_cancelled")
+    except Exception:
+        logger.exception("amfi_history_backfill_background_task_failed")
+
+
 def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
     """Expose only allow-listed SEBI taxonomy, including the sub-category."""
     group = canonical_group(scheme.category_group)
@@ -249,7 +268,14 @@ async def lifespan(_: FastAPI):
             db.execute(text("SELECT 1"))
             _verify_trusted_database_role(db)
         _maybe_plan_historical_backfill_from_environment()
-        _maybe_run_historical_backfill_batch_from_environment()
+        if os.getenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "").strip().lower() == "true":
+            # Do not hold API readiness on AMFI's external HTTP response. The
+            # checkpoint is marked running before the worker leaves this thread;
+            # the normal service can become healthy while the bounded batch runs.
+            history_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_run_historical_backfill_batch_from_environment)
+            )
+            history_task.add_done_callback(_log_history_backfill_task_result)
     else:
         init_db()
     yield
