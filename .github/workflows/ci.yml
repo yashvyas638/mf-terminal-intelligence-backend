@@ -181,7 +181,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
-          from datetime import datetime, timedelta
+          from datetime import date, datetime, timedelta
           from zoneinfo import ZoneInfo
 
           import requests
@@ -240,4 +240,38 @@ jobs:
               })
 
           print(json.dumps({"scheme_type_checks": summaries, "database_writes": 0}, indent=2))
+          historical_window = HistoryWindow(date(2021, 11, 12), date(2021, 11, 18))
+          historical_url = build_amfi_history_url(historical_window, 1)
+          historical_response = requests.get(
+              historical_url,
+              timeout=(10, 75),
+              headers={"User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0"},
+          )
+          historical_response.raise_for_status()
+          historical_payload = historical_response.content.decode("utf-8-sig", errors="strict")
+          historical_records, historical_report = parse_amfi_history_text(historical_payload)
+          if historical_report["records_valid"] < 1:
+              raise SystemExit("First planned historical checkpoint returned no valid NAV rows")
+          if any(
+              row.nav_date < historical_window.start_date
+              or row.nav_date > historical_window.end_date
+              for row in historical_records
+          ):
+              raise SystemExit("First planned historical checkpoint contains out-of-range dates")
+
+          print(json.dumps({
+              "scheme_type_checks": summaries,
+              "first_planned_checkpoint": {
+                  "scheme_type": 1,
+                  "source": historical_url,
+                  "start_date": historical_window.start_date.isoformat(),
+                  "end_date": historical_window.end_date.isoformat(),
+                  "records_valid": historical_report["records_valid"],
+                  "unique_scheme_codes": historical_report["unique_scheme_codes"],
+                  "schema_variant": historical_report["schema_variant"],
+                  "invalid_rows": historical_report["invalid_rows"],
+                  "payload_sha256": historical_report["payload_sha256"],
+              },
+              "database_writes": 0,
+          }, indent=2))
           PY

@@ -62,3 +62,65 @@ def test_history_plan_startup_hook_rejects_reversed_dates(monkeypatch):
     monkeypatch.setenv("AMFI_HISTORY_BACKFILL_END_DATE", "2021-11-12")
     with pytest.raises(RuntimeError, match="on or after"):
         main._maybe_plan_historical_backfill_from_environment()
+
+
+
+def test_history_batch_startup_hook_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", raising=False)
+    assert main._maybe_run_historical_backfill_batch_from_environment() is None
+
+
+def test_history_batch_startup_hook_requires_verified_contract(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "false")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    with pytest.raises(RuntimeError, match="CONTRACT_VERIFIED"):
+        main._maybe_run_historical_backfill_batch_from_environment()
+
+
+def test_history_batch_startup_hook_requires_separate_execution_gate(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "false")
+    with pytest.raises(RuntimeError, match="BACKFILL_ENABLED"):
+        main._maybe_run_historical_backfill_batch_from_environment()
+
+
+@pytest.mark.parametrize("limit", ["0", "6", "bad"])
+def test_history_batch_startup_hook_rejects_unsafe_batch_limits(monkeypatch, limit):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", limit)
+    with pytest.raises(RuntimeError, match="batch limit"):
+        main._maybe_run_historical_backfill_batch_from_environment()
+
+
+def test_history_batch_startup_hook_runs_only_bounded_batch(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "1")
+    expected = {
+        "status": "completed",
+        "selected": 1,
+        "completed": 1,
+        "failed": 0,
+        "results": [],
+        "max_attempts": 3,
+    }
+    calls = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        return expected
+
+    monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
+    result = main._maybe_run_historical_backfill_batch_from_environment()
+
+    assert result == expected
+    assert calls == [{
+        "limit": 1,
+        "enabled": True,
+        "source_contract_verified": True,
+    }]
