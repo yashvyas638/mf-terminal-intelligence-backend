@@ -887,7 +887,7 @@ def refresh_nav(x_api_key: str | None = Header(default=None, alias="X-API-Key"))
         if advisory_session.get_bind().dialect.name == "postgresql":
             advisory_lock_acquired = bool(
                 advisory_session.execute(
-                    text("SELECT pg_try_advisory_xact_lock(:lock_key)"),
+                    text("SELECT pg_try_advisory_lock(:lock_key)"),
                     {"lock_key": 0x4D46544E41565246},
                 ).scalar_one()
             )
