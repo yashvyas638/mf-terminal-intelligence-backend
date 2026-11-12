@@ -243,6 +243,27 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
         "results": results,
         "max_attempts": 3,
     }
+
+    # Historical backfill writes NAV observations directly rather than through
+    # the daily refresh endpoint. Build the research cache only after every
+    # non-paused checkpoint is settled, so rankings never freeze a partial run.
+    research_refresh: dict[str, Any] = {
+        "status": "deferred",
+        "reason": "history_windows_remaining",
+    }
+    if failed == 0:
+        history_status = history_backfill_status()
+        unfinished = sum(
+            int(group.get("windows", 0))
+            for group in history_status.get("groups", [])
+            if group.get("checkpoint_status") in {"pending", "running", "failed"}
+        )
+        if unfinished == 0:
+            research_refresh = _refresh_research_snapshots_after_ingestion()
+        else:
+            research_refresh["unfinished_windows"] = unfinished
+    result["research_snapshot_refresh"] = research_refresh
+
     first_failure = next(
         (item for item in results if item.get("status") == "failed"),
         {},
@@ -304,6 +325,7 @@ def _log_history_backfill_task_result(task: asyncio.Task[Any]) -> None:
                 "selected": result.get("selected"),
                 "completed": result.get("completed"),
                 "failed": result.get("failed"),
+                "research_snapshot_refresh_status": (result.get("research_snapshot_refresh") or {}).get("status"),
             },
         )
         if result.get("status") in {"completed", "idle"} and not result.get("failed"):
