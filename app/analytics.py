@@ -346,7 +346,7 @@ def portfolio_risk_metrics(
         segment_points.append((end_date, segment_index))
         previous_end = end_date
     if len(segment_points) > 1:
-        drawdowns.append(max_drawdown(segment_points))
+        drawdowns.append(max_drawdown([value for _, value in segment_points]))
 
     def worst_horizon(days: int) -> float | None:
         if len(daily_returns) < days:
