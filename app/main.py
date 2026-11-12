@@ -1714,6 +1714,8 @@ def fund_screener(
             FundResearchSnapshot.observations >= min_observations,
             FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
             sort_column.is_not(None),
+            plan_label != "",
+            option_label != "",
             Scheme.category_group.is_not(None),
             Scheme.category_group != "",
             Scheme.category.is_not(None),
