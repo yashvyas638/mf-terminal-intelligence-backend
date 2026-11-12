@@ -45,7 +45,10 @@ def _parse_value(value: str) -> Decimal:
         raise ValueError(f"invalid benchmark index value: {value!r}") from exc
     if not parsed.is_finite() or parsed <= 0:
         raise ValueError("benchmark index values must be finite and positive")
-    return parsed.quantize(Decimal("0.00000001"))
+    quantized = parsed.quantize(Decimal("0.00000001"))
+    if quantized != parsed or quantized <= 0:
+        raise ValueError("benchmark index values must be exactly representable to eight decimal places")
+    return quantized
 
 
 def parse_nifty_tri_csv(csv_text: str, variant: str) -> tuple[list[BenchmarkPoint], dict]:
@@ -67,6 +70,8 @@ def parse_nifty_tri_csv(csv_text: str, variant: str) -> tuple[list[BenchmarkPoin
     if not date_header or not value_header:
         expected = "Total Returns Index" if variant == "TRI" else "Net Total Return Index"
         raise ValueError(f"benchmark CSV must contain Date and {expected} columns")
+    if not name_header:
+        raise ValueError("official benchmark CSV must contain an IndexName column")
 
     points_by_date: dict[date, Decimal] = {}
     source_names: set[str] = set()
@@ -80,6 +85,8 @@ def parse_nifty_tri_csv(csv_text: str, variant: str) -> tuple[list[BenchmarkPoin
             raise ValueError("benchmark CSV exceeds the 20,000-row safety limit")
         try:
             observed_date = _parse_date(row.get(date_header) or "")
+            if observed_date > date.today():
+                raise ValueError("benchmark observation date cannot be in the future")
             index_value = _parse_value(row.get(value_header) or "")
         except ValueError as exc:
             raise ValueError(f"invalid benchmark CSV row {row_number}: {exc}") from exc
@@ -97,6 +104,8 @@ def parse_nifty_tri_csv(csv_text: str, variant: str) -> tuple[list[BenchmarkPoin
 
     if not points_by_date:
         raise ValueError("benchmark CSV contains no valid observations")
+    if not source_names:
+        raise ValueError("benchmark CSV contains no IndexName values")
     if len(source_names) > 1:
         raise ValueError("benchmark CSV contains multiple index names")
     points = [
