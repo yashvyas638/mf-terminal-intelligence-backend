@@ -708,6 +708,20 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
             first_seen_at=now,
             last_seen_at=now,
         ),
+        Scheme(
+            scheme_code=999975,
+            scheme_name="Life Cycle Ten Year Fund",
+            amc="Explorer AMC",
+            category_group="Life Cycle Funds",
+            category="Life Cycle Fund with Maturity of 10 Years",
+            asset_class="Life Cycle",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
     ]
     with SessionLocal() as db:
         for scheme in fixtures:
@@ -724,7 +738,9 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
     assert "Flexi Cap Fund" in facets.json()["sub_categories"]
     assert "Power Select" not in facets.json()["categories"]
     assert "PowerUp" not in facets.json()["sub_categories"]
-    assert "Life Cycle Funds" in {"Life Cycle Funds", "Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Schemes"}
+    assert "Life Cycle Funds" in facets.json()["categories"]
+    assert "Life Cycle" in facets.json()["asset_classes"]
+    assert "Life Cycle Fund with Maturity of 10 Years" in facets.json()["sub_categories"]
     assert "B" not in facets.json()["asset_classes"]
 
     filtered = client.get(
