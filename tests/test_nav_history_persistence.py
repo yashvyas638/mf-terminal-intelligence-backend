@@ -3,13 +3,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, select, func
+from sqlalchemy import create_engine, select, func, text, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.db import (
     Base, IngestionSnapshot, NavBackfillCheckpoint, NavObservation,
-    Scheme,
+    Scheme, SessionLocal, engine,
 )
 from app.nav_history_persistence import persist_historical_nav_window
 
@@ -118,3 +118,72 @@ def test_rejects_checkpoint_outside_running_state(factory):
             checkpoint_id, [_record()], _report(), datetime.now(timezone.utc),
             session_factory=factory,
         )
+
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="PostgreSQL-specific column-width check")
+def test_postgres_persists_full_amfi_option_description():
+    option_text = (
+        "IDCW - Payout & Re-investment of Income Distribution cum capital withdrawal option"
+    )
+    assert len(option_text) > 20
+    scheme_code = 987654321
+    now = datetime.now(timezone.utc)
+    checkpoint_id = None
+    snapshot_id = None
+
+    try:
+        with SessionLocal.begin() as db:
+            checkpoint = NavBackfillCheckpoint(
+                window_key="f" * 64,
+                scheme_type=1,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 7),
+                source_url="https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx",
+                status="running",
+                attempts=1,
+                records_valid=0,
+                inserted_rows=0,
+                updated_rows=0,
+                unchanged_rows=0,
+                duplicate_rows=0,
+                invalid_rows=0,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(checkpoint)
+            db.flush()
+            checkpoint_id = checkpoint.id
+
+        record = _record()
+        record.scheme_code = scheme_code
+        record.scheme_name = "Historical Option Width Test Fund"
+        record.plan_type = "Direct Plan"
+        record.option_type = option_text
+        result = persist_historical_nav_window(
+            checkpoint_id,
+            [record],
+            _report(),
+            now,
+            session_factory=SessionLocal,
+        )
+        snapshot_id = result["snapshot_id"]
+
+        with SessionLocal() as db:
+            scheme = db.get(Scheme, scheme_code)
+            assert scheme is not None
+            assert scheme.option_type == option_text
+            width = db.execute(text(
+                "SELECT character_maximum_length FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='schemes' "
+                "AND column_name='option_type'"
+            )).scalar_one()
+            assert width == 160
+    finally:
+        with SessionLocal.begin() as db:
+            db.execute(delete(NavObservation).where(NavObservation.scheme_code == scheme_code))
+            db.execute(delete(Scheme).where(Scheme.scheme_code == scheme_code))
+            if snapshot_id is not None:
+                db.execute(delete(IngestionSnapshot).where(IngestionSnapshot.id == snapshot_id))
+            if checkpoint_id is not None:
+                db.execute(delete(NavBackfillCheckpoint).where(NavBackfillCheckpoint.id == checkpoint_id))

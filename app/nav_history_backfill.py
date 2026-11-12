@@ -187,11 +187,15 @@ def run_history_backfill_batch(
                     checkpoint.completed_at = None
                     checkpoint.updated_at = now_factory()
             failed += 1
+            original_error = getattr(exc, "orig", None)
+            error_text = str(original_error or exc).strip() or type(exc).__name__
+            error_detail = error_text.splitlines()[0][:400]
             results.append({
                 "checkpoint_id": checkpoint_id,
                 "scheme_type": scheme_type,
                 "status": "failed",
                 "error_class": type(exc).__name__,
+                "error_detail": error_detail,
             })
 
     return {

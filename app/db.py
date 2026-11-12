@@ -44,7 +44,7 @@ class Scheme(Base):
     category: Mapped[str | None] = mapped_column(String(160))
     asset_class: Mapped[str | None] = mapped_column(String(40))
     plan_type: Mapped[str | None] = mapped_column(String(20))
-    option_type: Mapped[str | None] = mapped_column(String(20))
+    option_type: Mapped[str | None] = mapped_column(String(160))
 
 
 class IngestionSnapshot(Base):
