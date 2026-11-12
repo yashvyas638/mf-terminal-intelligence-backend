@@ -61,3 +61,41 @@ def test_research_metrics_exposes_consistency_as_observed_rate_not_score():
     assert result["positive_month_rate"] == 1.0
     assert "consistency_note" in result
     assert result["rolling_1y"]["status"] == "OK"
+
+
+def test_drawdown_profile_reports_peak_trough_and_recovery_dates():
+    from app.analytics import drawdown_profile
+
+    points = [
+        (date(2024, 1, 1), 100.0),
+        (date(2024, 1, 10), 120.0),
+        (date(2024, 1, 20), 90.0),
+        (date(2024, 2, 1), 110.0),
+        (date(2024, 2, 15), 120.0),
+        (date(2024, 2, 20), 126.0),
+    ]
+    result = drawdown_profile(points)
+    assert result["status"] == "OK"
+    assert result["max_drawdown"] == pytest.approx(-0.25)
+    assert result["worst_peak_date"] == "2024-01-10"
+    assert result["worst_trough_date"] == "2024-01-20"
+    assert result["worst_recovery_date"] == "2024-02-15"
+    assert result["worst_recovery_days"] == 36
+    assert result["current_drawdown"] == 0
+
+
+def test_drawdown_profile_marks_unrecovered_drawdown_open():
+    from app.analytics import drawdown_profile
+
+    points = [
+        (date(2024, 1, 1), 100.0),
+        (date(2024, 1, 10), 120.0),
+        (date(2024, 1, 20), 90.0),
+        (date(2024, 2, 1), 105.0),
+    ]
+    result = drawdown_profile(points)
+    assert result["max_drawdown"] == pytest.approx(-0.25)
+    assert result["worst_recovery_date"] is None
+    assert result["worst_recovery_days"] is None
+    assert result["longest_underwater_days"] == 22
+    assert result["current_drawdown"] == pytest.approx(-0.125)
