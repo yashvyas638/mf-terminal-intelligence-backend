@@ -305,6 +305,10 @@ def run_history_backfill_batch(
         for stale in stale_rows:
             stale.status = "failed"
             stale.error_class = "StaleWorkerRecovery"
+            # Claiming a checkpoint increments attempts before the network call.
+            # If the worker crashes or is reclaimed before recording an outcome,
+            # refund that claim so process recovery does not consume a source retry.
+            stale.attempts = max(0, stale.attempts - 1)
             stale.completed_at = None
             stale.updated_at = now_factory()
 
