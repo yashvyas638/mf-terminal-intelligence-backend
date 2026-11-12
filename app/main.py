@@ -1624,6 +1624,190 @@ def list_scheme_benchmark_assignments(
         }
 
 
+@app.get("/v1/analytics/research/{scheme_code}/evidence")
+def build_fund_research_evidence_pack(
+    scheme_code: int,
+    days: int = Query(default=3650, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Assemble source-linked fund facts and calculations for downstream research."""
+    require_api_key(x_api_key)
+    as_of = datetime.now(timezone.utc).date()
+    since = as_of - timedelta(days=days)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found")
+        nav_rows = db.execute(
+            select(NavObservation)
+            .where(
+                NavObservation.scheme_code == scheme_code,
+                NavObservation.nav_date >= since,
+                NavObservation.nav_date <= as_of,
+            )
+            .order_by(NavObservation.nav_date)
+        ).scalars().all()
+        points = [(row.nav_date, float(row.nav_value)) for row in nav_rows]
+        metrics = research_metrics(points)
+        evidence = []
+        sources = []
+        gaps = []
+
+        if nav_rows:
+            latest = nav_rows[-1]
+            ingestion = db.get(IngestionSnapshot, latest.source_snapshot_id)
+            source_id = "amfi-nav-" + str(ingestion.id if ingestion else latest.source_snapshot_id)
+            sources.append({
+                "source_id": source_id,
+                "source_type": "OFFICIAL_NAV_SOURCE",
+                "title": "AMFI Net Asset Value download",
+                "url": ingestion.source_url if ingestion else "https://www.amfiindia.com/net-asset-value/nav-download",
+                "source_sha256": ingestion.payload_sha256 if ingestion else None,
+                "retrieved_at": ingestion.retrieved_at.isoformat() if ingestion else None,
+                "effective_nav_date": latest.nav_date.isoformat(),
+            })
+            evidence.append({
+                "claim": "Latest stored scheme NAV",
+                "value": str(latest.nav_value),
+                "as_of_date": latest.nav_date.isoformat(),
+                "source_id": source_id,
+                "evidence_type": "SOURCE_FACT",
+            })
+            evidence.append({
+                "claim": "Stored NAV observation coverage",
+                "value": {
+                    "observations": len(points),
+                    "start_date": points[0][0].isoformat(),
+                    "end_date": points[-1][0].isoformat(),
+                },
+                "source_id": source_id,
+                "evidence_type": "SOURCE_COVERAGE",
+            })
+            for metric_name in ("cagr", "total_return", "annualized_volatility", "max_drawdown", "sharpe_ratio", "sortino_ratio"):
+                metric_value = metrics.get(metric_name)
+                if metric_value is not None:
+                    evidence.append({
+                        "claim": "NAV-derived " + metric_name,
+                        "value": metric_value,
+                        "methodology_version": metrics.get("methodology_version", "nav-research-v1"),
+                        "source_id": source_id,
+                        "evidence_type": "DERIVED_CALCULATION",
+                    })
+        else:
+            gaps.append("No stored NAV observations exist in the requested period.")
+
+        active_assignments = db.execute(
+            select(SchemeBenchmarkAssignment, BenchmarkIndex)
+            .join(BenchmarkIndex, BenchmarkIndex.benchmark_code == SchemeBenchmarkAssignment.benchmark_code)
+            .where(
+                SchemeBenchmarkAssignment.scheme_code == scheme_code,
+                SchemeBenchmarkAssignment.verification_status == "VERIFIED",
+                SchemeBenchmarkAssignment.valid_from <= as_of,
+                or_(
+                    SchemeBenchmarkAssignment.valid_to.is_(None),
+                    SchemeBenchmarkAssignment.valid_to >= as_of,
+                ),
+            )
+            .order_by(SchemeBenchmarkAssignment.tier)
+        ).all()
+        for assignment, benchmark in active_assignments:
+            coverage = db.execute(
+                select(
+                    func.count(BenchmarkObservation.id),
+                    func.min(BenchmarkObservation.observation_date),
+                    func.max(BenchmarkObservation.observation_date),
+                ).where(BenchmarkObservation.benchmark_code == benchmark.benchmark_code)
+            ).one()
+            source_id = "benchmark-" + benchmark.benchmark_code
+            sources.append({
+                "source_id": source_id,
+                "source_type": "BENCHMARK_TRI_SOURCE",
+                "title": benchmark.benchmark_name + " " + benchmark.variant,
+                "url": benchmark.source_url,
+                "first_date": coverage[1].isoformat() if coverage[1] else None,
+                "last_date": coverage[2].isoformat() if coverage[2] else None,
+                "observations": coverage[0],
+                "mapping_source_url": assignment.source_document_url,
+                "mapping_source_sha256": assignment.source_document_sha256,
+                "mapping_verified_at": assignment.verified_at.isoformat() if assignment.verified_at else None,
+                "tier": assignment.tier,
+            })
+            evidence.append({
+                "claim": "Verified tier-" + str(assignment.tier) + " benchmark mapping",
+                "value": {
+                    "benchmark_code": benchmark.benchmark_code,
+                    "benchmark_name": benchmark.benchmark_name,
+                    "variant": benchmark.variant,
+                    "effective_from": assignment.valid_from.isoformat(),
+                    "effective_to": assignment.valid_to.isoformat() if assignment.valid_to else None,
+                },
+                "source_id": source_id,
+                "evidence_type": "VERIFIED_MAPPING",
+            })
+        if not active_assignments:
+            gaps.append("No verified active tier-1/tier-2 benchmark mapping is available.")
+
+        holdings = db.execute(
+            select(FundHoldingDisclosure)
+            .where(
+                FundHoldingDisclosure.scheme_code == scheme_code,
+                FundHoldingDisclosure.verification_status == "VERIFIED",
+                FundHoldingDisclosure.as_of_date <= as_of,
+            )
+            .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
+            .limit(1)
+        ).scalar_one_or_none()
+        if holdings is not None:
+            source_id = "holdings-" + str(holdings.id)
+            sources.append({
+                "source_id": source_id,
+                "source_type": "VERIFIED_HOLDINGS_DISCLOSURE",
+                "title": "Scheme portfolio disclosure as of " + holdings.as_of_date.isoformat(),
+                "url": holdings.source_document_url,
+                "source_sha256": holdings.source_sha256,
+                "as_of_date": holdings.as_of_date.isoformat(),
+                "verified_at": holdings.verified_at.isoformat() if holdings.verified_at else None,
+                "row_count": holdings.row_count,
+            })
+            evidence.append({
+                "claim": "Verified scheme holdings disclosure",
+                "value": {
+                    "as_of_date": holdings.as_of_date.isoformat(),
+                    "row_count": holdings.row_count,
+                    "total_weight_pct": str(holdings.total_weight_pct),
+                },
+                "source_id": source_id,
+                "evidence_type": "VERIFIED_SOURCE_FACT",
+            })
+        else:
+            gaps.append("No verified holdings disclosure is available.")
+
+        return {
+            "scheme": {
+                "scheme_code": scheme.scheme_code,
+                "scheme_name": scheme.scheme_name,
+                "amc": scheme.amc,
+                "category": scheme.category,
+                "asset_class": scheme.asset_class,
+                "plan_type": scheme.plan_type,
+                "option_type": scheme.option_type,
+            },
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "requested_days": days,
+            "generation_status": "EVIDENCE_ONLY_NO_LLM_GENERATION",
+            "evidence": evidence,
+            "sources": sources,
+            "data_gaps": gaps,
+            "guardrails": [
+                "Do not state a fact unless it is present in evidence or a cited source.",
+                "Derived metrics are NAV-only and must retain their methodology and date coverage.",
+                "No benchmark claim is valid without a VERIFIED effective-dated assignment and TRI/NTR source.",
+                "No holdings claim is valid without a VERIFIED dated disclosure.",
+                "Do not invent AUM, TER, manager, category, benchmark or tax facts.",
+            ],
+        }
+
+
 @app.get("/v1/analytics/research/{scheme_code}/benchmark")
 def compare_fund_with_benchmark(
     scheme_code: int,
