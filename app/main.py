@@ -69,6 +69,19 @@ MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
+VALID_SCHEME_GROUPS = frozenset({"Equity Scheme", "Debt Scheme", "Hybrid Scheme", "Other Scheme"})
+VALID_ASSET_CLASSES = frozenset({"Equity", "Debt", "Hybrid", "Other"})
+
+
+def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
+    """Expose only canonical AMFI/SEBI taxonomy, never stale free-text labels."""
+    group = scheme.category_group if scheme.category_group in VALID_SCHEME_GROUPS else None
+    return {
+        "category_group": group,
+        "category": scheme.category if group else None,
+        "asset_class": scheme.asset_class if group and scheme.asset_class in VALID_ASSET_CLASSES else None,
+    }
+
 
 def _verify_trusted_database_role(db: Any) -> str:
     """Fail closed when production connects through a Supabase client role."""
@@ -655,9 +668,7 @@ def list_schemes(
                     "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
                     "plan_type": scheme.plan_type,
                     "option_type": scheme.option_type,
-                    "category_group": scheme.category_group,
-                    "category": scheme.category,
-                    "asset_class": scheme.asset_class,
+                    **_scheme_taxonomy(scheme),
                     "latest_nav": str(nav.nav_value) if nav else None,
                     "nav_date": nav.nav_date.isoformat() if nav else None,
                 }
@@ -717,8 +728,7 @@ def scheme_detail(
             "scheme_name": scheme.scheme_name,
             "isin_growth": scheme.isin_growth,
             "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
-            "amc": scheme.amc, "structure": scheme.structure, "category_group": scheme.category_group,
-            "category": scheme.category, "asset_class": scheme.asset_class,
+            "amc": scheme.amc, "structure": scheme.structure, **_scheme_taxonomy(scheme),
             "plan_type": scheme.plan_type, "option_type": scheme.option_type,
             "first_seen_at": scheme.first_seen_at.isoformat(),
             "last_seen_at": scheme.last_seen_at.isoformat(),
@@ -857,9 +867,7 @@ def scheme_research(
                 "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
                 "amc": scheme.amc,
                 "structure": scheme.structure,
-                "category_group": scheme.category_group,
-                "category": scheme.category,
-                "asset_class": scheme.asset_class,
+                **_scheme_taxonomy(scheme),
                 "plan_type": scheme.plan_type,
                 "option_type": scheme.option_type,
             },
@@ -1089,8 +1097,7 @@ def fund_screener(
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
                 "category_group": scheme.category_group,
-                "category": scheme.category,
-                "asset_class": scheme.asset_class,
+                **_scheme_taxonomy(scheme),
                 "plan_type": scheme.plan_type,
                 "option_type": scheme.option_type,
                 "latest_nav": str(metrics.get("latest_nav")) if metrics.get("latest_nav") is not None else None,
@@ -1339,8 +1346,7 @@ def list_fund_watchlist() -> dict[str, Any]:
                     "scheme_name": scheme.scheme_name,
                     "plan_type": scheme.plan_type,
                     "option_type": scheme.option_type,
-                    "category": scheme.category,
-                    "asset_class": scheme.asset_class,
+                    **_scheme_taxonomy(scheme),
                     "added_at": item.created_at.isoformat(),
                     "latest_nav": str(latest_by_code[item.scheme_code].nav_value)
                     if item.scheme_code in latest_by_code else None,
