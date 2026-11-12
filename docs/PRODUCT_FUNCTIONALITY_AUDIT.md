@@ -34,7 +34,7 @@ The repository has a useful backend foundation, but it is not yet the complete M
 | Fund profile | Basic NAV/ISIN/performance detail | Factsheet, AUM, expense ratio, manager, benchmark, exit load, documents and coverage view |
 | Research | NAV-derived CAGR/volatility/drawdown and ratios | Full verified historical NAV, calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
-| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL entry, transaction history and audited void UI (this PR; end-to-end pending) | Holdings-level allocation/gain/loss, cashflow/XIRR dashboard and multi-portfolio overview |
+| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL, transaction history, audited void, holdings breakdown, cost basis, realized/unrealized/total gain-loss and conditional XIRR (this PR; end-to-end pending) | Allocation visuals, cashflow attribution, multi-portfolio overview and tax/exit-load-aware performance |
 | Rebalance | Target-weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
 | Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
 | Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
@@ -55,4 +55,4 @@ The repository has a useful backend foundation, but it is not yet the complete M
 - CI success proves only the commit and tests actually run in CI; it does not prove live Supabase settings, SMTP delivery or real browser sign-up.
 - Setting Render environment variables triggers a deployment but does not prove that the expected commit is live.
 - No test account was created and no production portfolio/NAV records were modified for this audit.
-- Latest branch UI changes require the current CI run and live browser verification before merge/deploy.
+- CI run #535 passed SQLite and PostgreSQL tests and JavaScript syntax checks on commit `1b4e465fa7f83f6763b4de0e32b2f8d93d4a5c43`. A subsequent one-line rounding refinement to per-holding P/L is not included in that run. Live browser verification is still required before merge/deploy.
