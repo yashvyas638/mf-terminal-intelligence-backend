@@ -118,12 +118,7 @@ def test_history_batch_startup_hook_runs_only_bounded_batch(monkeypatch):
     monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
     monkeypatch.setattr(
         main,
-        "history_backfill_status",
-        lambda: {"groups": [{"checkpoint_status": "complete", "windows": 1}]},
-    )
-    monkeypatch.setattr(
-        main,
-        "_refresh_research_snapshots_after_ingestion",
+        "_maybe_refresh_research_after_history_completion",
         lambda: {"status": "refreshed"},
     )
     expected["research_snapshot_refresh"] = {"status": "refreshed"}
@@ -292,12 +287,7 @@ def test_history_batch_startup_hook_accepts_large_bounded_run(monkeypatch):
     monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
     monkeypatch.setattr(
         main,
-        "history_backfill_status",
-        lambda: {"groups": [{"checkpoint_status": "complete", "windows": 1}]},
-    )
-    monkeypatch.setattr(
-        main,
-        "_refresh_research_snapshots_after_ingestion",
+        "_maybe_refresh_research_after_history_completion",
         lambda: {"status": "refreshed"},
     )
     result = main._maybe_run_historical_backfill_batch_from_environment()
