@@ -64,6 +64,8 @@ from app.fund_taxonomy import (
     canonical_asset_class,
     canonical_group,
     canonical_subcategory,
+    scheme_group_filter_values,
+    subcategory_filter_values,
 )
 
 logger = logging.getLogger("mf_terminal.nav")
@@ -649,14 +651,17 @@ def list_schemes(
                 )
         for column, value in (
             (Scheme.amc, amc),
-            (Scheme.category_group, category_group),
-            (Scheme.category, sub_category or category),
             (Scheme.asset_class, asset_class),
             (Scheme.plan_type, plan_type),
             (Scheme.option_type, option_type),
         ):
             if value and value.strip():
                 query = query.where(column.ilike(value.strip()[:120]))
+        if category_group:
+            query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+        selected_subcategory = sub_category or category
+        if selected_subcategory:
+            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, selected_subcategory)))
         total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
         latest_id = (
             select(NavObservation.id)
@@ -1085,9 +1090,10 @@ def fund_screener(
                     Scheme.isin_dividend_reinvestment.ilike(pattern),
                 ))
         if category_group:
-            query = query.where(Scheme.category_group == category_group)
-        if sub_category or category:
-            query = query.where(Scheme.category == (sub_category or category))
+            query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+        selected_subcategory = sub_category or category
+        if selected_subcategory:
+            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, selected_subcategory)))
         if asset_class:
             query = query.where(Scheme.asset_class == asset_class)
         if plan_type:
