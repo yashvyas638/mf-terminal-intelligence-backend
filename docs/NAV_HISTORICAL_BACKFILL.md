@@ -22,9 +22,17 @@ The latest NAV report format is fixture-tested. This does not establish that the
 
 ## Current execution boundary
 
-- The service is currently a tested application service, not an operator-facing API or scheduled job.
+- The service is exposed through operator-key-protected plan/status/run routes, but it is not scheduled and no production backfill is enabled.
 - Both execution gates must remain closed until a real request captured from AMFI's official History form has been compared with the adapter for the same type and date range.
 - Planning a backfill makes no network requests and is safe to run in an isolated environment.
+
+## Operator API
+
+- `POST /v1/nav/backfill/plan`: creates checkpoints only; makes zero network requests.
+- `GET /v1/nav/backfill/status`: reports per-type/per-state window and reconciliation counts plus gate state.
+- `POST /v1/nav/backfill/run`: runs at most 20 windows per call and requires a valid server operator key plus both environment gates.
+- The run service defaults to disabled and unverified even when called directly; callers must deliberately pass both release gates.
+- Failed windows can be retried up to the configured attempt limit. A running checkpoint older than 30 minutes is recovered as failed so a crashed worker does not strand a window forever.
 
 ## Required next implementation gates
 
