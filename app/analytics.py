@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_right
 from datetime import date
+from decimal import Decimal
 from typing import Iterable
 
 
@@ -379,6 +380,111 @@ def portfolio_risk_metrics(
             "held constant over the lookback. Exact common dates only; no interpolation or "
             "forward-fill. Daily return pairs more than seven calendar days apart are excluded. "
             "Historical VaR/CVaR use the empirical lower 5% tail and are not forecasts."
+        ),
+    }
+
+
+def fifo_capital_gains(
+    transactions: Iterable[dict],
+    latest_nav_by_scheme: dict[int, Decimal],
+) -> dict:
+    """Match mutual-fund redemptions to acquisition lots using FIFO, without tax rates."""
+    ordered = sorted(
+        transactions,
+        key=lambda item: (item["transaction_date"], item.get("id", 0)),
+    )
+    open_lots: dict[int, list[dict]] = {}
+    realized_lots = []
+
+    for transaction in ordered:
+        scheme_code = int(transaction["scheme_code"])
+        transaction_type = transaction["transaction_type"]
+        transaction_date = transaction["transaction_date"]
+        units = Decimal(transaction["units"])
+        amount = Decimal(transaction["amount"])
+        charges = Decimal(transaction.get("charges", 0))
+        lots = open_lots.setdefault(scheme_code, [])
+
+        if transaction_type == "BUY":
+            total_cost = amount + charges
+            lots.append({
+                "buy_transaction_id": transaction.get("id"),
+                "buy_date": transaction_date,
+                "original_units": units,
+                "remaining_units": units,
+                "unit_cost": total_cost / units,
+            })
+            continue
+
+        if transaction_type != "SELL":
+            raise ValueError(f"unsupported transaction type: {transaction_type}")
+        available_units = sum((lot["remaining_units"] for lot in lots), Decimal("0"))
+        if units > available_units:
+            raise ValueError(f"sell transaction exceeds FIFO lots for scheme {scheme_code}")
+        net_proceeds = amount - charges
+        remaining_to_match = units
+        for lot in lots:
+            if remaining_to_match <= 0:
+                break
+            matched_units = min(lot["remaining_units"], remaining_to_match)
+            cost_basis = matched_units * lot["unit_cost"]
+            proceeds = net_proceeds * matched_units / units
+            realized_lots.append({
+                "scheme_code": scheme_code,
+                "buy_transaction_id": lot["buy_transaction_id"],
+                "sell_transaction_id": transaction.get("id"),
+                "buy_date": lot["buy_date"].isoformat(),
+                "sell_date": transaction_date.isoformat(),
+                "units": str(matched_units),
+                "cost_basis": str(cost_basis.quantize(Decimal("0.01"))),
+                "net_proceeds": str(proceeds.quantize(Decimal("0.01"))),
+                "realized_gain_loss": str((proceeds - cost_basis).quantize(Decimal("0.01"))),
+                "holding_period_days": (transaction_date - lot["buy_date"]).days,
+            })
+            lot["remaining_units"] -= matched_units
+            remaining_to_match -= matched_units
+
+    open_lot_rows = []
+    realized_total = Decimal("0")
+    unrealized_total = Decimal("0")
+    for item in realized_lots:
+        realized_total += Decimal(item["realized_gain_loss"])
+    for scheme_code, lots in open_lots.items():
+        latest_nav = latest_nav_by_scheme.get(scheme_code)
+        for lot in lots:
+            units = lot["remaining_units"]
+            if units <= 0:
+                continue
+            cost_basis = units * lot["unit_cost"]
+            market_value = units * latest_nav if latest_nav is not None else None
+            unrealized = market_value - cost_basis if market_value is not None else None
+            if unrealized is not None:
+                unrealized_total += unrealized
+            open_lot_rows.append({
+                "scheme_code": scheme_code,
+                "buy_transaction_id": lot["buy_transaction_id"],
+                "buy_date": lot["buy_date"].isoformat(),
+                "units": str(units),
+                "unit_cost": str(lot["unit_cost"].quantize(Decimal("0.00000001"))),
+                "cost_basis": str(cost_basis.quantize(Decimal("0.01"))),
+                "latest_nav": str(latest_nav) if latest_nav is not None else None,
+                "market_value": str(market_value.quantize(Decimal("0.01"))) if market_value is not None else None,
+                "unrealized_gain_loss": str(unrealized.quantize(Decimal("0.01"))) if unrealized is not None else None,
+                "holding_period_days": (date.today() - lot["buy_date"]).days,
+            })
+
+    return {
+        "realized_lots": realized_lots,
+        "open_lots": open_lot_rows,
+        "realized_gain_loss": str(realized_total.quantize(Decimal("0.01"))),
+        "unrealized_gain_loss": str(unrealized_total.quantize(Decimal("0.01"))),
+        "realized_lot_count": len(realized_lots),
+        "open_lot_count": len(open_lot_rows),
+        "tax_status": "TAX_RULES_NOT_APPLIED",
+        "tax_note": (
+            "FIFO acquisition lots and realized/unrealized gains are calculated before tax. "
+            "No tax liability is estimated until scheme tax classification and effective-dated "
+            "Indian tax rules are verified."
         ),
     }
 
