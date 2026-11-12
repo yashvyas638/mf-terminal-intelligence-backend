@@ -1,0 +1,1 @@
+"""MF Terminal Intelligence application package."""
