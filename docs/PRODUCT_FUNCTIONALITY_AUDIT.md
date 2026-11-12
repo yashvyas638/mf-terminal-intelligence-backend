@@ -79,3 +79,11 @@ The repository has a useful backend foundation, but it is not yet the complete M
 - Calendar-month comparisons use actual observed NAV values only; no weekend/holiday interpolation or dividend adjustment is performed.
 - The Research UI provides five broad SEBI group leaderboards with month, Direct/Regular and Growth/IDCW selectors.
 - Monthly leaderboards require a refreshed 365-day research snapshot containing monthly return history. Existing snapshots predate this field and remain readable; refresh is required to populate the new monthly cards.
+
+
+## Automatic research snapshot refresh
+
+- After a successful daily AMFI NAV ingestion commits, the service rebuilds the precomputed research snapshots used by Fund Screener and monthly category leaderboards.
+- A research snapshot rebuild failure is reported as `deferred` in the NAV refresh response and does not roll back accepted NAV ingestion.
+- Operator logs record the safe failure class and rebuild counts; no credentials or NAV payloads are logged.
+- The operator can still run the explicit snapshot refresh endpoint independently.
