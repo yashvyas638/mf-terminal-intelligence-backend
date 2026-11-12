@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
+from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
@@ -1715,3 +1715,38 @@ Open Ended Schemes(Equity Scheme - Large Cap Fund)
         assert scheme.category_group == "Equity Scheme"
         assert scheme.category == "Large Cap Fund"
         assert scheme.asset_class == "Equity"
+
+
+
+def test_production_portfolio_owner_guard_rejects_operator_key_without_user(monkeypatch):
+    """A valid shared operator key must not become a wildcard for private portfolios."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    init_db()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        portfolio = Portfolio(
+            owner_user_id="private-user-00000000-0000-0000-0000-000000000001",
+            name="Private production portfolio",
+            currency="INR",
+            created_at=now,
+        )
+        db.add(portfolio)
+        db.commit()
+        db.refresh(portfolio)
+        portfolio_id = portfolio.id
+
+        token = main._authenticated_user_id.set(None)
+        try:
+            with pytest.raises(main.HTTPException) as exc:
+                main._require_portfolio_owner(db, portfolio_id)
+            assert exc.value.status_code == 401
+        finally:
+            main._authenticated_user_id.reset(token)
+
+        token = main._authenticated_user_id.set("different-user-00000000-0000-0000-0000-000000000002")
+        try:
+            with pytest.raises(main.HTTPException) as exc:
+                main._require_portfolio_owner(db, portfolio_id)
+            assert exc.value.status_code == 404
+        finally:
+            main._authenticated_user_id.reset(token)
