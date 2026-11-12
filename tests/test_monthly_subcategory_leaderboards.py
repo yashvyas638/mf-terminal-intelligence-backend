@@ -46,6 +46,8 @@ def test_monthly_leaderboard_returns_top_funds_for_each_subcategory(monkeypatch)
                 plan_type="Direct Plan",
                 option_type="Growth Option",
             ))
+            # PostgreSQL enforces the scheme foreign key at insert time.
+            db.flush()
             db.add(FundResearchSnapshot(
                 scheme_code=code,
                 window_days=365,
