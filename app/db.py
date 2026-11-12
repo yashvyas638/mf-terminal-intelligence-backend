@@ -198,3 +198,17 @@ class PortfolioImportBatch(Base):
         Index("ix_portfolio_imported_at", "portfolio_id", "imported_at"),
         CheckConstraint("imported_count > 0", name="ck_portfolio_import_count_positive"),
     )
+
+
+class FundWatchlistItem(Base):
+    """One authenticated user's saved fund, independent from other users' lists."""
+
+    __tablename__ = "fund_watchlist_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scheme_code: Mapped[int] = mapped_column(ForeignKey("schemes.scheme_code", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "scheme_code", name="uq_fund_watchlist_owner_scheme"),
+        Index("ix_fund_watchlist_owner_created", "owner_user_id", "created_at"),
+    )
