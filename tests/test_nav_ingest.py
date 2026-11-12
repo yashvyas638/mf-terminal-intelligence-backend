@@ -92,3 +92,49 @@ def test_parses_expanded_amfi_eight_column_rows():
     assert report["unique_scheme_codes"] == 2
 
 
+
+
+def test_parses_official_amfi_amc_and_modern_category_headers():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+HDFC Mutual Fund
+Open Ended Schemes(Equity Scheme - Large Cap Fund)
+120586;INF109K01480;-;HDFC Large Cap Fund - Direct Plan - Growth;123.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    record = records[0]
+    assert record.amc == "HDFC Mutual Fund"
+    assert record.structure == "Open Ended"
+    assert record.category_group == "Equity Scheme"
+    assert record.category == "Large Cap Fund"
+    assert record.asset_class == "Equity"
+    assert record.metadata_present is True
+
+
+def test_maps_legacy_amfi_growth_header_to_broad_group_without_fake_subcategory():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+HDFC Mutual Fund
+Open Ended Schemes ( Growth )
+120586;INF109K01480;-;HDFC Growth Fund - Direct Plan - Growth;123.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    record = records[0]
+    assert record.category_group == "Equity Scheme"
+    assert record.category is None
+    assert record.asset_class == "Equity"
+
+
+def test_maps_debt_and_hybrid_headers_without_using_scheme_marketing_names():
+    debt, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Debt Scheme - Short Duration Fund)\\n"
+        "120586;INF109K01480;-;Power Select Opportunity Fund;123.4567;21-Oct-2026\\n"
+    )
+    hybrid, _ = parse_amfi_nav_text(
+        "Open Ended Schemes(Hybrid Scheme - Aggressive Hybrid Fund)\\n"
+        "120587;INF109K01498;-;PowerUp Growth Fund;23.4567;21-Oct-2026\\n"
+    )
+    assert debt[0].category_group == "Debt Scheme"
+    assert debt[0].category == "Short Duration Fund"
+    assert debt[0].asset_class == "Debt"
+    assert hybrid[0].category_group == "Hybrid Scheme"
+    assert hybrid[0].category == "Aggressive Hybrid Fund"
+    assert hybrid[0].asset_class == "Hybrid"
