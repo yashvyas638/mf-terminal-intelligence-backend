@@ -143,6 +143,7 @@ def apply_nav_quality_gates(
             "total_return",
             "cagr",
             "annualized_volatility",
+            "volatility",
             "sharpe_ratio",
             "sortino_ratio",
             "max_drawdown",
