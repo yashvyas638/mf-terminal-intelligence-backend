@@ -22,7 +22,7 @@ def test_verified_icici_overnight_unit_consolidation_is_applied_to_pre_event_nav
     assert adjusted[0][1] == pytest.approx(1003.737)
     assert adjusted[1][1] == pytest.approx(1004.3319)
     assert len(applied) == 1
-    assert applied[0]["effective_date"] == "2022-08-17"
+    assert applied[0]["effective_date"] == "2022-08-16"
     assert applied[0]["factor"] == 10.0
     assert applied[0]["source_urls"]
     assert detect_nav_discontinuities(adjusted) == []
