@@ -962,10 +962,10 @@ def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
     client = TestClient(app)
     csv_text = (
-        "IndexName,Date,Total Returns Index,Net Total Return Index\\n"
-        "NIFTY 50,01-Jan-2026,25000.00,24950.00\\n"
-        "NIFTY 50,02-Jan-2026,25100.00,25050.00\\n"
-        "NIFTY 50,05-Jan-2026,25200.00,25150.00\\n"
+        "IndexName,Date,Total Returns Index,Net Total Return Index\n"
+        "NIFTY 50,01-Jan-2026,25000.00,24950.00\n"
+        "NIFTY 50,02-Jan-2026,25100.00,25050.00\n"
+        "NIFTY 50,05-Jan-2026,25200.00,25150.00\n"
     )
     payload = {
         "benchmark_code": "NIFTY_50_TRI",
