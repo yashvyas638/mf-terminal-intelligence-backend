@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.db import (
@@ -74,7 +75,7 @@ def test_nav_and_checkpoint_complete_commit_together(factory):
 def test_failed_nav_write_rolls_back_snapshot_scheme_and_checkpoint(factory):
     checkpoint_id = _seed(factory)
     bad = _record(Decimal("-1"))
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):
         persist_historical_nav_window(
             checkpoint_id, [bad], _report(), datetime.now(timezone.utc),
             session_factory=factory,
