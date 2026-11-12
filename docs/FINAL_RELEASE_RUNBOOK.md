@@ -34,6 +34,7 @@ The migrations are forward-only for financial evidence: downgrades deliberately 
 - [ ] Take a fresh Supabase backup and record its timestamp/reference.
 - [ ] Verify the backup restore in an isolated non-production project.
 - [ ] In a private Render environment inspection, identify the actual PostgreSQL role used by the backend. Do not disclose the connection string.
+- [ ] Confirm the deployed candidate includes the startup guard that queries `current_user` and rejects `anon`/`authenticated`; this guard is a fail-closed defence, not a substitute for private Render role inspection.
 - [ ] Confirm Render uses a direct server-side PostgreSQL connection as a trusted backend role, not `anon`, `authenticated`, or an untrusted Data API path.
 - [ ] Verify all objects requiring least privilege are owned/created by the expected migration role. Migration 0004 default privileges cover future objects created by `postgres`; other object-creating roles need a separate grant audit.
 - [ ] Confirm RLS and API grants intentionally match the single-operator architecture. Do not enable multi-user exposure: portfolio ownership/JWT/RLS is not implemented.
