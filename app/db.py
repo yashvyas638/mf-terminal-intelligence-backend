@@ -320,6 +320,36 @@ class SchemeBenchmarkAssignment(Base):
     )
 
 
+class PortfolioGoal(Base):
+    """Private goal inputs and user-supplied projection assumptions."""
+
+    __tablename__ = "portfolio_goals"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    target_amount_today: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False)
+    target_date: Mapped[object] = mapped_column(Date, nullable=False)
+    current_amount: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False, default=0)
+    monthly_contribution: Mapped[object] = mapped_column(Numeric(20, 2), nullable=False, default=0)
+    inflation_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.06)
+    annual_return_low: Mapped[float] = mapped_column(Float, nullable=False)
+    annual_return_base: Mapped[float] = mapped_column(Float, nullable=False)
+    annual_return_high: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("target_amount_today > 0", name="ck_goal_target_positive"),
+        CheckConstraint("current_amount >= 0", name="ck_goal_current_nonnegative"),
+        CheckConstraint("monthly_contribution >= 0", name="ck_goal_contribution_nonnegative"),
+        CheckConstraint("inflation_rate BETWEEN 0 AND 0.20", name="ck_goal_inflation_bounds"),
+        CheckConstraint("annual_return_low BETWEEN -0.20 AND 0.30", name="ck_goal_return_low_bounds"),
+        CheckConstraint("annual_return_base BETWEEN -0.20 AND 0.35", name="ck_goal_return_base_bounds"),
+        CheckConstraint("annual_return_high BETWEEN -0.20 AND 0.40", name="ck_goal_return_high_bounds"),
+        CheckConstraint("annual_return_low <= annual_return_base AND annual_return_base <= annual_return_high", name="ck_goal_return_scenarios_order"),
+        Index("ix_portfolio_goal_owner_target_date", "owner_user_id", "target_date"),
+    )
+
+
 class FundHoldingDisclosure(Base):
     """Immutable source snapshot for one scheme's dated portfolio disclosure."""
 
