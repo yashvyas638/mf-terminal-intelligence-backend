@@ -7,10 +7,10 @@ from app.nav_backfill import HistoryWindow
 
 
 HISTORY_FIXTURE = (
-    "Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;"
-    "Net Asset Value;Repurchase Price;Sale Price;Date\n"
-    "119551;Example Equity Fund - Direct Growth;INF204K01K15;INF204K01K23;"
-    "89.1234;85.0000;89.1234;21-Oct-2026\n"
+    "Scheme Code;NAV Name;Plan;Option;ISIN Div Payout/ISIN Growth;"
+    "ISIN Div Reinvestment;Net Asset Value;Date\n"
+    "119551;Example Equity Fund - Direct Growth;Direct Plan;GROWTH;"
+    "INF204K01K15;INF204K01K23;89.1234;21-Oct-2026\n"
 )
 
 
@@ -58,6 +58,8 @@ def test_fetch_parses_history_and_records_request_provenance(monkeypatch):
     records, report = source.fetch_amfi_history_window(window, 1)
     assert len(records) == 1
     assert records[0].scheme_code == 119551
+    assert records[0].plan_type == "Direct Plan"
+    assert records[0].option_type == "GROWTH"
     assert report["scheme_type"] == 1
     assert report["requested_start_date"] == "2026-10-20"
     assert report["requested_end_date"] == "2026-10-25"
