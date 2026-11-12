@@ -52,6 +52,21 @@ MAX_NAV_STALENESS_DAYS = int(os.getenv("MAX_NAV_STALENESS_DAYS", "7"))
 _refresh_lock = threading.Lock()
 NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
+
+def _verify_trusted_database_role(db: Any) -> str:
+    """Fail closed when production connects through a Supabase client role."""
+    role_value = db.execute(text("SELECT current_user")).scalar_one()
+    role = str(role_value or "").strip().lower()
+    if not role:
+        raise RuntimeError("Unable to identify the production PostgreSQL connection role")
+    if role in {"anon", "authenticated"}:
+        raise RuntimeError(
+            "Production DATABASE_URL must use a trusted server-side PostgreSQL role; "
+            "Supabase client roles are not permitted"
+        )
+    return role
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # Production schema changes are exclusively Alembic-managed by the Render start command.
@@ -68,6 +83,7 @@ async def lifespan(_: FastAPI):
         # Never create or mutate the production schema here; Alembic owns migrations.
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
+            _verify_trusted_database_role(db)
     else:
         init_db()
     yield
