@@ -2,17 +2,17 @@
 
 ## Executive finding
 
-The repository currently contains a useful backend foundation and a small dashboard. It is not yet the full Mutual Fund Intelligence Terminal described in the product blueprint. Authentication controls exist in the browser, but end-to-end onboarding depends on Supabase Auth provider, email confirmation, redirect allow-list and email delivery settings. Those dashboard settings are not verified by the connected project tools.
+The repository has a useful backend foundation, but it is not yet the complete Mutual Fund Intelligence Terminal in the product blueprint. This branch adds missing authentication and portfolio workflows. Those browser changes are not production-verified until latest CI, deployment and real browser tests pass.
 
-## Authentication: observed state
+## Authentication
 
-- Browser calls Supabase JS signUp, signInWithPassword, signOut and session restore.
-- Backend validates protected API bearer tokens against Supabase Auth /auth/v1/user.
-- Render requires SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY; both were set using the same project URL and public publishable key already referenced by the browser app.
-- The UI had no form submit handler, so Enter-key sign-in was not wired.
-- Auth state listener updated button visibility but did not reliably trigger workspace hydration after auth events.
-- No password-reset entry point existed.
-- Email confirmation relies on the Render app origin being configured as the Supabase Site URL / allowed redirect URL and on working email delivery.
+- Main dashboard and Research Terminal use Supabase email/password authentication.
+- Sign-in is a form (Enter submits); email and password are validated before requests.
+- Sign-up confirmation messaging, password-reset email, password update, sign-out and session restoration are implemented.
+- Auth state changes hydrate the Research Terminal workspace; the dashboard clears private portfolio and transaction UI state on sign-out.
+- Supabase Auth logs for recent failed attempts showed requests with missing email/phone fields. The Research Terminal's previous controls did not validate credentials; this branch now blocks blank/invalid credentials before sending the request.
+- Backend validates protected bearer tokens against Supabase Auth `/auth/v1/user`.
+- Render environment variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` were set. Live Supabase Email provider, Site URL, redirect allow-list, SMTP delivery and real browser confirmation/reset still require verification.
 
 ## Implemented API capabilities (not equivalent to complete UI)
 
@@ -20,36 +20,39 @@ The repository currently contains a useful backend foundation and a small dashbo
 - Single-scheme performance/research metrics, screener and 2–10 scheme comparison.
 - Portfolio create/list, transaction create/list, statement CSV preview/import, void/audit, valuation and rebalance preview.
 - User ownership checks and PostgreSQL RLS foundations.
-- Latest NAV feed parser/ingestion and durable historical backfill planning/checkpoint/persistence foundations.
+- Latest NAV feed parser/ingestion and historical backfill planner, checkpoint and atomic persistence foundations.
+- GitHub Actions daily latest-NAV refresh schedule is configured for Monday–Saturday at 17:15 UTC (22:45 IST). Required repository secrets and successful scheduled runs are not independently verified here.
+- Historical NAV HTTP adapter is not enabled: AMFI's official page states a maximum 90-day download window, but the exact request parameters and response contract still need a live official-form capture and fixture validation.
 
 ## Major product gaps
 
 | Area | Current state | Missing before product-grade |
 |---|---|---|
-| Authentication | Basic email/password controls | Verified provider settings, confirmation/reset flow, robust states, real two-account E2E |
+| Authentication | Dashboard and Research Terminal flows implemented in this PR; live E2E pending | Verified provider settings, email delivery, redirect configuration and two-account browser test |
 | Home | Basic metrics and data health | Portfolio-first command centre, alerts, activity and actionable insights |
-| Fund Explorer | Basic text search and 30-row page | Filters, pagination, AMC/category/plan/option/benchmark metadata, watchlist |
-| Fund profile | Basic NAV/ISIN/performance detail | Factsheet, AUM, expense ratio, manager, benchmark, exit load, documents and history coverage |
-| Research | NAV-derived CAGR/volatility/drawdown and ratios | Verified full historical NAV, rolling/calendar returns, benchmark TRI, peer context and methodology UI |
+| Fund Explorer | Basic text search and 30-row page | Filters, pagination, AMC/category/plan/option/benchmark metadata and watchlist |
+| Fund profile | Basic NAV/ISIN/performance detail | Factsheet, AUM, expense ratio, manager, benchmark, exit load, documents and coverage view |
+| Research | NAV-derived CAGR/volatility/drawdown and ratios | Full verified historical NAV, calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
-| Portfolio | Create/list, valuation, statement import, manual BUY/SELL entry, transaction-history UI and audited void action (added in current auth/product PR; end-to-end pending) | Holdings-level allocation/gain-loss presentation, cashflow/XIRR dashboard, holdings-level allocation/gain-loss presentation, cashflow/XIRR dashboard and multi-portfolio overview |
-| Rebalance | Target weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
+| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL entry, transaction history and audited void UI (this PR; end-to-end pending) | Holdings-level allocation/gain/loss, cashflow/XIRR dashboard and multi-portfolio overview |
+| Rebalance | Target-weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
 | Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
 | Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
 | Goals/tax/reports | Not implemented | Goal tracking, tax lots, capital-gains reports and exports |
 | AI research | Not implemented | Source-linked assistant, citations, explainability and report builder |
-| Operations | CI, migrations, basic deployment | Source freshness alerts, coverage dashboard, backup/restore drill, operator controls and production E2E |
+| Operations | CI, migrations, daily NAV workflow and basic deployment | Verified scheduled runs, historical coverage dashboard, freshness alerts, backup/restore drill, operator controls and production E2E |
 
 ## Priority order
 
-1. P0-A Auth release gate: Render env, Supabase Email provider, Site URL, allowed redirect, SMTP/delivery, sign-up confirmation, sign-in, reset, sign-out, session refresh and two-user isolation.
-2. P0-B Product workflow gate: authenticated first-run empty state; create portfolio; add holding/transaction; import preview/confirm; valuation; transaction history; sign out/in and verify persistence.
-3. P0-C Data gate: official AMFI historical request contract, historical coverage by scheme, idempotent replay, correction provenance, freshness and reconciliation.
-4. P1 Fund research: fund master enrichment, history, rolling returns, benchmark TRI, peer comparisons and screener UI.
-5. P2–P6: holdings overlap, macro/stress, optimisation, tax/goals/reports, AI research and production hardening.
+1. **P0-A Auth release gate:** Render environment, Supabase Email provider, Site URL, allowed redirects, SMTP/delivery, sign-up confirmation, sign-in, reset, sign-out, session refresh and two-user isolation.
+2. **P0-B Product workflow gate:** authenticated first-run empty state; create portfolio; add BUY/SELL; import preview/confirm; valuation; transaction history and audited void; sign out/in and verify persistence.
+3. **P0-C Data gate:** official AMFI historical request contract, historical coverage by scheme, idempotent replay, correction provenance, freshness and reconciliation.
+4. **P1 Fund research:** fund master enrichment, history, rolling/calendar returns, benchmark TRI, peer comparisons and screener UI.
+5. **P2–P6:** holdings overlap, macro/stress, optimisation, tax/goals/reports, AI research and production hardening.
 
 ## Evidence boundaries
 
-- CI success proves tests in CI only; it does not prove live Supabase Auth settings, SMTP delivery or real browser sign-up.
-- Setting Render environment variables triggers a deployment but does not prove the resulting deployment is live.
-- No test account was created and no production portfolio/NAV records were modified for this audit.\n- Research Terminal authentication now validates email/password before calling Supabase; sign-in supports Enter, sign-up confirmation messaging, password reset/update and auth-event workspace hydration. The main dashboard clears private portfolio UI state on sign-out.\n- Portfolio Lab now includes manual BUY/SELL transaction entry with units × NAV amount calculation and transaction-history display. These new browser workflows require CI on the latest branch SHA and live browser verification; they are not yet production-verified.
+- CI success proves only the commit and tests actually run in CI; it does not prove live Supabase settings, SMTP delivery or real browser sign-up.
+- Setting Render environment variables triggers a deployment but does not prove that the expected commit is live.
+- No test account was created and no production portfolio/NAV records were modified for this audit.
+- Latest branch UI changes require the current CI run and live browser verification before merge/deploy.
