@@ -69,3 +69,13 @@ The repository has a useful backend foundation, but it is not yet the complete M
 - Setting Render environment variables triggers a deployment but does not prove that the expected commit is live.
 - No test account was created and no production portfolio/NAV records were modified for this audit.
 - CI run #535 passed SQLite and PostgreSQL tests and JavaScript syntax checks on commit `1b4e465fa7f83f6763b4de0e32b2f8d93d4a5c43`. A subsequent one-line rounding refinement to per-holding P/L is not included in that run. Live browser verification is still required before merge/deploy.
+
+
+## Monthly and category-relative fund rankings
+
+- The Fund Screener exposes 1M, 3M, 6M, 1Y, 3Y and 5Y NAV-only return columns when the selected research window contains sufficient history.
+- Each screener row includes a rank within the same stored scheme group, sub-category, plan and option, alongside the global filtered rank.
+- The Monthly Category Leaders endpoint ranks completed calendar-month returns by broad SEBI scheme group and exposes prior-month within-subcategory rank movement.
+- Calendar-month comparisons use actual observed NAV values only; no weekend/holiday interpolation or dividend adjustment is performed.
+- The Research UI provides five broad SEBI group leaderboards with month, Direct/Regular and Growth/IDCW selectors.
+- Monthly leaderboards require a refreshed 365-day research snapshot containing monthly return history. Existing snapshots predate this field and remain readable; refresh is required to populate the new monthly cards.
