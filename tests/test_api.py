@@ -1013,7 +1013,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
                 first_seen_at=now,
                 last_seen_at=now,
                 category_group=None if code == scheme_codes[3] else "Equity Scheme",
-                category=None if code == scheme_codes[3] else "Flexi Cap Fund",
+                category=None if code == scheme_codes[3] else "CI Test Category",
                 asset_class=None if code == scheme_codes[3] else "Equity",
                 plan_type="Direct",
                 option_type="Growth",
