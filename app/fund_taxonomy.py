@@ -21,7 +21,7 @@ SUBCATEGORIES_BY_GROUP = {
     "Equity Scheme": frozenset({
         "Multi Cap Fund", "Large Cap Fund", "Large & Mid Cap Fund",
         "Mid Cap Fund", "Small Cap Fund", "Flexi Cap Fund",
-        "Dividend Yield Fund", "Value Fund", "Contra Fund", "Focused Fund",
+        "Dividend Yield Fund", "Value Fund", "Contra Fund", "Focused Fund (No. of Stocks)",
         "Sectoral Fund", "Thematic Fund", "ELSS Tax Saver Fund",
     }),
     "Debt Scheme": frozenset({
@@ -36,8 +36,8 @@ SUBCATEGORIES_BY_GROUP = {
     "Hybrid Scheme": frozenset({
         "Conservative Hybrid Fund", "Balanced Hybrid Fund",
         "Aggressive Hybrid Fund", "Dynamic Asset Allocation Fund",
-        "Multi Asset Allocation Fund",
-        "Arbitrage Fund", "Equity Savings Fund",
+        "Multi Asset Allocation",
+        "Arbitrage Fund", "Equity Savings",
     }),
     "Life Cycle Funds": frozenset(),
     "Other Schemes": frozenset({
