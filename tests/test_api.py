@@ -987,7 +987,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     init_db()
     now = datetime.now(timezone.utc)
     as_of = date(2026, 11, 10)
-    scheme_codes = (999983, 999984)
+    scheme_codes = (999983, 999984, 999982)
     with SessionLocal() as db:
         snapshot = IngestionSnapshot(
             source_url="https://example.test/nav",
@@ -1004,7 +1004,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
         )
         db.add(snapshot)
         db.flush()
-        for code, name in ((scheme_codes[0], "Global Rank Alpha"), (scheme_codes[1], "Global Rank Beta")):
+        for code, name in ((scheme_codes[0], "Global Rank Alpha"), (scheme_codes[1], "Global Rank Beta"), (scheme_codes[2], "Global Rank Stale")):
             db.add(Scheme(
                 scheme_code=code,
                 scheme_name=name,
@@ -1031,6 +1031,13 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
                 nav_value=Decimal(str(100 + index * 0.10)),
                 source_snapshot_id=snapshot.id,
             ))
+            stale_nav_date = as_of - timedelta(days=21 + 400 - index)
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_codes[2],
+                nav_date=stale_nav_date,
+                nav_value=Decimal(str(100 + index * 0.20)),
+                source_snapshot_id=snapshot.id,
+            ))
         db.add_all(nav_rows)
         db.commit()
 
@@ -1043,6 +1050,8 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     assert result["status"] == "refreshed"
     assert result["schemes_processed"] >= 2
     assert result["snapshot_rows_written"] == result["schemes_processed"] * 4
+    with SessionLocal() as db:
+        assert db.query(FundResearchSnapshot).filter_by(scheme_code=scheme_codes[2]).count() == 0
 
     first_page = client.get(
         "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=0",
