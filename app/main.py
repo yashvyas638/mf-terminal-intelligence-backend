@@ -199,6 +199,17 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
         raise RuntimeError("Historical NAV stale-worker threshold must be an integer") from exc
     if not 1 <= stale_after_minutes <= 240:
         raise RuntimeError("Historical NAV stale-worker threshold must be between 1 and 240 minutes")
+    configured_stale_after_minutes = stale_after_minutes
+    # AMFI history requests have a 60-second read timeout and bounded retries.
+    # A one- or two-minute lease can reclaim a healthy in-flight request during
+    # rolling deploys. Keep a safe minimum lease while retaining operator tuning.
+    stale_after_minutes = max(15, stale_after_minutes)
+    if stale_after_minutes != configured_stale_after_minutes:
+        logger.warning(
+            "amfi_history_stale_lease_clamped configured_minutes=%s effective_minutes=%s",
+            configured_stale_after_minutes,
+            stale_after_minutes,
+        )
 
     selected = completed = failed = 0
     results: list[dict[str, Any]] = []
@@ -244,6 +255,8 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
             "failed": failed,
             "batch_limit": limit,
             "max_windows_per_start": max_windows,
+            "configured_stale_after_minutes": configured_stale_after_minutes,
+            "effective_stale_after_minutes": stale_after_minutes,
             "first_error_class": first_failure.get("error_class"),
             "first_error_detail": first_failure.get("error_detail"),
         },

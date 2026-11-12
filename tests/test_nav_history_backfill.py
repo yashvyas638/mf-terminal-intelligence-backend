@@ -176,25 +176,14 @@ def test_stale_running_checkpoint_is_recovered_after_worker_crash(factory):
         enabled=True,
         source_contract_verified=True,
     )
-    assert recovered["selected"] == 0
-    with factory() as db:
-        checkpoint = db.execute(select(NavBackfillCheckpoint)).scalar_one()
-        assert checkpoint.status == "failed"
-        assert checkpoint.error_class == "StaleWorkerRecovery"
-
-    resumed = run_history_backfill_batch(
-        fetcher=lambda window, scheme_type: ([_record()], _report()),
-        session_factory=factory,
-        now_factory=lambda: now,
-        max_attempts=2,
-        enabled=True,
-        source_contract_verified=True,
-    )
-    assert resumed["completed"] == 1
+    # The abandoned claim is refunded and retried in the same bounded batch.
+    assert recovered["selected"] == 1
+    assert recovered["completed"] == 1
     with factory() as db:
         checkpoint = db.execute(select(NavBackfillCheckpoint)).scalar_one()
         assert checkpoint.status == "complete"
-        assert checkpoint.attempts == 2
+        assert checkpoint.error_class is None
+        assert checkpoint.attempts == 1
 
 
 
@@ -239,7 +228,7 @@ def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint
         first.completed_at = datetime(2026, 11, 12, tzinfo=timezone.utc)
 
     result = create_storage_optimized_history_plan(
-        date(2021, 11, 12),
+        date(2021, 10, 1),
         date(2026, 11, 11),
         date(2021, 11, 19),
         date(2025, 11, 1),
@@ -247,33 +236,46 @@ def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint
         session_factory=factory,
     )
     assert result["checkpoints_paused"] == 782
+    assert result["baseline_daily_windows_per_scheme_type"] == 7
     assert result["monthly_windows_per_scheme_type"] == 48
     assert result["daily_windows_per_scheme_type"] == 54
-    assert result["checkpoints_created"] == 306
-    assert result["completed_checkpoints_preserved"] == 0
+    assert result["checkpoints_created"] == 324
+    assert result["checkpoints_reactivated"] == 2
+    assert result["completed_checkpoints_preserved"] == 1
 
     with factory() as db:
         rows = db.execute(select(NavBackfillCheckpoint)).scalars().all()
-        assert len(rows) == 783 + 306
+        assert len(rows) == 783 + 324
         complete = [row for row in rows if row.status == "complete"]
         paused = [row for row in rows if row.status == "paused"]
         pending = [row for row in rows if row.status == "pending"]
         assert len(complete) == 1
-        assert len(paused) == 782
-        assert len(pending) == 306
+        assert len(paused) == 780
+        assert len(pending) == 326
         assert sum(row.sampling_mode == "month_end" and row.status == "pending" for row in rows) == 144
-        assert sum(row.sampling_mode == "daily" and row.status == "pending" for row in rows) == 162
+        assert sum(row.sampling_mode == "daily" and row.status == "pending" for row in rows) == 182
 
 
 def test_month_end_batch_persists_only_latest_observation_per_scheme_month(factory):
     create_storage_optimized_history_plan(
-        date(2021, 11, 12),
+        date(2021, 10, 1),
         date(2026, 11, 11),
         date(2021, 11, 19),
         date(2025, 11, 1),
         (1,),
         session_factory=factory,
     )
+    # Isolate the month-end sampler test from the full-resolution baseline batch.
+    with factory.begin() as db:
+        baseline = db.execute(
+            select(NavBackfillCheckpoint).where(
+                NavBackfillCheckpoint.sampling_mode == "daily",
+                NavBackfillCheckpoint.start_date < date(2021, 11, 19),
+            )
+        ).scalars().all()
+        for checkpoint in baseline:
+            checkpoint.status = "complete"
+            checkpoint.completed_at = datetime(2026, 11, 12, tzinfo=timezone.utc)
     source_records = [
         SimpleNamespace(
             scheme_code=119551,

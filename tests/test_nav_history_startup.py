@@ -132,16 +132,17 @@ def test_history_plan_startup_hook_supports_storage_optimized_hybrid_mode(monkey
     monkeypatch.setenv("AMFI_HISTORY_PLAN_ON_START", "true")
     monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
     monkeypatch.setenv("AMFI_HISTORY_PLAN_MODE", "hybrid")
-    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_START_DATE", "2021-11-12")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_START_DATE", "2021-10-01")
     monkeypatch.setenv("AMFI_HISTORY_BACKFILL_END_DATE", "2026-11-11")
     monkeypatch.setenv("AMFI_HISTORY_MONTHLY_START_DATE", "2021-11-19")
     monkeypatch.setenv("AMFI_HISTORY_DAILY_START_DATE", "2025-11-01")
     expected = {
         "status": "planned",
+        "baseline_daily_windows_per_scheme_type": 7,
         "monthly_windows_per_scheme_type": 48,
         "daily_windows_per_scheme_type": 54,
         "checkpoints_paused": 782,
-        "checkpoints_created": 306,
+        "checkpoints_created": 324,
         "network_requests_made": 0,
     }
     calls = []
@@ -155,7 +156,7 @@ def test_history_plan_startup_hook_supports_storage_optimized_hybrid_mode(monkey
 
     assert result == expected
     assert calls == [(
-        date(2021, 11, 12),
+        date(2021, 10, 1),
         date(2026, 11, 11),
         date(2021, 11, 19),
         date(2025, 11, 1),
@@ -219,7 +220,7 @@ def test_history_batch_startup_hook_passes_configured_stale_threshold(monkeypatc
         "limit": 3,
         "enabled": True,
         "source_contract_verified": True,
-        "stale_after_minutes": 2,
+        "stale_after_minutes": 15,
     }]
 
 
