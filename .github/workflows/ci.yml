@@ -247,6 +247,8 @@ jobs:
               "min_nav_date": report["min_nav_date"],
               "max_nav_date": report["max_nav_date"],
               "invalid_rows": report["invalid_rows"],
+              "invalid_issue_counts": report["invalid_issue_counts"],
+              "invalid_issues_sample": report["issues_sample"][:10],
               "duplicate_rows_skipped": report["duplicate_rows_skipped"],
               "payload_sha256": hashlib.sha256(response.content).hexdigest(),
               "database_writes": 0,
