@@ -227,7 +227,7 @@ def test_hybrid_plan_pauses_old_daily_windows_and_preserves_completed_checkpoint
         first.status = "complete"
         first.completed_at = datetime(2026, 11, 12, tzinfo=timezone.utc)
 
-    result = create_storage_optimized_history_plan(
+    create_storage_optimized_history_plan(
         date(2021, 10, 1),
         date(2026, 11, 11),
         date(2021, 11, 19),
