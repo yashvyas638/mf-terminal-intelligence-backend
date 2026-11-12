@@ -1694,6 +1694,7 @@ def import_fund_holdings_csv(
         if existing is not None:
             return {
                 "status": "already_imported",
+                "verification_status": existing.verification_status,
                 "disclosure_id": existing.id,
                 "scheme_code": existing.scheme_code,
                 "as_of_date": existing.as_of_date.isoformat(),
@@ -1719,6 +1720,7 @@ def import_fund_holdings_csv(
             retrieved_at=retrieved_at,
             row_count=len(points),
             total_weight_pct=Decimal(report["total_weight_pct"]),
+            verification_status="PENDING",
             supersedes_disclosure_id=supersedes.id if supersedes else None,
         )
         db.add(disclosure)
@@ -1744,6 +1746,7 @@ def import_fund_holdings_csv(
 
         return {
             "status": "imported",
+            "verification_status": disclosure.verification_status,
             "disclosure_id": disclosure.id,
             "scheme_code": disclosure.scheme_code,
             "as_of_date": disclosure.as_of_date.isoformat(),
@@ -1773,6 +1776,7 @@ def get_fund_holdings(
             .where(
                 FundHoldingDisclosure.scheme_code == scheme_code,
                 FundHoldingDisclosure.as_of_date <= cutoff,
+                FundHoldingDisclosure.verification_status == "VERIFIED",
             )
             .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
             .limit(1)
@@ -1839,6 +1843,7 @@ def compare_fund_holdings_overlap(
                 .where(
                     FundHoldingDisclosure.scheme_code == code,
                     FundHoldingDisclosure.as_of_date <= cutoff,
+                    FundHoldingDisclosure.verification_status == "VERIFIED",
                 )
                 .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
                 .limit(1)
