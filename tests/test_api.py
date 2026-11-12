@@ -996,6 +996,37 @@ def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(
     assert listed.status_code == 200
     assert any(item["benchmark_code"] == "NIFTY_50_TRI" for item in listed.json()["items"])
 
+    with SessionLocal() as db:
+        nav_snapshot = IngestionSnapshot(
+            source_url="https://example.test/nav",
+            retrieved_at=now,
+            payload_sha256="b" * 64,
+            records_valid=3,
+            unique_scheme_codes=1,
+            min_nav_date=date(2026, 1, 1),
+            max_nav_date=date(2026, 1, 5),
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(nav_snapshot)
+        db.flush()
+        db.add_all([
+            NavObservation(
+                scheme_code=scheme_code,
+                nav_date=observation_date,
+                nav_value=nav_value,
+                source_snapshot_id=nav_snapshot.id,
+            )
+            for observation_date, nav_value in (
+                (date(2026, 1, 1), "100.00"),
+                (date(2026, 1, 2), "101.00"),
+                (date(2026, 1, 5), "103.00"),
+            )
+        ])
+        db.commit()
+
     assignment_payload = {
         "scheme_code": scheme_code,
         "benchmark_code": "NIFTY_50_TRI",
@@ -1021,6 +1052,20 @@ def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(
     )
     assert verified.status_code == 200, verified.text
     assert verified.json()["verification_status"] == "VERIFIED"
+
+    comparison = client.get(
+        f"/v1/analytics/research/{scheme_code}/benchmark?days=3650",
+        headers=headers,
+    )
+    assert comparison.status_code == 200, comparison.text
+    comparison_json = comparison.json()
+    assert comparison_json["status"] == "OK"
+    assert len(comparison_json["comparisons"]) == 1
+    aligned = comparison_json["comparisons"][0]["metrics"]
+    assert aligned["common_observations"] == 3
+    assert aligned["fund_total_return"] == pytest.approx(0.03)
+    assert aligned["risk_statistics_status"] == "INSUFFICIENT_DAILY_OBSERVATIONS"
+    assert aligned["beta"] is None
 
     with SessionLocal() as db:
         benchmark = db.get(BenchmarkIndex, "NIFTY_50_TRI")
