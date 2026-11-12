@@ -1677,6 +1677,11 @@ def fund_screener(
             FundResearchSnapshot.window_days == days,
             FundResearchSnapshot.observations >= min_observations,
             FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
+            sort_column.is_not(None),
+            Scheme.category_group.is_not(None),
+            Scheme.category_group != "",
+            Scheme.category.is_not(None),
+            Scheme.category != "",
         )
         .subquery()
     )
@@ -1685,11 +1690,12 @@ def fund_screener(
         query = (
             select(FundResearchSnapshot, Scheme, category_ranked.c.category_rank)
             .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
-            .join(category_ranked, category_ranked.c.scheme_code == Scheme.scheme_code)
+            .outerjoin(category_ranked, category_ranked.c.scheme_code == Scheme.scheme_code)
             .where(
                 FundResearchSnapshot.window_days == days,
                 FundResearchSnapshot.observations >= min_observations,
                 FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
+                sort_column.is_not(None),
             )
         )
         if q:
@@ -1873,7 +1879,7 @@ def monthly_fund_leaderboard(
         current_value = monthly_map.get(selected_month)
         if current_value is not None:
             taxonomy = _scheme_taxonomy(scheme)
-            if not taxonomy.get("category_group"):
+            if not taxonomy.get("category_group") or not taxonomy.get("category"):
                 continue
             current_items.append({
                 "scheme_code": scheme.scheme_code,
@@ -1895,7 +1901,7 @@ def monthly_fund_leaderboard(
         if value is None:
             continue
         taxonomy = _scheme_taxonomy(scheme)
-        if not taxonomy.get("category_group"):
+        if not taxonomy.get("category_group") or not taxonomy.get("category"):
             continue
         key = (taxonomy.get("category_group"), taxonomy.get("category"), scheme.plan_type, scheme.option_type)
         previous_groups.setdefault(key, []).append({"scheme_code": scheme.scheme_code, "value": value})

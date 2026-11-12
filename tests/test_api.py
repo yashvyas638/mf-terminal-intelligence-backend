@@ -987,7 +987,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     init_db()
     now = datetime.now(timezone.utc)
     as_of = date(2026, 11, 10)
-    scheme_codes = (999983, 999984, 99999999)
+    scheme_codes = (999983, 999984, 99999999, 99999998)
     with SessionLocal() as db:
         snapshot = IngestionSnapshot(
             source_url="https://example.test/nav",
@@ -1004,7 +1004,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
         )
         db.add(snapshot)
         db.flush()
-        for code, name in ((scheme_codes[0], "Global Rank Alpha"), (scheme_codes[1], "Global Rank Beta"), (scheme_codes[2], "Global Rank Stale")):
+        for code, name in ((scheme_codes[0], "Global Rank Alpha"), (scheme_codes[1], "Global Rank Beta"), (scheme_codes[2], "Global Rank Stale"), (scheme_codes[3], "Global Rank Unclassified")):
             db.add(Scheme(
                 scheme_code=code,
                 scheme_name=name,
@@ -1012,6 +1012,9 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
                 isin_dividend_reinvestment=None,
                 first_seen_at=now,
                 last_seen_at=now,
+                category_group=None if code == scheme_codes[3] else "Equity Scheme",
+                category=None if code == scheme_codes[3] else "CI Test Category",
+                asset_class=None if code == scheme_codes[3] else "Equity",
                 plan_type="Direct",
                 option_type="Growth",
             ))
@@ -1036,6 +1039,12 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
                 scheme_code=scheme_codes[2],
                 nav_date=stale_nav_date,
                 nav_value=Decimal(str(100 + index * 0.20)),
+                source_snapshot_id=snapshot.id,
+            ))
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_codes[3],
+                nav_date=nav_date,
+                nav_value=Decimal(str(100 + index * 0.05)),
                 source_snapshot_id=snapshot.id,
             ))
         db.add_all(nav_rows)
@@ -1070,6 +1079,14 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     assert second["items"][0]["rank"] == 2
     assert first["items"][0]["scheme_code"] == scheme_codes[0]
     assert first["items"][0]["return_1y"] > second["items"][0]["return_1y"]
+    assert first["items"][0]["category_rank"] == 1
+    assert second["items"][0]["category_rank"] == 2
+    unclassified = client.get(
+        "/v1/analytics/screener?q=Global+Rank+Unclassified&days=365&sort_by=return_1y",
+        headers=headers,
+    )
+    assert unclassified.status_code == 200
+    assert unclassified.json()["items"][0]["category_rank"] is None
     assert "before pagination" in first["sorting_note"]
 
     ascending = client.get(
@@ -1077,7 +1094,8 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
         headers=headers,
     )
     assert ascending.status_code == 200
-    assert ascending.json()["items"][0]["scheme_code"] == scheme_codes[1]
+    assert ascending.json()["items"][0]["scheme_code"] == scheme_codes[3]
+    assert ascending.json()["items"][0]["category_rank"] is None
 
     filtered = client.get(
         "/v1/analytics/screener?days=365&plan_type=Direct&min_observations=300",
@@ -1085,6 +1103,13 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     )
     assert filtered.status_code == 200
     assert all(item["observations"] >= 300 for item in filtered.json()["items"])
+    insufficient_5y = client.get(
+        "/v1/analytics/screener?q=Global+Rank&days=1825&sort_by=return_5y",
+        headers=headers,
+    )
+    assert insufficient_5y.status_code == 200
+    assert insufficient_5y.json()["total_matching"] == 0
+
     invalid_window = client.get("/v1/analytics/screener?days=500", headers=headers)
     assert invalid_window.status_code == 422
 
