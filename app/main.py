@@ -81,7 +81,17 @@ NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 
 def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
     """Create idempotent history checkpoints only when an operator opts in via deploy env."""
-    if os.getenv("AMFI_HISTORY_PLAN_ON_START", "").strip().lower() != "true":
+    plan_enabled = os.getenv("AMFI_HISTORY_PLAN_ON_START", "").strip().lower() == "true"
+    if not plan_enabled:
+        logger.warning(
+            "amfi_history_backfill_plan_skipped",
+            extra={
+                "plan_on_start_enabled": False,
+                "source_contract_verified": os.getenv(
+                    "AMFI_HISTORY_CONTRACT_VERIFIED", ""
+                ).strip().lower() == "true",
+            },
+        )
         return None
     if os.getenv("AMFI_HISTORY_CONTRACT_VERIFIED", "").strip().lower() != "true":
         raise RuntimeError(
@@ -109,7 +119,7 @@ def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
         (1, 2, 3),
         max_window_days=7,
     )
-    logger.info(
+    logger.warning(
         "amfi_history_backfill_plan_created",
         extra={
             "checkpoints_created": result["checkpoints_created"],
