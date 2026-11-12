@@ -1518,6 +1518,8 @@ def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch)
     assert linked_projection.json()["current_amount_source"] == "LINKED_PORTFOLIO_MARKET_VALUE"
     assert linked_projection.json()["linked_portfolio"]["portfolio_id"] == owner_portfolio.json()["id"]
     assert linked_projection.json()["projection"]["current_amount"] == 1000.0
+    unlinked = client.put(f"/v1/goals/{goal_id}", headers=user_one, json=payload)
+    assert unlinked.status_code == 200
 
     projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
     assert projection.status_code == 200, projection.text
