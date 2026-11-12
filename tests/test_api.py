@@ -1,3 +1,4 @@
+import json
 import hashlib
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -1084,6 +1085,85 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
         ).all()
         assert len(persisted) >= 2
         assert all(item.metrics_json for item in persisted)
+
+
+def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movement(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    codes = (999961, 999962, 999963)
+    monthly = {
+        codes[0]: [{"month": "2026-09", "return": 0.03}, {"month": "2026-10", "return": 0.04}],
+        codes[1]: [{"month": "2026-09", "return": 0.08}, {"month": "2026-10", "return": 0.02}],
+        codes[2]: [{"month": "2026-09", "return": 0.02}, {"month": "2026-10", "return": -0.01}],
+    }
+    with SessionLocal() as db:
+        for index, code in enumerate(codes):
+            if db.get(Scheme, code) is None:
+                db.add(Scheme(
+                    scheme_code=code,
+                    scheme_name=f"Monthly Leaderboard Fund {index}",
+                    isin_growth=None,
+                    isin_dividend_reinvestment=None,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    plan_type="Direct",
+                    option_type="Growth",
+                    category_group="Equity Scheme",
+                    category="Flexi Cap Fund",
+                    asset_class="Equity",
+                ))
+        db.flush()
+        for code in codes:
+            db.add(FundResearchSnapshot(
+                scheme_code=code,
+                window_days=365,
+                nav_as_of_date=date(2026, 11, 10),
+                refreshed_at=now,
+                observations=250,
+                metrics_json=json.dumps({"monthly_returns": monthly[code]}),
+                return_1m=monthly[code][-1]["return"],
+                return_1y=0.12,
+                return_3y=None,
+                cagr=0.10,
+                volatility=0.15,
+                sharpe_ratio=0.8,
+                sortino_ratio=1.0,
+                max_drawdown=-0.12,
+                positive_month_rate=0.6,
+                rolling_1y_positive_rate=0.7,
+            ))
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    response = client.get(
+        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Equity+Scheme&sub_category=Flexi+Cap+Fund&plan_type=Direct&option_type=Growth&limit=3",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["month"] == "2026-10"
+    assert result["previous_month"] == "2026-09"
+    assert [item["scheme_code"] for item in result["items"]] == [codes[0], codes[1], codes[2]]
+    assert [item["category_rank"] for item in result["items"]] == [1, 2, 3]
+    assert result["items"][0]["rank_change"] == 1
+    assert result["items"][1]["rank_change"] == -1
+    assert result["items"][2]["rank_change"] == 0
+    assert "No interpolation" in result["methodology"]
+
+    future = client.get(
+        "/v1/analytics/monthly-leaderboard?month=2026-12",
+        headers=headers,
+    )
+    assert future.status_code == 422
+    invalid = client.get(
+        "/v1/analytics/monthly-leaderboard?month=2026-13",
+        headers=headers,
+    )
+    assert invalid.status_code == 422
+
+
 
 def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(monkeypatch):
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")

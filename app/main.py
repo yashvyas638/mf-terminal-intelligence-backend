@@ -967,6 +967,7 @@ def refresh_fund_research_snapshots(
                     "observations": rolling.get("observations", 0),
                     "positive_window_rate": rolling.get("positive_window_rate"),
                 },
+                "monthly_returns": metrics.get("monthly_returns", []) if window_days == 365 else [],
                 "methodology": "NAV-only research snapshot; no benchmark TRI or distribution adjustment.",
             }
             snapshot_rows.append(FundResearchSnapshot(
@@ -1071,11 +1072,32 @@ def fund_screener(
     }
     sort_column = sort_columns[sort_by]
     ordering = sort_column.desc().nullslast() if sort_order == "desc" else sort_column.asc().nullslast()
+    category_ranked = (
+        select(
+            FundResearchSnapshot.scheme_code.label("scheme_code"),
+            func.rank().over(
+                partition_by=(
+                    Scheme.category_group,
+                    Scheme.category,
+                    Scheme.plan_type,
+                    Scheme.option_type,
+                ),
+                order_by=ordering,
+            ).label("category_rank"),
+        )
+        .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+        .where(
+            FundResearchSnapshot.window_days == days,
+            FundResearchSnapshot.observations >= min_observations,
+        )
+        .subquery()
+    )
 
     with SessionLocal() as db:
         query = (
-            select(FundResearchSnapshot, Scheme)
+            select(FundResearchSnapshot, Scheme, category_ranked.c.category_rank)
             .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+            .join(category_ranked, category_ranked.c.scheme_code == Scheme.scheme_code)
             .where(
                 FundResearchSnapshot.window_days == days,
                 FundResearchSnapshot.observations >= min_observations,
@@ -1125,10 +1147,12 @@ def fund_screener(
             )
 
         items = []
-        for snapshot, scheme in rows:
+        for snapshot, scheme, within_category_rank in rows:
             metrics = json.loads(snapshot.metrics_json)
+            period_returns = metrics.get("period_returns") or {}
             items.append({
                 "rank": offset + len(items) + 1,
+                "category_rank": int(within_category_rank) if within_category_rank is not None else None,
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
                 **_scheme_taxonomy(scheme),
@@ -1138,8 +1162,11 @@ def fund_screener(
                 "nav_date": snapshot.nav_as_of_date.isoformat(),
                 "observations": snapshot.observations,
                 "return_1m": snapshot.return_1m,
+                "return_3m": period_returns.get("3M"),
+                "return_6m": period_returns.get("6M"),
                 "return_1y": snapshot.return_1y,
                 "return_3y": snapshot.return_3y,
+                "return_5y": period_returns.get("5Y"),
                 "cagr": snapshot.cagr,
                 "volatility": snapshot.volatility,
                 "sharpe_ratio": snapshot.sharpe_ratio,
@@ -1175,6 +1202,134 @@ def fund_screener(
                 "The as-of NAV date can differ by scheme; inspect nav_date and observations before comparing funds.",
             ],
         }
+
+
+@app.get("/v1/analytics/monthly-leaderboard")
+def monthly_fund_leaderboard(
+    month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
+    category_group: str | None = Query(default=None, max_length=80),
+    sub_category: str | None = Query(default=None, max_length=120),
+    plan_type: str = Query(default="Direct", pattern="^(Direct|Regular)$"),
+    option_type: str = Query(default="Growth", pattern="^(Growth|IDCW)$"),
+    limit: int = Query(default=3, ge=1, le=20),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Rank completed calendar-month NAV returns and show within-category rank movement."""
+    require_api_key(x_api_key)
+    current_month = date.today().replace(day=1)
+    previous_month_end = current_month - timedelta(days=1)
+    selected_month = month or previous_month_end.strftime("%Y-%m")
+    try:
+        selected_start = datetime.strptime(selected_month + "-01", "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(422, "month must be a valid YYYY-MM calendar month") from None
+    if selected_start >= current_month:
+        raise HTTPException(422, "Monthly leaderboard only includes completed calendar months")
+    previous_month = (selected_start.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+
+    with SessionLocal() as db:
+        query = (
+            select(FundResearchSnapshot, Scheme)
+            .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+            .where(
+                FundResearchSnapshot.window_days == 365,
+                Scheme.plan_type == plan_type,
+                Scheme.option_type == option_type,
+            )
+        )
+        if category_group:
+            query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+        if sub_category:
+            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, sub_category)))
+        latest_refresh = db.execute(
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(FundResearchSnapshot.window_days == 365)
+        ).scalar_one()
+        if latest_refresh is None:
+            raise HTTPException(503, "Monthly research snapshots are not ready. Refresh research snapshots first.")
+        rows = db.execute(query).all()
+
+    current_items: list[dict[str, Any]] = []
+    previous_returns: dict[int, float] = {}
+    for snapshot, scheme in rows:
+        try:
+            monthly_rows = json.loads(snapshot.metrics_json).get("monthly_returns") or []
+        except (TypeError, ValueError):
+            monthly_rows = []
+        monthly_map = {
+            str(item.get("month")): item.get("return")
+            for item in monthly_rows
+            if isinstance(item, dict) and item.get("month") and item.get("return") is not None
+        }
+        current_value = monthly_map.get(selected_month)
+        if current_value is not None:
+            taxonomy = _scheme_taxonomy(scheme)
+            if not taxonomy.get("category_group"):
+                continue
+            current_items.append({
+                "scheme_code": scheme.scheme_code,
+                "scheme_name": scheme.scheme_name,
+                **taxonomy,
+                "plan_type": scheme.plan_type,
+                "option_type": scheme.option_type,
+                "monthly_return": float(current_value),
+                "nav_date": snapshot.nav_as_of_date.isoformat(),
+                "observations": snapshot.observations,
+            })
+        if monthly_map.get(previous_month) is not None:
+            previous_returns[scheme.scheme_code] = float(monthly_map[previous_month])
+
+    current_items.sort(key=lambda item: (-item["monthly_return"], item["scheme_name"].casefold(), item["scheme_code"]))
+    previous_groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for _snapshot, scheme in rows:
+        value = previous_returns.get(scheme.scheme_code)
+        if value is None:
+            continue
+        taxonomy = _scheme_taxonomy(scheme)
+        if not taxonomy.get("category_group"):
+            continue
+        key = (taxonomy.get("category_group"), taxonomy.get("category"), scheme.plan_type, scheme.option_type)
+        previous_groups.setdefault(key, []).append({"scheme_code": scheme.scheme_code, "value": value})
+    previous_category_ranks: dict[int, int] = {}
+    for group_rows in previous_groups.values():
+        group_rows.sort(key=lambda item: (-item["value"], item["scheme_code"]))
+        for rank_value, item in enumerate(group_rows, start=1):
+            previous_category_ranks[item["scheme_code"]] = rank_value
+
+    category_groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for item in current_items:
+        key = (item["category_group"], item["category"], item["plan_type"], item["option_type"])
+        category_groups.setdefault(key, []).append(item)
+    for group_rows in category_groups.values():
+        group_rows.sort(key=lambda item: (-item["monthly_return"], item["scheme_name"].casefold(), item["scheme_code"]))
+        for rank_value, item in enumerate(group_rows, start=1):
+            item["category_rank"] = rank_value
+            old_rank = previous_category_ranks.get(item["scheme_code"])
+            item["previous_category_rank"] = old_rank
+            item["rank_change"] = old_rank - rank_value if old_rank is not None else None
+
+    for rank_value, item in enumerate(current_items, start=1):
+        item["rank"] = rank_value
+    visible = current_items[:limit]
+    return {
+        "month": selected_month,
+        "previous_month": previous_month,
+        "plan_type": plan_type,
+        "option_type": option_type,
+        "category_group": canonical_group(category_group) if category_group else None,
+        "count": len(current_items),
+        "items": visible,
+        "refreshed_at": latest_refresh.isoformat(),
+        "methodology": (
+            "Completed calendar-month NAV return from the last observed NAV in the prior calendar month "
+            "to the last observed NAV in the selected month. No interpolation or dividend adjustment. "
+            "Rank movement compares the same scheme's within-subcategory rank with the prior month."
+        ),
+        "limitations": [
+            "Only schemes with a stored 365-day research snapshot and both month-end observations are ranked.",
+            "A scheme's displayed NAV date may differ from the calendar month-end because AMFI publishes only observed NAV dates.",
+            "Rank movement is unavailable for schemes without a comparable prior-month rank.",
+        ],
+    }
 
 class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
