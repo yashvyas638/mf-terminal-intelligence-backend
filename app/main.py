@@ -1913,7 +1913,7 @@ def create_portfolio_report_snapshot(
     valuation = portfolio_valuation(portfolio_id, None)
     risk = portfolio_historical_risk(portfolio_id, days, None)
     tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
-    lookthrough = portfolio_holdings_lookthrough(portfolio_id)
+    lookthrough = portfolio_holdings_lookthrough(portfolio_id, 180)
     generated_at = datetime.now(timezone.utc)
 
     with SessionLocal() as db:
