@@ -384,6 +384,67 @@ def portfolio_risk_metrics(
     }
 
 
+def project_financial_goal(
+    target_amount_today: float,
+    current_amount: float,
+    monthly_contribution: float,
+    months: int,
+    inflation_rate: float,
+    annual_return_scenarios: dict[str, float],
+) -> dict:
+    """Project a nominal goal range using explicit user-supplied assumptions."""
+    if target_amount_today <= 0 or current_amount < 0 or monthly_contribution < 0:
+        raise ValueError("goal amounts must be positive or non-negative as appropriate")
+    if months < 0 or not 0 <= inflation_rate <= 0.20:
+        raise ValueError("goal horizon or inflation assumption is outside supported bounds")
+    if not annual_return_scenarios:
+        raise ValueError("at least one return scenario is required")
+
+    years = months / 12
+    inflation_factor = (1 + inflation_rate) ** years
+    future_target = target_amount_today * inflation_factor
+    scenarios = {}
+    for name, annual_return in annual_return_scenarios.items():
+        if not -0.20 <= annual_return <= 0.40:
+            raise ValueError("annual return assumption must be between -20% and 40%")
+        monthly_rate = (1 + annual_return) ** (1 / 12) - 1
+        growth_factor = (1 + monthly_rate) ** months
+        annuity_factor = (
+            (growth_factor - 1) / monthly_rate
+            if abs(monthly_rate) > 1e-12
+            else float(months)
+        )
+        future_value = current_amount * growth_factor + monthly_contribution * annuity_factor
+        required_monthly = (
+            max(0.0, (future_target - current_amount * growth_factor) / annuity_factor)
+            if annuity_factor > 0 else None
+        )
+        scenarios[name] = {
+            "annual_return_assumption": annual_return,
+            "projected_future_value": round(future_value, 2),
+            "future_target_amount": round(future_target, 2),
+            "projected_surplus": round(max(0.0, future_value - future_target), 2),
+            "projected_shortfall": round(max(0.0, future_target - future_value), 2),
+            "required_monthly_contribution": round(required_monthly, 2) if required_monthly is not None else None,
+        }
+
+    return {
+        "months_to_goal": months,
+        "years_to_goal": years,
+        "target_amount_today": round(target_amount_today, 2),
+        "inflation_rate_assumption": inflation_rate,
+        "inflation_adjusted_target": round(future_target, 2),
+        "current_amount": round(current_amount, 2),
+        "monthly_contribution": round(monthly_contribution, 2),
+        "scenarios": scenarios,
+        "methodology": (
+            "Monthly compounding with end-of-month contributions. Inflation-adjusted target "
+            "uses the user-entered inflation assumption. Return assumptions are scenarios, "
+            "not forecasts or guaranteed outcomes; taxes, fees and contribution changes are excluded."
+        ),
+    }
+
+
 def fifo_capital_gains(
     transactions: Iterable[dict],
     latest_nav_by_scheme: dict[int, Decimal],
