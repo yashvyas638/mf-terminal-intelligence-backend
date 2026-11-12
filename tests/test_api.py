@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
+from app.db import BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 
 
@@ -939,3 +939,101 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
         ).all()
         assert len(persisted) >= 2
         assert all(item.metrics_json for item in persisted)
+
+def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_code = 87654321
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Benchmark Mapping Test Growth Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+            db.commit()
+
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    client = TestClient(app)
+    csv_text = (
+        "IndexName,Date,Total Returns Index,Net Total Return Index\\n"
+        "NIFTY 50,01-Jan-2026,25000.00,24950.00\\n"
+        "NIFTY 50,02-Jan-2026,25100.00,25050.00\\n"
+        "NIFTY 50,05-Jan-2026,25200.00,25150.00\\n"
+    )
+    payload = {
+        "benchmark_code": "NIFTY_50_TRI",
+        "benchmark_name": "NIFTY 50",
+        "variant": "TRI",
+        "csv_text": csv_text,
+    }
+    assert client.post("/v1/benchmarks/import-csv", json=payload).status_code == 401
+
+    first = client.post("/v1/benchmarks/import-csv", headers=headers, json=payload)
+    assert first.status_code == 200, first.text
+    assert first.json()["inserted_rows"] == 3
+    second = client.post("/v1/benchmarks/import-csv", headers=headers, json=payload)
+    assert second.status_code == 200, second.text
+    assert second.json()["inserted_rows"] == 0
+    assert second.json()["unchanged_rows"] == 3
+
+    corrected_csv = csv_text.replace("25100.00", "25110.00")
+    corrected = client.post(
+        "/v1/benchmarks/import-csv",
+        headers=headers,
+        json={**payload, "csv_text": corrected_csv},
+    )
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["corrected_rows"] == 1
+
+    listed = client.get("/v1/benchmarks", headers=headers)
+    assert listed.status_code == 200
+    assert any(item["benchmark_code"] == "NIFTY_50_TRI" for item in listed.json()["items"])
+
+    assignment_payload = {
+        "scheme_code": scheme_code,
+        "benchmark_code": "NIFTY_50_TRI",
+        "tier": 1,
+        "valid_from": "2025-01-01",
+        "valid_to": None,
+        "source_document_url": "https://www.example-amc.com/factsheet.pdf",
+        "source_document_sha256": "a" * 64,
+    }
+    created = client.post("/v1/benchmarks/assignments", headers=headers, json=assignment_payload)
+    assert created.status_code == 201, created.text
+    assignment_id = created.json()["assignment_id"]
+    assert created.json()["verification_status"] == "PENDING"
+
+    pending_compare = client.get(
+        f"/v1/analytics/research/{scheme_code}/benchmark", headers=headers
+    )
+    assert pending_compare.status_code == 200
+    assert pending_compare.json()["status"] == "UNMAPPED"
+
+    verified = client.post(
+        f"/v1/benchmarks/assignments/{assignment_id}/verify", headers=headers
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verification_status"] == "VERIFIED"
+
+    with SessionLocal() as db:
+        benchmark = db.get(BenchmarkIndex, "NIFTY_50_TRI")
+        assert benchmark is not None and benchmark.variant == "TRI"
+        assert db.query(BenchmarkObservation).filter_by(benchmark_code="NIFTY_50_TRI").count() == 3
+        assert db.query(BenchmarkObservationRevision).filter_by(benchmark_code="NIFTY_50_TRI").count() == 1
+        mapping = db.get(SchemeBenchmarkAssignment, assignment_id)
+        assert mapping.verification_status == "VERIFIED"
+        assert mapping.verified_at is not None
+
+    wrong_variant = client.post(
+        "/v1/benchmarks/import-csv",
+        headers=headers,
+        json={**payload, "variant": "NTR"},
+    )
+    assert wrong_variant.status_code == 409
