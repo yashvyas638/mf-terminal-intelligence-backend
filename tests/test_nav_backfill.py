@@ -15,7 +15,7 @@ def test_history_windows_are_contiguous_and_maximum_90_days():
     assert [window.day_count for window in windows] == [90, 90, 3]
     assert windows[0].start_date == date(2026, 1, 1)
     assert windows[-1].end_date == date(2026, 7, 1)
-    for previous, current in zip(windows, windows[1:]):
+    for previous, current in zip(windows, windows[1:], strict=False):
         assert current.start_date == date.fromordinal(previous.end_date.toordinal() + 1)
     assert all(window.day_count <= AMFI_MAX_HISTORY_WINDOW_DAYS for window in windows)
 
