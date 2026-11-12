@@ -29,12 +29,12 @@ The repository has a useful backend foundation, but it is not yet the complete M
 | Area | Current state | Missing before product-grade |
 |---|---|---|
 | Authentication | Dashboard and Research Terminal flows implemented in this PR; live E2E pending | Verified provider settings, email delivery, redirect configuration and two-account browser test |
-| Home | Basic metrics and data health | Portfolio-first command centre, alerts, activity and actionable insights |
+| Home | Portfolio-first command centre with consolidated value/cost/unrealized P&L, per-portfolio XIRR and NAV freshness (this PR; end-to-end pending) | Activity feed, alerts, goal progress and proactive actionable insights |
 | Fund Explorer | Search, AMC/category/asset-class/plan/option filters, facets and server-side pagination (this PR; classification facets depend on stored metadata coverage) | Watchlist, benchmark metadata and global metric-ranked screening |
 | Fund profile | Scheme metadata, NAV-derived metrics, coverage and historical NAV line chart (this PR; end-to-end pending) | Factsheet, AUM, expense ratio, manager, benchmark TRI, exit load, documents and distribution-adjusted return history |
 | Research | NAV-derived CAGR/volatility/drawdown and ratios | Full verified historical NAV, calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
-| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL, transaction history, audited void, holdings breakdown, cost basis, realized/unrealized/total gain-loss, conditional XIRR and scheme concentration bars (this PR; end-to-end pending) | Asset-class/sector exposure, cashflow attribution, multi-portfolio overview and tax/exit-load-aware performance |
+| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL, transaction history, audited void, holdings breakdown, cost basis, realized/unrealized/total gain-loss, conditional XIRR, scheme concentration bars and consolidated multi-portfolio overview (this PR; end-to-end pending) | Asset-class/sector exposure, cashflow attribution and tax/exit-load-aware performance |
 | Rebalance | Target-weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
 | Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
 | Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
