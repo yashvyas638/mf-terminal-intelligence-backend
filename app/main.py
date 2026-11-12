@@ -1208,6 +1208,7 @@ def fund_screener(
 def monthly_fund_leaderboard(
     month: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}$"),
     category_group: str | None = Query(default=None, max_length=80),
+    sub_category: str | None = Query(default=None, max_length=120),
     plan_type: str = Query(default="Direct", pattern="^(Direct|Regular)$"),
     option_type: str = Query(default="Growth", pattern="^(Growth|IDCW)$"),
     limit: int = Query(default=3, ge=1, le=20),
@@ -1238,6 +1239,8 @@ def monthly_fund_leaderboard(
         )
         if category_group:
             query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
+        if sub_category:
+            query = query.where(Scheme.category.in_(subcategory_filter_values(category_group, sub_category)))
         latest_refresh = db.execute(
             select(func.max(FundResearchSnapshot.refreshed_at)).where(FundResearchSnapshot.window_days == 365)
         ).scalar_one()
