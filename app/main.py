@@ -51,7 +51,7 @@ from app.db import (
     SessionLocal,
     init_db,
 )
-from app.analytics import benchmark_comparison_metrics, performance_metrics, research_metrics
+from app.analytics import benchmark_comparison_metrics, performance_metrics, portfolio_risk_metrics, research_metrics
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
@@ -1131,6 +1131,26 @@ class BenchmarkImportRequest(BaseModel):
         self.benchmark_name = self.benchmark_name.strip()
         if not self.benchmark_name:
             raise ValueError("benchmark name cannot be blank")
+        return self
+
+
+class HoldingShock(BaseModel):
+    scheme_code: int = Field(gt=0)
+    shock_pct: Decimal = Field(ge=Decimal("-100"), le=Decimal("100"))
+
+
+class PortfolioStressRequest(BaseModel):
+    scenario_name: str = Field(min_length=2, max_length=120)
+    shocks: list[HoldingShock] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_scenario(self) -> "PortfolioStressRequest":
+        self.scenario_name = self.scenario_name.strip()
+        if not self.scenario_name:
+            raise ValueError("scenario name cannot be blank")
+        codes = [item.scheme_code for item in self.shocks]
+        if len(codes) != len(set(codes)):
+            raise ValueError("each scheme can appear only once in a stress scenario")
         return self
 
 
@@ -2568,6 +2588,212 @@ def rebalance_preview(
             "limitations": [
                 "Preview only; it does not place trades or account for taxes, exit loads, minimum transaction sizes, or settlement rules.",
                 "Verify suitability, scheme restrictions, and current NAV availability before acting.",
+            ],
+        }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/risk")
+def portfolio_historical_risk(
+    portfolio_id: int,
+    days: int = Query(default=1095, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Historical NAV-based portfolio risk, scoped to the authenticated owner."""
+    require_api_key(x_api_key)
+    as_of = datetime.now(timezone.utc).date()
+    since = as_of - timedelta(days=days)
+
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        transactions = db.execute(
+            select(PortfolioTransaction)
+            .where(
+                PortfolioTransaction.portfolio_id == portfolio_id,
+                PortfolioTransaction.voided_at.is_(None),
+            )
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        positions: dict[int, Decimal] = {}
+        for transaction in transactions:
+            units = Decimal(transaction.units)
+            current_units = positions.get(transaction.scheme_code, Decimal("0"))
+            if transaction.transaction_type == "BUY":
+                positions[transaction.scheme_code] = current_units + units
+            else:
+                if units > current_units:
+                    raise HTTPException(409, f"Sell transaction exceeds available units for scheme {transaction.scheme_code}")
+                positions[transaction.scheme_code] = current_units - units
+        positions = {code: units for code, units in positions.items() if units > 0}
+        if not positions:
+            return {
+                "portfolio_id": portfolio_id,
+                "portfolio_name": portfolio.name,
+                "status": "NO_ACTIVE_HOLDINGS",
+                "holdings_count": 0,
+                "metrics": None,
+                "note": "Add active BUY holdings before calculating portfolio risk.",
+            }
+
+        weighted_series = []
+        holdings = []
+        missing_codes = []
+        stale_codes = []
+        portfolio_value = Decimal("0")
+        for code, units in positions.items():
+            latest = db.execute(
+                select(NavObservation)
+                .where(NavObservation.scheme_code == code)
+                .order_by(desc(NavObservation.nav_date))
+                .limit(1)
+            ).scalar_one_or_none()
+            if latest is None:
+                missing_codes.append(code)
+                continue
+            market_value = units * Decimal(latest.nav_value)
+            portfolio_value += market_value
+            age_days = (as_of - latest.nav_date).days
+            if age_days > MAX_NAV_STALENESS_DAYS:
+                stale_codes.append(code)
+            history = db.execute(
+                select(NavObservation.nav_date, NavObservation.nav_value)
+                .where(
+                    NavObservation.scheme_code == code,
+                    NavObservation.nav_date >= since,
+                    NavObservation.nav_date <= latest.nav_date,
+                )
+                .order_by(NavObservation.nav_date)
+            ).all()
+            points = [(row.nav_date, float(row.nav_value)) for row in history]
+            weighted_series.append((float(market_value), points))
+            scheme = db.get(Scheme, code)
+            holdings.append({
+                "scheme_code": code,
+                "scheme_name": scheme.scheme_name if scheme else str(code),
+                "units": str(units),
+                "market_value": str(market_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "weight_pct": None,
+                "nav_date": latest.nav_date.isoformat(),
+                "nav_age_days": age_days,
+            })
+
+        if missing_codes:
+            return {
+                "portfolio_id": portfolio_id,
+                "portfolio_name": portfolio.name,
+                "status": "PARTIAL_MISSING_NAV",
+                "holdings_count": len(positions),
+                "missing_nav_scheme_codes": missing_codes,
+                "metrics": None,
+                "note": "Portfolio-level risk is withheld when any active holding has no accepted NAV series.",
+            }
+        for holding in holdings:
+            holding["weight_pct"] = (
+                float(Decimal(holding["market_value"]) / portfolio_value * 100)
+                if portfolio_value > 0 else None
+            )
+        metrics = portfolio_risk_metrics(weighted_series)
+        status = "STALE_NAV" if stale_codes and metrics["status"] == "OK" else metrics["status"]
+        return {
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "status": status,
+            "lookback_days": days,
+            "as_of_date": as_of.isoformat(),
+            "portfolio_value": str(portfolio_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "holdings_count": len(positions),
+            "holdings": holdings,
+            "stale_nav_scheme_codes": stale_codes,
+            "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
+            "metrics": metrics,
+            "note": (
+                "Historical NAV-based risk uses current market-value weights held constant over the lookback. "
+                "It is a backward-looking estimate, not a forecast. Missing NAV series are never interpolated."
+            ),
+        }
+
+
+@app.post("/v1/portfolios/{portfolio_id}/stress")
+def portfolio_custom_stress(
+    portfolio_id: int,
+    payload: PortfolioStressRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Apply an explicit user-defined percentage shock to every active scheme holding."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        transactions = db.execute(
+            select(PortfolioTransaction)
+            .where(
+                PortfolioTransaction.portfolio_id == portfolio_id,
+                PortfolioTransaction.voided_at.is_(None),
+            )
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        positions: dict[int, Decimal] = {}
+        for transaction in transactions:
+            units = Decimal(transaction.units)
+            current_units = positions.get(transaction.scheme_code, Decimal("0"))
+            if transaction.transaction_type == "BUY":
+                positions[transaction.scheme_code] = current_units + units
+            else:
+                if units > current_units:
+                    raise HTTPException(409, f"Sell transaction exceeds available units for scheme {transaction.scheme_code}")
+                positions[transaction.scheme_code] = current_units - units
+        positions = {code: units for code, units in positions.items() if units > 0}
+        if not positions:
+            raise HTTPException(409, "Portfolio has no active holdings to stress")
+        shocks = {item.scheme_code: item.shock_pct for item in payload.shocks}
+        if set(shocks) != set(positions):
+            raise HTTPException(422, "Provide exactly one explicit shock for every active holding; omitted holdings are not assumed to have zero shock")
+
+        total_value = Decimal("0")
+        total_impact = Decimal("0")
+        rows = []
+        stale_codes = []
+        as_of = datetime.now(timezone.utc).date()
+        for code, units in positions.items():
+            latest = db.execute(
+                select(NavObservation)
+                .where(NavObservation.scheme_code == code)
+                .order_by(desc(NavObservation.nav_date))
+                .limit(1)
+            ).scalar_one_or_none()
+            if latest is None:
+                raise HTTPException(409, f"No NAV is available for active holding {code}")
+            market_value = units * Decimal(latest.nav_value)
+            shock = shocks[code]
+            impact = market_value * shock / Decimal("100")
+            total_value += market_value
+            total_impact += impact
+            age_days = (as_of - latest.nav_date).days
+            if age_days > MAX_NAV_STALENESS_DAYS:
+                stale_codes.append(code)
+            scheme = db.get(Scheme, code)
+            rows.append({
+                "scheme_code": code,
+                "scheme_name": scheme.scheme_name if scheme else str(code),
+                "market_value": str(market_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "shock_pct": str(shock),
+                "estimated_impact": str(impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "stressed_value": str((market_value + impact).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "nav_date": latest.nav_date.isoformat(),
+                "nav_age_days": age_days,
+            })
+        return {
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "scenario_name": payload.scenario_name,
+            "scenario_type": "USER_DEFINED_SENSITIVITY_NOT_FORECAST",
+            "base_portfolio_value": str(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "estimated_portfolio_impact": str(total_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stressed_portfolio_value": str((total_value + total_impact).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stale_nav_scheme_codes": stale_codes,
+            "holdings": rows,
+            "limitations": [
+                "This is a deterministic user-entered sensitivity, not a probability-weighted forecast.",
+                "It applies the supplied shock directly to current scheme market values; underlying stock/sector exposures are not inferred.",
+                "NAV freshness and source-date limitations remain applicable.",
             ],
         }
 
