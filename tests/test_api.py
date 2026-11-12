@@ -1965,27 +1965,19 @@ def test_postgresql_research_snapshot_advisory_lock_is_exclusive():
         pytest.skip("PostgreSQL advisory locks are production-specific")
 
     lock_key = main.RESEARCH_SNAPSHOT_REFRESH_LOCK_KEY
-    acquire_sql = text("SELECT pg_try_advisory_lock(:lock_key)")
-    release_sql = text("SELECT pg_advisory_unlock(:lock_key)")
+    acquire_sql = text("SELECT pg_try_advisory_xact_lock(:lock_key)")
     try:
         assert first.execute(acquire_sql, {"lock_key": lock_key}).scalar_one() is True
-        first.commit()
-
         assert second.execute(acquire_sql, {"lock_key": lock_key}).scalar_one() is False
-        second.commit()
+        second.rollback()
 
-        assert first.execute(release_sql, {"lock_key": lock_key}).scalar_one() is True
         first.commit()
-
         assert second.execute(acquire_sql, {"lock_key": lock_key}).scalar_one() is True
-        second.commit()
-        assert second.execute(release_sql, {"lock_key": lock_key}).scalar_one() is True
         second.commit()
     finally:
         for session in (first, second):
             try:
-                session.execute(release_sql, {"lock_key": lock_key})
-                session.commit()
+                session.rollback()
             except Exception:
                 session.rollback()
             session.close()
