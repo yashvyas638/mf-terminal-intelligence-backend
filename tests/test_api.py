@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
+from app.db import BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 
 
@@ -1082,3 +1082,102 @@ def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(
         json={**payload, "variant": "NTR"},
     )
     assert wrong_variant.status_code == 409
+
+def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_a, scheme_b = 87654322, 87654323
+    with SessionLocal() as db:
+        for code, name in (
+            (scheme_a, "Holdings Overlap Fund A"),
+            (scheme_b, "Holdings Overlap Fund B"),
+        ):
+            if db.get(Scheme, code) is None:
+                db.add(Scheme(
+                    scheme_code=code,
+                    scheme_name=name,
+                    isin_growth=None,
+                    isin_dividend_reinvestment=None,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    plan_type="Direct",
+                    option_type="Growth",
+                ))
+        db.commit()
+
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    client = TestClient(app)
+    csv_a = (
+        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\\n"
+        "INE002A01018,Example Bank Ltd,5.25,Equity,Financial Services\\n"
+        "INE009A01021,Example Technology Ltd,3.50,Equity,Information Technology\\n"
+        ",Net Current Assets,2.00,Cash,\\n"
+    )
+    csv_b = (
+        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\\n"
+        "INE002A01018,Example Bank Ltd,3.00,Equity,Financial Services\\n"
+        "INE009A01021,Example Technology Ltd,1.00,Equity,Information Technology\\n"
+        "INE123A01016,Other Listed Company,5.00,Equity,Industrials\\n"
+    )
+
+    def import_payload(code, as_of, text):
+        return {
+            "scheme_code": code,
+            "as_of_date": as_of,
+            "source_document_url": "https://www.amfiindia.com/portfolio-disclosure/example.csv",
+            "source_document_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "csv_text": text,
+        }
+
+    imported_a = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_a, "2026-10-31", csv_a),
+    )
+    imported_b = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_b, "2026-09-30", csv_b),
+    )
+    assert imported_a.status_code == 200, imported_a.text
+    assert imported_b.status_code == 200, imported_b.text
+    assert imported_a.json()["status"] == "imported"
+    duplicate = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_a, "2026-10-31", csv_a),
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["status"] == "already_imported"
+
+    overlap = client.get(
+        f"/v1/analytics/holdings-overlap?scheme_a={scheme_a}&scheme_b={scheme_b}",
+        headers=headers,
+    )
+    assert overlap.status_code == 200, overlap.text
+    result = overlap.json()
+    assert result["status"] == "OK"
+    assert result["common_isin_count"] == 2
+    assert float(result["holdings_overlap_pct"]) == pytest.approx(4.0)
+    assert float(result["shared_weight_in_scheme_a_pct"]) == pytest.approx(8.75)
+    assert float(result["shared_weight_in_scheme_b_pct"]) == pytest.approx(4.0)
+    assert len(result["top_shared_holdings"]) == 2
+
+    holdings = client.get(f"/v1/holdings/{scheme_a}", headers=headers)
+    assert holdings.status_code == 200
+    assert holdings.json()["row_count"] == 3
+    assert any(not item["is_isin"] for item in holdings.json()["items"])
+
+    corrected_csv = csv_a.replace("5.25", "5.50")
+    correction = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_a, "2026-10-31", corrected_csv),
+    )
+    assert correction.status_code == 200, correction.text
+    assert correction.json()["supersedes_disclosure_id"] == imported_a.json()["disclosure_id"]
+
+    with SessionLocal() as db:
+        assert db.query(FundHoldingDisclosure).filter_by(scheme_code=scheme_a).count() == 2
+        assert db.query(FundHolding).count() == 7
