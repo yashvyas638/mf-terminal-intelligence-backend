@@ -691,8 +691,6 @@ def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
 
 def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatch):
     """Exercise the real bearer-auth middleware and owner checks with two identities."""
-    import json
-
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     init_db()
     identities = {"token-user-one": "user-one-00000000-0000-000000000001", "token-user-two": "user-two-00000000-0000-000000000002"}
