@@ -1446,9 +1446,24 @@ def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch)
     assert two_list.status_code == 200
     assert two_list.json()["items"] == []
 
+    owner_portfolio = client.post(
+        "/v1/portfolios",
+        headers=user_one,
+        json={"name": "Private linked goal portfolio"},
+    )
+    assert owner_portfolio.status_code == 201, owner_portfolio.text
+    cross_owner_link = client.post(
+        "/v1/goals",
+        headers=user_two,
+        json={**payload, "linked_portfolio_id": owner_portfolio.json()["id"]},
+    )
+    assert cross_owner_link.status_code == 404
+
     projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
     assert projection.status_code == 200, projection.text
     assert projection.json()["projection"]["inflation_adjusted_target"] > 10_000_000
+    assert projection.json()["current_amount_source"] == "USER_ENTERED"
+    assert projection.json()["linked_portfolio"] is None
     assert set(projection.json()["projection"]["scenarios"]) == {"low", "base", "high"}
 
     assert client.get(f"/v1/goals/{goal_id}/projection", headers=user_two).status_code == 404
