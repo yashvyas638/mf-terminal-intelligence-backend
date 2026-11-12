@@ -1138,7 +1138,7 @@ def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movem
     client = TestClient(app)
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
     response = client.get(
-        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Equity+Scheme&plan_type=Direct&option_type=Growth&limit=3",
+        "/v1/analytics/monthly-leaderboard?month=2026-10&category_group=Equity+Scheme&sub_category=Flexi+Cap+Fund&plan_type=Direct&option_type=Growth&limit=3",
         headers=headers,
     )
     assert response.status_code == 200, response.text
