@@ -25,7 +25,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, desc, func, or_, select, text, tuple_
+from sqlalchemy import case, delete, desc, func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -1659,6 +1659,42 @@ def fund_screener(
     }
     sort_column = sort_columns[sort_by]
     ordering = sort_column.desc().nullslast() if sort_order == "desc" else sort_column.asc().nullslast()
+    # AMFI publishes multiple spellings for the same plan/option class.
+    # Rank within the canonical group so "Growth", "Growth Option" and
+    # "GROWTH" do not become separate category leaderboards.
+    plan_label = func.lower(func.coalesce(Scheme.plan_type, ""))
+    option_label = func.lower(func.coalesce(Scheme.option_type, ""))
+    canonical_plan = case(
+        (plan_label.in_(("direct", "direct plan")), "direct"),
+        (plan_label.in_(("regular", "regular plan")), "regular"),
+        else_=plan_label,
+    )
+    growth_option = (
+        option_label.like("%growth%")
+        & ~option_label.like("%unclaimed%")
+        & ~option_label.like("%redemption%")
+        & ~option_label.like("%bonus%")
+        & ~option_label.like("%idcw%")
+        & ~option_label.like("%idwc%")
+        & ~option_label.like("%dividend%")
+    )
+    idcw_option = (
+        or_(
+            option_label.like("%idcw%"),
+            option_label.like("%idwc%"),
+            option_label.like("%dividend%"),
+            option_label.like("%income distribution%"),
+        )
+        & ~option_label.like("%unclaimed%")
+        & ~option_label.like("%redemption%")
+        & ~option_label.like("%bonus%")
+    )
+    canonical_option = case(
+        (growth_option, "growth"),
+        (idcw_option, "idcw"),
+        else_=option_label,
+    )
+
     category_ranked = (
         select(
             FundResearchSnapshot.scheme_code.label("scheme_code"),
@@ -1666,8 +1702,8 @@ def fund_screener(
                 partition_by=(
                     Scheme.category_group,
                     Scheme.category,
-                    Scheme.plan_type,
-                    Scheme.option_type,
+                    canonical_plan,
+                    canonical_option,
                 ),
                 order_by=ordering,
             ).label("category_rank"),
@@ -1678,6 +1714,8 @@ def fund_screener(
             FundResearchSnapshot.observations >= min_observations,
             FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
             sort_column.is_not(None),
+            plan_label != "",
+            option_label != "",
             Scheme.category_group.is_not(None),
             Scheme.category_group != "",
             Scheme.category.is_not(None),
@@ -1810,7 +1848,7 @@ def monthly_fund_leaderboard(
     limit: int = Query(default=3, ge=1, le=20),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
-    """Rank completed calendar-month NAV returns and show within-category rank movement."""
+    """Rank completed calendar-month NAV returns across canonical AMFI plan/option labels."""
     require_api_key(x_api_key)
     current_month = date.today().replace(day=1)
     previous_month_end = current_month - timedelta(days=1)
@@ -1823,16 +1861,45 @@ def monthly_fund_leaderboard(
         raise HTTPException(422, "Monthly leaderboard only includes completed calendar months")
     previous_month = (selected_start.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
+    # AMFI's raw metadata uses labels such as "Direct Plan", "Growth Option",
+    # "GROWTH", "IDCW Option" and "Monthly IDCW". The leaderboard controls are
+    # intentionally canonical (Direct/Regular, Growth/IDCW), so normalize the
+    # source labels here instead of exact-matching only a small subset.
+    plan_label = func.lower(func.coalesce(Scheme.plan_type, ""))
+    option_label = func.lower(func.coalesce(Scheme.option_type, ""))
+    plan_values = ("direct", "direct plan") if plan_type == "Direct" else ("regular", "regular plan")
+
     query = (
         select(FundResearchSnapshot, Scheme)
         .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
         .where(
             FundResearchSnapshot.window_days == 365,
             FundResearchSnapshot.nav_as_of_date >= date.today() - timedelta(days=MAX_NAV_STALENESS_DAYS),
-            Scheme.plan_type == plan_type,
-            Scheme.option_type == option_type,
+            plan_label.in_(plan_values),
         )
     )
+    if option_type == "Growth":
+        query = query.where(
+            option_label.like("%growth%"),
+            ~option_label.like("%unclaimed%"),
+            ~option_label.like("%redemption%"),
+            ~option_label.like("%bonus%"),
+            ~option_label.like("%idcw%"),
+            ~option_label.like("%idwc%"),
+            ~option_label.like("%dividend%"),
+        )
+    else:
+        query = query.where(
+            or_(
+                option_label.like("%idcw%"),
+                option_label.like("%idwc%"),
+                option_label.like("%dividend%"),
+                option_label.like("%income distribution%"),
+            ),
+            ~option_label.like("%unclaimed%"),
+            ~option_label.like("%redemption%"),
+            ~option_label.like("%bonus%"),
+        )
     if category_group:
         query = query.where(Scheme.category_group.in_(scheme_group_filter_values(category_group)))
     if sub_category:
@@ -1885,8 +1952,8 @@ def monthly_fund_leaderboard(
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
                 **taxonomy,
-                "plan_type": scheme.plan_type,
-                "option_type": scheme.option_type,
+                "plan_type": plan_type,
+                "option_type": option_type,
                 "monthly_return": float(current_value),
                 "nav_date": snapshot.nav_as_of_date.isoformat(),
                 "observations": snapshot.observations,
@@ -1903,7 +1970,7 @@ def monthly_fund_leaderboard(
         taxonomy = _scheme_taxonomy(scheme)
         if not taxonomy.get("category_group") or not taxonomy.get("category"):
             continue
-        key = (taxonomy.get("category_group"), taxonomy.get("category"), scheme.plan_type, scheme.option_type)
+        key = (taxonomy.get("category_group"), taxonomy.get("category"), plan_type, option_type)
         previous_groups.setdefault(key, []).append({"scheme_code": scheme.scheme_code, "value": value})
     previous_category_ranks: dict[int, int] = {}
     for group_rows in previous_groups.values():
