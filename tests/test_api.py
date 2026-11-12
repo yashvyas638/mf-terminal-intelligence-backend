@@ -1,4 +1,6 @@
+import hashlib
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -8,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, Scheme, SessionLocal, init_db
+from app.db import PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 
 
@@ -599,6 +601,20 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
     assert "rolling_1y" in result["metrics"]
     assert "data_limitations" in result
 
+    rebuilt = client.post("/v1/analytics/screener/refresh", headers=headers)
+    assert rebuilt.status_code == 200, rebuilt.text
+
+    evidence = client.get(
+        f"/v1/analytics/research/{scheme_code}/evidence?days=365",
+        headers=headers,
+    )
+    assert evidence.status_code == 200, evidence.text
+    evidence_json = evidence.json()
+    assert evidence_json["generation_status"] == "EVIDENCE_ONLY_NO_LLM_GENERATION"
+    assert any(item["evidence_type"] == "SOURCE_FACT" for item in evidence_json["evidence"])
+    assert any(source["source_type"] == "OFFICIAL_NAV_SOURCE" for source in evidence_json["sources"])
+    assert evidence_json["data_gaps"]
+
     screener = client.get(
         "/v1/analytics/screener?plan_type=Direct&option_type=Growth&limit=10",
         headers=headers,
@@ -608,3 +624,965 @@ def test_research_profile_and_screener_use_persisted_nav_and_amfi_plan_metadata(
     assert screener.json()["items"][0]["scheme_code"] == scheme_code
     assert screener.json()["items"][0]["return_1y"] is not None
     assert client.get("/v1/analytics/screener").status_code == 401
+
+
+
+def test_fund_explorer_facets_filters_and_pagination(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    fixtures = [
+        Scheme(
+            scheme_code=999970,
+            scheme_name="Explorer Equity Direct Growth",
+            amc="Explorer AMC",
+            category="Flexi Cap",
+            asset_class="Equity",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999971,
+            scheme_name="Explorer Equity Regular Growth",
+            amc="Explorer AMC",
+            category="Flexi Cap",
+            asset_class="Equity",
+            plan_type="Regular",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+        Scheme(
+            scheme_code=999972,
+            scheme_name="Explorer Debt Direct Growth",
+            amc="Explorer AMC",
+            category="Short Duration",
+            asset_class="Debt",
+            plan_type="Direct",
+            option_type="Growth",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+        ),
+    ]
+    with SessionLocal() as db:
+        for scheme in fixtures:
+            if db.get(Scheme, scheme.scheme_code) is None:
+                db.add(scheme)
+        db.commit()
+
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    facets = client.get("/v1/nav/facets", headers=headers)
+    assert facets.status_code == 200
+    assert "Explorer AMC" in facets.json()["amcs"]
+    assert "Flexi Cap" in facets.json()["categories"]
+
+    filtered = client.get(
+        "/v1/nav/schemes",
+        params={"amc": "Explorer AMC", "category": "Flexi Cap", "plan_type": "Direct", "limit": 1, "offset": 0},
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["total_matching"] == 1
+    assert filtered.json()["items"][0]["scheme_code"] == 999970
+
+    page = client.get(
+        "/v1/nav/schemes",
+        params={"q": "Explorer", "limit": 2, "offset": 1},
+        headers=headers,
+    )
+    assert page.status_code == 200
+    assert page.json()["total_matching"] == 3
+    assert len(page.json()["items"]) == 2
+    assert len({item["scheme_code"] for item in page.json()["items"]}) == 2
+
+
+def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatch):
+    """Exercise the real bearer-auth middleware and owner checks with two identities."""
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    identities = {"token-user-one": "user-one-00000000-0000-000000000001", "token-user-two": "user-two-00000000-0000-000000000002"}
+
+    class AuthResponse:
+        status_code = 200
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+        def json(self):
+            return {"id": self.user_id}
+
+    def fake_auth_get(url, headers, timeout):
+        assert url.endswith("/auth/v1/user")
+        token = headers["Authorization"].removeprefix("Bearer ")
+        return AuthResponse(identities[token])
+
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    monkeypatch.setattr(main.requests, "get", fake_auth_get)
+
+    client = TestClient(app)
+    user_one = {"Authorization": "Bearer token-user-one"}
+    user_two = {"Authorization": "Bearer token-user-two"}
+
+    created = client.post("/v1/portfolios", headers=user_one, json={"name": "Private portfolio"})
+    assert created.status_code == 201
+    portfolio_id = created.json()["id"]
+
+    one_list = client.get("/v1/portfolios", headers=user_one)
+    two_list = client.get("/v1/portfolios", headers=user_two)
+    assert one_list.status_code == 200
+    assert [item["id"] for item in one_list.json()["items"]] == [portfolio_id]
+    assert two_list.status_code == 200
+    assert two_list.json()["items"] == []
+
+    # Every data-bearing route must conceal another user's portfolio as not found.
+    for path in (
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        f"/v1/portfolios/{portfolio_id}/valuation",
+        f"/v1/portfolios/{portfolio_id}/risk",
+        f"/v1/portfolios/{portfolio_id}/lookthrough",
+        f"/v1/portfolios/{portfolio_id}/tax-lots",
+        f"/v1/portfolios/{portfolio_id}/reports",
+    ):
+        response = client.get(path, headers=user_two)
+        assert response.status_code == 404, (path, response.text)
+
+    blocked_write = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        headers=user_two,
+        json={
+            "scheme_code": 999991,
+            "transaction_type": "BUY",
+            "transaction_date": "2026-01-01",
+            "units": "1",
+            "nav": "100",
+            "amount": "100",
+        },
+    )
+    assert blocked_write.status_code == 404
+
+    blocked_stress = client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=user_two,
+        json={"scenario_name": "Unauthorized shock", "shocks": [{"scheme_code": 999991, "shock_pct": "-10"}]},
+    )
+    assert blocked_stress.status_code == 404
+
+    own_empty_transactions = client.get(
+        f"/v1/portfolios/{portfolio_id}/transactions", headers=user_one
+    )
+    assert own_empty_transactions.status_code == 200
+    assert own_empty_transactions.json()["count"] == 0
+
+def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypatch):
+    """Each account can save/remove the same scheme without seeing another account's list."""
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    scheme_code = 999980
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Watchlist Isolation Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+            db.commit()
+
+    identities = {
+        "watchlist-user-one": "00000000-0000-0000-0000-000000000011",
+        "watchlist-user-two": "00000000-0000-0000-0000-000000000022",
+    }
+
+    class AuthResponse:
+        status_code = 200
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+        def json(self):
+            return {"id": self.user_id}
+
+    monkeypatch.setattr(
+        main.requests,
+        "get",
+        lambda url, headers, timeout: AuthResponse(
+            identities[headers["Authorization"].removeprefix("Bearer ")]
+        ),
+    )
+
+    client = TestClient(app)
+    user_one = {"Authorization": "Bearer watchlist-user-one"}
+    user_two = {"Authorization": "Bearer watchlist-user-two"}
+
+    assert client.get("/v1/watchlist").status_code == 401
+
+    added = client.post("/v1/watchlist", headers=user_one, json={"scheme_code": scheme_code})
+    assert added.status_code == 201
+    duplicate = client.post("/v1/watchlist", headers=user_one, json={"scheme_code": scheme_code})
+    assert duplicate.status_code == 409
+
+    assert client.get("/v1/watchlist", headers=user_two).json()["items"] == []
+    blocked_remove = client.delete(f"/v1/watchlist/{scheme_code}", headers=user_two)
+    assert blocked_remove.status_code == 404
+    assert client.get("/v1/watchlist", headers=user_one).json()["count"] == 1
+
+    second_added = client.post("/v1/watchlist", headers=user_two, json={"scheme_code": scheme_code})
+    assert second_added.status_code == 201
+    assert client.get("/v1/watchlist", headers=user_one).json()["count"] == 1
+    assert client.get("/v1/watchlist", headers=user_two).json()["count"] == 1
+
+    removed_one = client.delete(f"/v1/watchlist/{scheme_code}", headers=user_one)
+    assert removed_one.status_code == 200
+    assert client.get("/v1/watchlist", headers=user_one).json()["count"] == 0
+    assert client.get("/v1/watchlist", headers=user_two).json()["count"] == 1
+
+    with SessionLocal() as db:
+        rows = db.query(FundWatchlistItem).all()
+        assert len(rows) == 1
+        assert rows[0].owner_user_id == identities["watchlist-user-two"]
+
+def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refresh(monkeypatch):
+    """Global rank is stable across pages, filters and selected metric order."""
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    as_of = date(2026, 11, 10)
+    scheme_codes = (999983, 999984)
+    with SessionLocal() as db:
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/nav",
+            retrieved_at=now,
+            payload_sha256="a" * 64,
+            records_valid=2,
+            unique_scheme_codes=2,
+            min_nav_date=as_of - timedelta(days=400),
+            max_nav_date=as_of,
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        for code, name in ((scheme_codes[0], "Global Rank Alpha"), (scheme_codes[1], "Global Rank Beta")):
+            db.add(Scheme(
+                scheme_code=code,
+                scheme_name=name,
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+        db.flush()
+        nav_rows = []
+        for index in range(401):
+            nav_date = as_of - timedelta(days=400 - index)
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_codes[0],
+                nav_date=nav_date,
+                nav_value=Decimal(str(100 + index * 0.30)),
+                source_snapshot_id=snapshot.id,
+            ))
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_codes[1],
+                nav_date=nav_date,
+                nav_value=Decimal(str(100 + index * 0.10)),
+                source_snapshot_id=snapshot.id,
+            ))
+        db.add_all(nav_rows)
+        db.commit()
+
+    client = TestClient(app)
+    assert client.post("/v1/analytics/screener/refresh").status_code == 401
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    refreshed = client.post("/v1/analytics/screener/refresh", headers=headers)
+    assert refreshed.status_code == 200, refreshed.text
+    result = refreshed.json()
+    assert result["status"] == "refreshed"
+    assert result["schemes_processed"] >= 2
+    assert result["snapshot_rows_written"] == result["schemes_processed"] * 4
+
+    first_page = client.get(
+        "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=0",
+        headers=headers,
+    )
+    second_page = client.get(
+        "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=desc&limit=1&offset=1",
+        headers=headers,
+    )
+    assert first_page.status_code == 200, first_page.text
+    assert second_page.status_code == 200, second_page.text
+    first = first_page.json()
+    second = second_page.json()
+    assert first["total_matching"] >= 2
+    assert first["items"][0]["rank"] == 1
+    assert second["items"][0]["rank"] == 2
+    assert first["items"][0]["scheme_code"] == scheme_codes[0]
+    assert first["items"][0]["return_1y"] > second["items"][0]["return_1y"]
+    assert "before pagination" in first["sorting_note"]
+
+    ascending = client.get(
+        "/v1/analytics/screener?q=Global+Rank&days=365&sort_by=return_1y&sort_order=asc&limit=2",
+        headers=headers,
+    )
+    assert ascending.status_code == 200
+    assert ascending.json()["items"][0]["scheme_code"] == scheme_codes[1]
+
+    filtered = client.get(
+        "/v1/analytics/screener?days=365&plan_type=Direct&min_observations=300",
+        headers=headers,
+    )
+    assert filtered.status_code == 200
+    assert all(item["observations"] >= 300 for item in filtered.json()["items"])
+    invalid_window = client.get("/v1/analytics/screener?days=500", headers=headers)
+    assert invalid_window.status_code == 422
+
+    with SessionLocal() as db:
+        persisted = db.query(FundResearchSnapshot).filter(
+            FundResearchSnapshot.window_days == 365
+        ).all()
+        assert len(persisted) >= 2
+        assert all(item.metrics_json for item in persisted)
+
+def test_benchmark_tri_import_correction_provenance_and_verified_scheme_mapping(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_code = 87654321
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code,
+                scheme_name="Benchmark Mapping Test Growth Fund",
+                isin_growth=None,
+                isin_dividend_reinvestment=None,
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct",
+                option_type="Growth",
+            ))
+            db.commit()
+
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    client = TestClient(app)
+    csv_text = (
+        "IndexName,Date,Total Returns Index,Net Total Return Index\n"
+        "NIFTY 50,01-Jan-2026,25000.00,24950.00\n"
+        "NIFTY 50,02-Jan-2026,25100.00,25050.00\n"
+        "NIFTY 50,05-Jan-2026,25200.00,25150.00\n"
+    )
+    payload = {
+        "benchmark_code": "NIFTY_50_TRI",
+        "benchmark_name": "NIFTY 50",
+        "variant": "TRI",
+        "csv_text": csv_text,
+    }
+    assert client.post("/v1/benchmarks/import-csv", json=payload).status_code == 401
+
+    first = client.post("/v1/benchmarks/import-csv", headers=headers, json=payload)
+    assert first.status_code == 200, first.text
+    assert first.json()["inserted_rows"] == 3
+    second = client.post("/v1/benchmarks/import-csv", headers=headers, json=payload)
+    assert second.status_code == 200, second.text
+    assert second.json()["inserted_rows"] == 0
+    assert second.json()["unchanged_rows"] == 3
+
+    corrected_csv = csv_text.replace("25100.00", "25110.00")
+    corrected = client.post(
+        "/v1/benchmarks/import-csv",
+        headers=headers,
+        json={**payload, "csv_text": corrected_csv},
+    )
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["corrected_rows"] == 1
+
+    listed = client.get("/v1/benchmarks", headers=headers)
+    assert listed.status_code == 200
+    assert any(item["benchmark_code"] == "NIFTY_50_TRI" for item in listed.json()["items"])
+
+    with SessionLocal() as db:
+        nav_snapshot = IngestionSnapshot(
+            source_url="https://example.test/nav",
+            retrieved_at=now,
+            payload_sha256="b" * 64,
+            records_valid=3,
+            unique_scheme_codes=1,
+            min_nav_date=date(2026, 1, 1),
+            max_nav_date=date(2026, 1, 5),
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(nav_snapshot)
+        db.flush()
+        db.add_all([
+            NavObservation(
+                scheme_code=scheme_code,
+                nav_date=observation_date,
+                nav_value=nav_value,
+                source_snapshot_id=nav_snapshot.id,
+            )
+            for observation_date, nav_value in (
+                (date(2026, 1, 1), "100.00"),
+                (date(2026, 1, 2), "101.00"),
+                (date(2026, 1, 5), "103.00"),
+            )
+        ])
+        db.commit()
+
+    assignment_payload = {
+        "scheme_code": scheme_code,
+        "benchmark_code": "NIFTY_50_TRI",
+        "tier": 1,
+        "valid_from": "2025-01-01",
+        "valid_to": None,
+        "source_document_url": "https://www.example-amc.com/factsheet.pdf",
+        "source_document_sha256": "a" * 64,
+    }
+    created = client.post("/v1/benchmarks/assignments", headers=headers, json=assignment_payload)
+    assert created.status_code == 201, created.text
+    assignment_id = created.json()["assignment_id"]
+    assert created.json()["verification_status"] == "PENDING"
+
+    pending_compare = client.get(
+        f"/v1/analytics/research/{scheme_code}/benchmark", headers=headers
+    )
+    assert pending_compare.status_code == 200
+    assert pending_compare.json()["status"] == "UNMAPPED"
+
+    verified = client.post(
+        f"/v1/benchmarks/assignments/{assignment_id}/verify", headers=headers
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verification_status"] == "VERIFIED"
+
+    comparison = client.get(
+        f"/v1/analytics/research/{scheme_code}/benchmark?days=3650",
+        headers=headers,
+    )
+    assert comparison.status_code == 200, comparison.text
+    comparison_json = comparison.json()
+    assert comparison_json["status"] == "OK"
+    assert len(comparison_json["comparisons"]) == 1
+    aligned = comparison_json["comparisons"][0]["metrics"]
+    assert aligned["common_observations"] == 3
+    assert aligned["fund_total_return"] == pytest.approx(0.03)
+    assert aligned["risk_statistics_status"] == "INSUFFICIENT_DAILY_OBSERVATIONS"
+    assert aligned["beta"] is None
+
+    with SessionLocal() as db:
+        benchmark = db.get(BenchmarkIndex, "NIFTY_50_TRI")
+        assert benchmark is not None and benchmark.variant == "TRI"
+        assert db.query(BenchmarkObservation).filter_by(benchmark_code="NIFTY_50_TRI").count() == 3
+        assert db.query(BenchmarkObservationRevision).filter_by(benchmark_code="NIFTY_50_TRI").count() == 1
+        mapping = db.get(SchemeBenchmarkAssignment, assignment_id)
+        assert mapping.verification_status == "VERIFIED"
+        assert mapping.verified_at is not None
+
+    wrong_variant = client.post(
+        "/v1/benchmarks/import-csv",
+        headers=headers,
+        json={**payload, "variant": "NTR"},
+    )
+    assert wrong_variant.status_code == 409
+
+def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    now = datetime.now(timezone.utc)
+    scheme_a, scheme_b = 87654322, 87654323
+    with SessionLocal() as db:
+        for code, name in (
+            (scheme_a, "Holdings Overlap Fund A"),
+            (scheme_b, "Holdings Overlap Fund B"),
+        ):
+            if db.get(Scheme, code) is None:
+                db.add(Scheme(
+                    scheme_code=code,
+                    scheme_name=name,
+                    isin_growth=None,
+                    isin_dividend_reinvestment=None,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    plan_type="Direct",
+                    option_type="Growth",
+                ))
+        db.commit()
+
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    client = TestClient(app)
+    csv_a = (
+        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\n"
+        "INE002A01018,Example Bank Ltd,5.25,Equity,Financial Services\n"
+        "INE009A01021,Example Technology Ltd,3.50,Equity,Information Technology\n"
+        ",Net Current Assets,2.00,Cash,\n"
+    )
+    csv_b = (
+        "ISIN,Name of Instrument,% to Net Assets,Asset Type,Sector\n"
+        "INE002A01018,Example Bank Ltd,3.00,Equity,Financial Services\n"
+        "INE009A01021,Example Technology Ltd,1.00,Equity,Information Technology\n"
+        "INE123A01016,Other Listed Company,5.00,Equity,Industrials\n"
+    )
+
+    def import_payload(code, as_of, text):
+        return {
+            "scheme_code": code,
+            "as_of_date": as_of,
+            "source_document_url": "https://www.amfiindia.com/portfolio-disclosure/example.csv",
+            "source_document_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "csv_text": text,
+        }
+
+    imported_a = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_a, "2026-10-31", csv_a),
+    )
+    imported_b = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_b, "2026-09-30", csv_b),
+    )
+    assert imported_a.status_code == 200, imported_a.text
+    assert imported_b.status_code == 200, imported_b.text
+    assert imported_a.json()["status"] == "imported"
+    duplicate = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_a, "2026-10-31", csv_a),
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["status"] == "already_imported"
+    assert duplicate.json()["verification_status"] == "PENDING"
+
+    pending_holdings = client.get(f"/v1/holdings/{scheme_a}", headers=headers)
+    assert pending_holdings.status_code == 404
+    verified_a = client.post(
+        f"/v1/holdings/disclosures/{imported_a.json()['disclosure_id']}/verify",
+        headers=headers,
+    )
+    verified_b = client.post(
+        f"/v1/holdings/disclosures/{imported_b.json()['disclosure_id']}/verify",
+        headers=headers,
+    )
+    assert verified_a.status_code == 200 and verified_a.json()["verification_status"] == "VERIFIED"
+    assert verified_b.status_code == 200 and verified_b.json()["verification_status"] == "VERIFIED"
+
+    overlap = client.get(
+        f"/v1/analytics/holdings-overlap?scheme_a={scheme_a}&scheme_b={scheme_b}",
+        headers=headers,
+    )
+    assert overlap.status_code == 200, overlap.text
+    result = overlap.json()
+    assert result["status"] == "OK"
+    assert result["common_isin_count"] == 2
+    assert float(result["holdings_overlap_pct"]) == pytest.approx(4.0)
+    assert float(result["shared_weight_in_scheme_a_pct"]) == pytest.approx(8.75)
+    assert float(result["shared_weight_in_scheme_b_pct"]) == pytest.approx(4.0)
+    assert len(result["top_shared_holdings"]) == 2
+
+    holdings = client.get(f"/v1/holdings/{scheme_a}", headers=headers)
+    assert holdings.status_code == 200
+    assert holdings.json()["row_count"] == 3
+    assert any(not item["is_isin"] for item in holdings.json()["items"])
+
+    corrected_csv = csv_a.replace("5.25", "5.50")
+    correction = client.post(
+        "/v1/holdings/import-csv",
+        headers=headers,
+        json=import_payload(scheme_a, "2026-10-31", corrected_csv),
+    )
+    assert correction.status_code == 200, correction.text
+    assert correction.json()["supersedes_disclosure_id"] == imported_a.json()["disclosure_id"]
+
+    with SessionLocal() as db:
+        assert db.query(FundHoldingDisclosure).filter_by(scheme_code=scheme_a).count() == 2
+        assert db.query(FundHolding).count() == 9
+
+def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    user_id = "00000000-0000-0000-0000-000000000044"
+
+    class AuthResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id": user_id}
+
+    monkeypatch.setattr(main.requests, "get", lambda url, headers, timeout: AuthResponse())
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer portfolio-risk-user"}
+
+    created = client.post("/v1/portfolios", headers=headers, json={"name": "Risk Test Portfolio"})
+    assert created.status_code == 201, created.text
+    portfolio_id = created.json()["id"]
+    scheme_code = 87654324
+    now = datetime.now(timezone.utc)
+    as_of = date(2026, 11, 10)
+
+    with SessionLocal() as db:
+        db.add(Scheme(
+            scheme_code=scheme_code,
+            scheme_name="Portfolio Risk Growth Fund",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+            plan_type="Direct",
+            option_type="Growth",
+        ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/nav",
+            retrieved_at=now,
+            payload_sha256="c" * 64,
+            records_valid=100,
+            unique_scheme_codes=1,
+            min_nav_date=as_of - timedelta(days=99),
+            max_nav_date=as_of,
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        disclosure = FundHoldingDisclosure(
+            scheme_code=scheme_code,
+            as_of_date=as_of,
+            source_document_url="https://example.test/verified-holdings.csv",
+            source_sha256="e" * 64,
+            retrieved_at=now,
+            row_count=1,
+            total_weight_pct=Decimal("100"),
+            verification_status="VERIFIED",
+            verified_at=now,
+            supersedes_disclosure_id=None,
+        )
+        db.add(disclosure)
+        db.flush()
+        db.add(FundHolding(
+            disclosure_id=disclosure.id,
+            security_id="INE123A01016",
+            security_name="Example Financial Services Ltd",
+            is_isin=True,
+            asset_type="Equity",
+            sector="Financial Services",
+            weight_pct=Decimal("100"),
+            market_value_inr=None,
+        ))
+        db.add(PortfolioTransaction(
+            portfolio_id=portfolio_id,
+            scheme_code=scheme_code,
+            transaction_type="BUY",
+            transaction_date=as_of - timedelta(days=90),
+            units=Decimal("10"),
+            nav=Decimal("100"),
+            amount=Decimal("1000"),
+            charges=Decimal("0"),
+            notes="Risk test seed",
+            created_at=now,
+            voided_at=None,
+            void_reason=None,
+        ))
+        db.add_all([
+            PortfolioTransaction(
+                portfolio_id=portfolio_id,
+                scheme_code=scheme_code,
+                transaction_type="BUY",
+                transaction_date=as_of - timedelta(days=60),
+                units=Decimal("5"),
+                nav=Decimal("110"),
+                amount=Decimal("550"),
+                charges=Decimal("0"),
+                notes="Second FIFO lot",
+                created_at=now,
+                voided_at=None,
+                void_reason=None,
+            ),
+            PortfolioTransaction(
+                portfolio_id=portfolio_id,
+                scheme_code=scheme_code,
+                transaction_type="SELL",
+                transaction_date=as_of - timedelta(days=30),
+                units=Decimal("6"),
+                nav=Decimal("120"),
+                amount=Decimal("720"),
+                charges=Decimal("0"),
+                notes="FIFO redemption",
+                created_at=now,
+                voided_at=None,
+                void_reason=None,
+            ),
+        ])
+        nav_rows = []
+        value = 100.0
+        for index in range(100):
+            observed_date = as_of - timedelta(days=99 - index)
+            daily_return = 0.001 if index % 8 else -0.015
+            value *= 1 + daily_return
+            nav_rows.append(NavObservation(
+                scheme_code=scheme_code,
+                nav_date=observed_date,
+                nav_value=Decimal(str(round(value, 8))),
+                source_snapshot_id=snapshot.id,
+            ))
+        db.add_all(nav_rows)
+        db.commit()
+
+    tax_lots = client.get(f"/v1/portfolios/{portfolio_id}/tax-lots", headers=headers)
+    assert tax_lots.status_code == 200, tax_lots.text
+    tax_json = tax_lots.json()
+    assert tax_json["realized_lot_count"] == 1
+    assert tax_json["open_lot_count"] == 2
+    assert tax_json["realized_gain_loss"] == "120.00"
+    assert tax_json["tax_status"] == "TAX_RULES_NOT_APPLIED"
+    assert len(tax_json["open_lots"]) == 2
+
+    lookthrough = client.get(f"/v1/portfolios/{portfolio_id}/lookthrough", headers=headers)
+    assert lookthrough.status_code == 200, lookthrough.text
+    look_json = lookthrough.json()
+    assert look_json["coverage"]["status"] == "COMPLETE"
+    assert look_json["coverage"]["covered_weight_pct"] == pytest.approx(100.0)
+    assert look_json["top_securities"][0]["security_id"] == "INE123A01016"
+    assert look_json["top_securities"][0]["identity_basis"] == "ISIN"
+    assert look_json["top_securities"][0]["fresh_disclosure_exposure_inr"] == look_json["top_securities"][0]["lookthrough_value"]
+    assert look_json["top_securities"][0]["stale_disclosure_exposure_inr"] == "0.00"
+    concentration = look_json["security_concentration"]
+    assert concentration["basis"] == "OBSERVED_VERIFIED_DISCLOSURES_ONLY"
+    assert concentration["top_1_weight_of_observed_positive_pct"] == "100.0000"
+    assert concentration["top_5_weight_of_observed_positive_pct"] == "100.0000"
+    assert concentration["hhi_points"] == "10000.00"
+    assert concentration["effective_security_count"] == "1.0000"
+    assert concentration["isin_identity_coverage_pct"] == "100.0000"
+    assert concentration["fresh_positive_disclosed_exposure_inr"] == look_json["top_securities"][0]["lookthrough_value"]
+    assert concentration["stale_positive_disclosed_exposure_inr"] == "0.00"
+    assert look_json["sector_exposure"][0]["sector"] == "Financial Services"
+
+    risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
+    assert risk.status_code == 200, risk.text
+    risk_json = risk.json()
+    assert risk_json["status"] == "OK"
+    assert risk_json["holdings_count"] == 1
+    assert risk_json["metrics"]["daily_return_observations"] >= 30
+    assert risk_json["metrics"]["annualized_volatility"] > 0
+    assert risk_json["metrics"]["historical_var_95"] > 0
+    assert risk_json["metrics"]["max_drawdown"] < 0
+
+    stress = client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=headers,
+        json={
+            "scenario_name": "Broad 10 percent drawdown",
+            "shocks": [{"scheme_code": scheme_code, "shock_pct": "-10"}],
+        },
+    )
+    assert stress.status_code == 200, stress.text
+    stress_json = stress.json()
+    assert stress_json["scenario_type"] == "USER_DEFINED_SENSITIVITY_NOT_FORECAST"
+    assert float(stress_json["estimated_portfolio_impact"]) == pytest.approx(
+        round(-float(stress_json["base_portfolio_value"]) * 0.10, 2),
+        abs=0.01,
+    )
+    assert float(stress_json["stressed_portfolio_value"]) == pytest.approx(
+        round(float(stress_json["base_portfolio_value"]) * 0.90, 2),
+        abs=0.01,
+    )
+
+    saved_report = client.post(
+        f"/v1/portfolios/{portfolio_id}/reports?days=365",
+        headers=headers,
+    )
+    assert saved_report.status_code == 201, saved_report.text
+    report_id = saved_report.json()["report_id"]
+    report_list = client.get(f"/v1/portfolios/{portfolio_id}/reports", headers=headers)
+    assert report_list.status_code == 200
+    assert report_list.json()["count"] == 1
+    report_detail = client.get(f"/v1/reports/{report_id}", headers=headers)
+    assert report_detail.status_code == 200
+    assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
+    assert report_detail.json()["report"]["lookthrough"]["coverage"]["status"] == "COMPLETE"
+    assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
+    assert report_detail.json()["integrity_status"] == "VERIFIED"
+    pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF")
+    with SessionLocal() as db:
+        assert db.query(PortfolioReportSnapshot).filter_by(id=report_id).count() == 1
+
+    incomplete = client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=headers,
+        json={"scenario_name": "Missing shock", "shocks": []},
+    )
+    assert incomplete.status_code == 422
+
+def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    identities = {
+        "goal-user-one": "00000000-0000-0000-0000-000000000055",
+        "goal-user-two": "00000000-0000-0000-0000-000000000066",
+    }
+
+    class AuthResponse:
+        status_code = 200
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+        def json(self):
+            return {"id": self.user_id}
+
+    monkeypatch.setattr(
+        main.requests,
+        "get",
+        lambda url, headers, timeout: AuthResponse(
+            identities[headers["Authorization"].removeprefix("Bearer ")]
+        ),
+    )
+    client = TestClient(app)
+    user_one = {"Authorization": "Bearer goal-user-one"}
+    user_two = {"Authorization": "Bearer goal-user-two"}
+    payload = {
+        "name": "Long-term wealth goal",
+        "target_amount_today": "10000000",
+        "target_date": "2036-01-01",
+        "current_amount": "500000",
+        "monthly_contribution": "25000",
+        "inflation_rate": 0.06,
+        "annual_return_low": 0.04,
+        "annual_return_base": 0.10,
+        "annual_return_high": 0.14,
+    }
+
+    created = client.post("/v1/goals", headers=user_one, json=payload)
+    assert created.status_code == 201, created.text
+    goal_id = created.json()["id"]
+
+    one_list = client.get("/v1/goals", headers=user_one)
+    two_list = client.get("/v1/goals", headers=user_two)
+    assert one_list.status_code == 200
+    assert len(one_list.json()["items"]) == 1
+    assert two_list.status_code == 200
+    assert two_list.json()["items"] == []
+
+    owner_portfolio = client.post(
+        "/v1/portfolios",
+        headers=user_one,
+        json={"name": "Private linked goal portfolio"},
+    )
+    assert owner_portfolio.status_code == 201, owner_portfolio.text
+    cross_owner_link = client.post(
+        "/v1/goals",
+        headers=user_two,
+        json={**payload, "linked_portfolio_id": owner_portfolio.json()["id"]},
+    )
+    assert cross_owner_link.status_code == 404
+
+    scheme_code = 87654325
+    now = datetime.now(timezone.utc)
+    nav_date = date.today()
+    with SessionLocal() as db:
+        db.add(Scheme(
+            scheme_code=scheme_code,
+            scheme_name="Linked Goal Test Fund",
+            isin_growth=None,
+            isin_dividend_reinvestment=None,
+            first_seen_at=now,
+            last_seen_at=now,
+            plan_type="Direct",
+            option_type="Growth",
+        ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/goal-nav",
+            retrieved_at=now,
+            payload_sha256="d" * 64,
+            records_valid=1,
+            unique_scheme_codes=1,
+            min_nav_date=nav_date,
+            max_nav_date=nav_date,
+            invalid_rows=0,
+            duplicate_rows_skipped=0,
+            quality_status="PASS",
+            report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        db.add(PortfolioTransaction(
+            portfolio_id=owner_portfolio.json()["id"],
+            scheme_code=scheme_code,
+            transaction_type="BUY",
+            transaction_date=nav_date,
+            units=Decimal("10"),
+            nav=Decimal("100"),
+            amount=Decimal("1000"),
+            charges=Decimal("0"),
+            notes="Goal link test",
+            created_at=now,
+            voided_at=None,
+            void_reason=None,
+        ))
+        db.add(NavObservation(
+            scheme_code=scheme_code,
+            nav_date=nav_date,
+            nav_value=Decimal("100"),
+            source_snapshot_id=snapshot.id,
+        ))
+        db.commit()
+
+    linked_payload = {**payload, "linked_portfolio_id": owner_portfolio.json()["id"]}
+    linked_update = client.put(f"/v1/goals/{goal_id}", headers=user_one, json=linked_payload)
+    assert linked_update.status_code == 200, linked_update.text
+    linked_projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
+    assert linked_projection.status_code == 200, linked_projection.text
+    assert linked_projection.json()["current_amount_source"] == "LINKED_PORTFOLIO_MARKET_VALUE"
+    assert linked_projection.json()["linked_portfolio"]["portfolio_id"] == owner_portfolio.json()["id"]
+    assert linked_projection.json()["projection"]["current_amount"] == 1000.0
+    unlinked = client.put(f"/v1/goals/{goal_id}", headers=user_one, json=payload)
+    assert unlinked.status_code == 200
+
+    projection = client.get(f"/v1/goals/{goal_id}/projection", headers=user_one)
+    assert projection.status_code == 200, projection.text
+    assert projection.json()["projection"]["inflation_adjusted_target"] > 10_000_000
+    assert projection.json()["current_amount_source"] == "USER_ENTERED"
+    assert projection.json()["linked_portfolio"] is None
+    assert set(projection.json()["projection"]["scenarios"]) == {"low", "base", "high"}
+
+    assert client.get(f"/v1/goals/{goal_id}/projection", headers=user_two).status_code == 404
+    assert client.put(f"/v1/goals/{goal_id}", headers=user_two, json=payload).status_code == 404
+    assert client.delete(f"/v1/goals/{goal_id}", headers=user_two).status_code == 404
+
+    updated_payload = {**payload, "monthly_contribution": "30000"}
+    updated = client.put(f"/v1/goals/{goal_id}", headers=user_one, json=updated_payload)
+    assert updated.status_code == 200
+    assert client.get("/v1/goals", headers=user_one).json()["items"][0]["monthly_contribution"] == "30000.00"
+    assert client.delete(f"/v1/goals/{goal_id}", headers=user_one).status_code == 200
+
+    with SessionLocal() as db:
+        assert db.query(PortfolioGoal).filter_by(owner_user_id=identities["goal-user-one"]).count() == 0

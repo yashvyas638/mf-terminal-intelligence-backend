@@ -22,9 +22,10 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import desc, func, select, text, tuple_
+from sqlalchemy import delete, desc, func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -32,18 +33,32 @@ from decimal import Decimal, ROUND_HALF_UP
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.db import (
+    BenchmarkIndex,
+    BenchmarkObservation,
+    BenchmarkObservationRevision,
+    FundHolding,
+    FundHoldingDisclosure,
+    FundResearchSnapshot,
+    FundWatchlistItem,
     IngestionSnapshot,
     NavObservation,
     NavObservationRevision,
     Portfolio,
     PortfolioImportBatch,
+    PortfolioGoal,
+    PortfolioReportSnapshot,
     PortfolioTransaction,
     PortfolioTransactionAudit,
     Scheme,
+    SchemeBenchmarkAssignment,
     SessionLocal,
     init_db,
 )
-from app.analytics import performance_metrics, research_metrics
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, performance_metrics, portfolio_risk_metrics, project_financial_goal, research_metrics
+from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
+from app.holdings_ingest import parse_fund_holdings_csv
+from app.holdings_risk import security_concentration_metrics
+from app.reporting import build_portfolio_report_pdf
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
 
 logger = logging.getLogger("mf_terminal.nav")
@@ -182,6 +197,23 @@ def require_api_key(x_api_key: str | None) -> None:
         raise HTTPException(503, "Server operator key must contain at least 32 characters")
     if not x_api_key or not secrets.compare_digest(x_api_key, expected):
         raise HTTPException(401, "Sign in to access this endpoint")
+
+
+def require_authenticated_user() -> str:
+    """Return the verified Supabase identity; operator API keys cannot own user data."""
+    user_id = _authenticated_user_id.get()
+    if not user_id:
+        raise HTTPException(401, "Sign in with a personal account to use your fund watchlist")
+    return user_id
+
+
+def require_operator_api_key(x_api_key: str | None) -> None:
+    """Require the dedicated server operator key, even when a user session is present."""
+    expected = os.getenv("API_KEY", "")
+    if len(expected) < 32:
+        raise HTTPException(503, "Server operator authentication is not configured")
+    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(401, "Operator key required for this action")
 
 
 def _require_portfolio_owner(db: Any, portfolio_id: int) -> Portfolio:
@@ -515,18 +547,101 @@ def nav_status(x_api_key: str | None = Header(default=None, alias="X-API-Key")) 
         }
 
 
+@app.get("/v1/nav/facets")
+def nav_scheme_facets(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, list[str]]:
+    """Return distinct, stored scheme-master facets for the Fund Explorer filters."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        def values(column: Any) -> list[str]:
+            rows = db.execute(
+                select(column).where(column.is_not(None), column != "").distinct().order_by(column)
+            ).scalars().all()
+            return [str(value) for value in rows if str(value).strip()]
+        return {
+            "amcs": values(Scheme.amc),
+            "categories": values(Scheme.category),
+            "asset_classes": values(Scheme.asset_class),
+            "plan_types": values(Scheme.plan_type),
+            "option_types": values(Scheme.option_type),
+        }
+
+
 @app.get("/v1/nav/schemes")
-def list_schemes(q: str | None = None, limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0), x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
+def list_schemes(
+    q: str | None = None,
+    amc: str | None = None,
+    category: str | None = None,
+    asset_class: str | None = None,
+    plan_type: str | None = None,
+    option_type: str | None = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Search and filter the complete ingested scheme master with stable pagination."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
         query = select(Scheme)
         if q:
-            query = query.where(Scheme.scheme_code == int(q) if q.isdigit() else Scheme.scheme_name.ilike(f"%{q[:120]}%"))
+            term = q.strip()[:120]
+            if term:
+                query = query.where(
+                    Scheme.scheme_code == int(term)
+                    if term.isdigit()
+                    else or_(
+                        Scheme.scheme_name.ilike(f"%{term}%"),
+                        Scheme.amc.ilike(f"%{term}%"),
+                    )
+                )
+        for column, value in (
+            (Scheme.amc, amc),
+            (Scheme.category, category),
+            (Scheme.asset_class, asset_class),
+            (Scheme.plan_type, plan_type),
+            (Scheme.option_type, option_type),
+        ):
+            if value and value.strip():
+                query = query.where(column.ilike(value.strip()[:120]))
         total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
-        latest_id = select(NavObservation.id).where(NavObservation.scheme_code == Scheme.scheme_code).order_by(desc(NavObservation.nav_date), desc(NavObservation.id)).limit(1).correlate(Scheme).scalar_subquery()
-        rows = db.execute(query.outerjoin(NavObservation, NavObservation.id == latest_id).add_columns(NavObservation).order_by(Scheme.scheme_name).offset(offset).limit(limit)).all()
-        return {"count": len(rows), "total_matching": total, "limit": limit, "offset": offset, "items": [{"scheme_code": scheme.scheme_code, "scheme_name": scheme.scheme_name, "isin_growth": scheme.isin_growth, "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment, "plan_type": scheme.plan_type, "option_type": scheme.option_type, "category": scheme.category, "asset_class": scheme.asset_class, "latest_nav": str(nav.nav_value) if nav else None, "nav_date": nav.nav_date.isoformat() if nav else None} for scheme, nav in rows]}
-
+        latest_id = (
+            select(NavObservation.id)
+            .where(NavObservation.scheme_code == Scheme.scheme_code)
+            .order_by(desc(NavObservation.nav_date), desc(NavObservation.id))
+            .limit(1)
+            .correlate(Scheme)
+            .scalar_subquery()
+        )
+        rows = db.execute(
+            query.outerjoin(NavObservation, NavObservation.id == latest_id)
+            .add_columns(NavObservation)
+            .order_by(Scheme.scheme_name, Scheme.scheme_code)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return {
+            "count": len(rows),
+            "total_matching": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "scheme_code": scheme.scheme_code,
+                    "scheme_name": scheme.scheme_name,
+                    "amc": scheme.amc,
+                    "isin_growth": scheme.isin_growth,
+                    "isin_dividend_reinvestment": scheme.isin_dividend_reinvestment,
+                    "plan_type": scheme.plan_type,
+                    "option_type": scheme.option_type,
+                    "category": scheme.category,
+                    "asset_class": scheme.asset_class,
+                    "latest_nav": str(nav.nav_value) if nav else None,
+                    "nav_date": nav.nav_date.isoformat() if nav else None,
+                }
+                for scheme, nav in rows
+            ],
+        }
 
 @app.get("/v1/nav/history/{scheme_code}")
 def nav_history(scheme_code: int, days: int = Query(365, ge=1, le=3650), x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict[str, Any]:
@@ -590,6 +705,7 @@ def scheme_detail(
             "observations_in_window": len(rows),
             "window_start": rows[0].nav_date.isoformat() if rows else None,
             "window_end": rows[-1].nav_date.isoformat() if rows else None,
+            "nav_series": [{"date": row.nav_date.isoformat(), "nav": float(row.nav_value)} for row in rows],
             "performance": performance_metrics([(row.nav_date, float(row.nav_value)) for row in rows]),
         }
 
@@ -744,6 +860,119 @@ def scheme_research(
         }
 
 
+@app.post("/v1/analytics/screener/refresh")
+def refresh_fund_research_snapshots(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Rebuild shared, source-backed ranking snapshots; restricted to the operator key."""
+    expected = os.getenv("API_KEY", "")
+    if len(expected) < 32:
+        raise HTTPException(503, "Server operator authentication is not configured")
+    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(401, "Operator key required to rebuild research snapshots")
+
+    refreshed_at = datetime.now(timezone.utc)
+    windows = (365, 1095, 1825, 3650)
+    history_floor = refreshed_at.date() - timedelta(days=max(windows))
+    snapshot_rows: list[FundResearchSnapshot] = []
+    schemes_processed = 0
+    min_as_of: date | None = None
+    max_as_of: date | None = None
+
+    def append_scheme_snapshot(
+        scheme_code: int,
+        points: list[tuple[date, float]],
+    ) -> None:
+        nonlocal schemes_processed, min_as_of, max_as_of
+        if not points:
+            return
+        schemes_processed += 1
+        as_of = points[-1][0]
+        min_as_of = as_of if min_as_of is None else min(min_as_of, as_of)
+        max_as_of = as_of if max_as_of is None else max(max_as_of, as_of)
+        for window_days in windows:
+            cutoff = as_of - timedelta(days=window_days)
+            window_points = [(d, value) for d, value in points if d >= cutoff]
+            metrics = research_metrics(window_points)
+            period = metrics.get("period_returns", {})
+            rolling = metrics.get("rolling_1y", {})
+            compact_metrics = {
+                "status": metrics.get("status"),
+                "observations": metrics.get("observations", 0),
+                "start_date": metrics.get("start_date"),
+                "end_date": metrics.get("end_date"),
+                "latest_nav": metrics.get("latest_nav"),
+                "total_return": metrics.get("total_return"),
+                "period_returns": period,
+                "rolling_1y": {
+                    "status": rolling.get("status"),
+                    "observations": rolling.get("observations", 0),
+                    "positive_window_rate": rolling.get("positive_window_rate"),
+                },
+                "methodology": "NAV-only research snapshot; no benchmark TRI or distribution adjustment.",
+            }
+            snapshot_rows.append(FundResearchSnapshot(
+                scheme_code=scheme_code,
+                window_days=window_days,
+                nav_as_of_date=as_of,
+                refreshed_at=refreshed_at,
+                observations=int(metrics.get("observations", 0)),
+                metrics_json=json.dumps(compact_metrics, ensure_ascii=False, allow_nan=False),
+                return_1m=period.get("1M"),
+                return_1y=period.get("1Y"),
+                return_3y=period.get("3Y"),
+                cagr=metrics.get("cagr"),
+                volatility=metrics.get("annualized_volatility"),
+                sharpe_ratio=metrics.get("sharpe_ratio"),
+                sortino_ratio=metrics.get("sortino_ratio"),
+                max_drawdown=metrics.get("max_drawdown"),
+                positive_month_rate=metrics.get("positive_month_rate"),
+                rolling_1y_positive_rate=rolling.get("positive_window_rate"),
+            ))
+
+    with SessionLocal() as db:
+        statement = (
+            select(NavObservation.scheme_code, NavObservation.nav_date, NavObservation.nav_value)
+            .where(NavObservation.nav_date >= history_floor)
+            .order_by(NavObservation.scheme_code, NavObservation.nav_date)
+            .execution_options(stream_results=True, yield_per=10000)
+        )
+        result = db.execute(statement)
+        current_code: int | None = None
+        current_points: list[tuple[date, float]] = []
+        for scheme_code, nav_date, nav_value in result:
+            if current_code is not None and scheme_code != current_code:
+                append_scheme_snapshot(current_code, current_points)
+                current_points = []
+            current_code = scheme_code
+            current_points.append((nav_date, float(nav_value)))
+        if current_code is not None:
+            append_scheme_snapshot(current_code, current_points)
+
+        if not snapshot_rows:
+            raise HTTPException(409, "No NAV history is available to build research snapshots")
+
+        # Delete + insert is one transaction: readers see the old complete
+        # snapshot set until the replacement set commits successfully.
+        db.execute(delete(FundResearchSnapshot))
+        for offset in range(0, len(snapshot_rows), 2000):
+            db.add_all(snapshot_rows[offset:offset + 2000])
+            db.flush()
+        db.commit()
+
+    return {
+        "status": "refreshed",
+        "schemes_processed": schemes_processed,
+        "snapshot_rows_written": len(snapshot_rows),
+        "windows_days": list(windows),
+        "nav_as_of_date_min": min_as_of.isoformat() if min_as_of else None,
+        "nav_as_of_date_max": max_as_of.isoformat() if max_as_of else None,
+        "refreshed_at": refreshed_at.isoformat(),
+        "methodology_version": "nav-research-v1",
+        "note": "Snapshots use stored AMFI NAV observations only; no benchmark TRI or distribution adjustment is implied.",
+    }
+
+
 @app.get("/v1/analytics/screener")
 def fund_screener(
     q: str | None = Query(default=None, max_length=120),
@@ -751,16 +980,47 @@ def fund_screener(
     asset_class: str | None = Query(default=None, max_length=40),
     plan_type: str | None = Query(default=None, max_length=20),
     option_type: str | None = Query(default=None, max_length=20),
-    days: int = Query(default=1095, ge=30, le=3650),
+    days: int = Query(default=1095, ge=365, le=3650),
+    sort_by: Literal[
+        "return_1m", "return_1y", "return_3y", "cagr", "volatility",
+        "sharpe_ratio", "sortino_ratio", "max_drawdown",
+        "positive_month_rate", "rolling_1y_positive_rate",
+    ] = "return_1y",
+    sort_order: Literal["asc", "desc"] = "desc",
+    min_observations: int = Query(default=0, ge=0, le=10000),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
-    """Paginated NAV-based screener. Sort in UI only within the returned page."""
+    """Globally ranked screener over the latest committed precomputed NAV snapshots."""
     require_api_key(x_api_key)
-    since = date.today() - timedelta(days=days)
+    if days not in {365, 1095, 1825, 3650}:
+        raise HTTPException(422, "days must be one of 365, 1095, 1825 or 3650")
+
+    sort_columns = {
+        "return_1m": FundResearchSnapshot.return_1m,
+        "return_1y": FundResearchSnapshot.return_1y,
+        "return_3y": FundResearchSnapshot.return_3y,
+        "cagr": FundResearchSnapshot.cagr,
+        "volatility": FundResearchSnapshot.volatility,
+        "sharpe_ratio": FundResearchSnapshot.sharpe_ratio,
+        "sortino_ratio": FundResearchSnapshot.sortino_ratio,
+        "max_drawdown": FundResearchSnapshot.max_drawdown,
+        "positive_month_rate": FundResearchSnapshot.positive_month_rate,
+        "rolling_1y_positive_rate": FundResearchSnapshot.rolling_1y_positive_rate,
+    }
+    sort_column = sort_columns[sort_by]
+    ordering = sort_column.desc().nullslast() if sort_order == "desc" else sort_column.asc().nullslast()
+
     with SessionLocal() as db:
-        query = select(Scheme)
+        query = (
+            select(FundResearchSnapshot, Scheme)
+            .join(Scheme, Scheme.scheme_code == FundResearchSnapshot.scheme_code)
+            .where(
+                FundResearchSnapshot.window_days == days,
+                FundResearchSnapshot.observations >= min_observations,
+            )
+        )
         if q:
             term = q.strip()[:120]
             if term.isdigit():
@@ -775,52 +1035,65 @@ def fund_screener(
             query = query.where(Scheme.plan_type == plan_type)
         if option_type:
             query = query.where(Scheme.option_type == option_type)
-        total = db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
-        schemes = db.execute(query.order_by(Scheme.scheme_name).offset(offset).limit(limit)).scalars().all()
-        codes = [scheme.scheme_code for scheme in schemes]
-        nav_rows = db.execute(
-            select(NavObservation)
-            .where(NavObservation.scheme_code.in_(codes), NavObservation.nav_date >= since)
-            .order_by(NavObservation.scheme_code, NavObservation.nav_date)
-        ).scalars().all() if codes else []
-        grouped: dict[int, list[NavObservation]] = {code: [] for code in codes}
-        for row in nav_rows:
-            grouped[row.scheme_code].append(row)
+
+        total = db.execute(
+            select(func.count()).select_from(query.subquery())
+        ).scalar_one()
+        rows = db.execute(
+            query.order_by(ordering, Scheme.scheme_name.asc(), Scheme.scheme_code.asc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        latest_refresh = db.execute(
+            select(func.max(FundResearchSnapshot.refreshed_at)).where(
+                FundResearchSnapshot.window_days == days
+            )
+        ).scalar_one()
+        if latest_refresh is None:
+            raise HTTPException(
+                503,
+                "Global research ranking is not ready yet. The scheduled research snapshot has not completed.",
+            )
+
         items = []
-        for scheme in schemes:
-            rows = grouped[scheme.scheme_code]
-            metrics = research_metrics([(row.nav_date, float(row.nav_value)) for row in rows])
-            latest = rows[-1] if rows else None
-            period = metrics.get("period_returns", {})
+        for snapshot, scheme in rows:
+            metrics = json.loads(snapshot.metrics_json)
             items.append({
+                "rank": offset + len(items) + 1,
                 "scheme_code": scheme.scheme_code,
                 "scheme_name": scheme.scheme_name,
                 "category": scheme.category,
                 "asset_class": scheme.asset_class,
                 "plan_type": scheme.plan_type,
                 "option_type": scheme.option_type,
-                "latest_nav": str(latest.nav_value) if latest else None,
-                "nav_date": latest.nav_date.isoformat() if latest else None,
-                "observations": len(rows),
-                "return_1m": period.get("1M"),
-                "return_1y": period.get("1Y"),
-                "return_3y": period.get("3Y"),
-                "volatility": metrics.get("annualized_volatility"),
-                "sharpe_ratio": metrics.get("sharpe_ratio"),
-                "sortino_ratio": metrics.get("sortino_ratio"),
-                "max_drawdown": metrics.get("max_drawdown"),
-                "positive_month_rate": metrics.get("positive_month_rate"),
-                "rolling_1y_positive_rate": metrics.get("rolling_1y", {}).get("positive_window_rate"),
+                "latest_nav": str(metrics.get("latest_nav")) if metrics.get("latest_nav") is not None else None,
+                "nav_date": snapshot.nav_as_of_date.isoformat(),
+                "observations": snapshot.observations,
+                "return_1m": snapshot.return_1m,
+                "return_1y": snapshot.return_1y,
+                "return_3y": snapshot.return_3y,
+                "cagr": snapshot.cagr,
+                "volatility": snapshot.volatility,
+                "sharpe_ratio": snapshot.sharpe_ratio,
+                "sortino_ratio": snapshot.sortino_ratio,
+                "max_drawdown": snapshot.max_drawdown,
+                "positive_month_rate": snapshot.positive_month_rate,
+                "rolling_1y_positive_rate": snapshot.rolling_1y_positive_rate,
                 "metrics_status": metrics.get("status"),
             })
+
         return {
             "count": len(items),
             "total_matching": total,
             "limit": limit,
             "offset": offset,
             "days_requested": days,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "min_observations": min_observations,
+            "refreshed_at": latest_refresh.isoformat(),
             "items": items,
-            "sorting_note": "The browser sorts the current page only. Use filters and pagination; a global ranked screener requires a precomputed research snapshot.",
+            "sorting_note": "Ranks are calculated across all matching stored research snapshots before pagination; ties use scheme name and scheme code. Only observed NAV data is used.",
             "classification_coverage": {
                 "category_populated": sum(bool(item["category"]) for item in items),
                 "asset_class_populated": sum(bool(item["asset_class"]) for item in items),
@@ -828,12 +1101,12 @@ def fund_screener(
                 "option_type_populated": sum(bool(item["option_type"]) for item in items),
             },
             "limitations": [
-                "AMFI NAV ingestion supplies scheme name, ISIN and (in the expanded feed) plan/option labels; it does not supply reliable AMC/category/asset-class classifications.",
-                "Do not interpret NAV-only return as distribution-adjusted total return.",
-                "This is a research screener, not an investment recommendation or trade instruction.",
+                "Metrics use stored AMFI NAV observations and are not distribution-adjusted total returns.",
+                "Benchmark TRI, alpha, beta, tracking error and information ratio are unavailable until verified benchmark total-return data is integrated.",
+                "Category and asset-class filters depend on independently verified scheme classification metadata.",
+                "The as-of NAV date can differ by scheme; inspect nav_date and observations before comparing funds.",
             ],
         }
-
 
 class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -844,6 +1117,106 @@ class PortfolioCreate(BaseModel):
         self.name = self.name.strip()
         if not self.name:
             raise ValueError("portfolio name cannot be blank")
+        return self
+
+
+class WatchlistCreate(BaseModel):
+    scheme_code: int = Field(gt=0)
+
+
+class BenchmarkImportRequest(BaseModel):
+    benchmark_code: str = Field(min_length=2, max_length=80, pattern="^[A-Z0-9][A-Z0-9_-]+$")
+    benchmark_name: str = Field(min_length=2, max_length=240)
+    variant: Literal["TRI", "NTR"]
+    csv_text: str = Field(min_length=10, max_length=5_000_000)
+
+    @model_validator(mode="after")
+    def normalize_benchmark_identity(self) -> "BenchmarkImportRequest":
+        self.benchmark_code = self.benchmark_code.strip().upper()
+        self.benchmark_name = self.benchmark_name.strip()
+        if not self.benchmark_name:
+            raise ValueError("benchmark name cannot be blank")
+        return self
+
+
+class HoldingShock(BaseModel):
+    scheme_code: int = Field(gt=0)
+    shock_pct: Decimal = Field(ge=Decimal("-100"), le=Decimal("100"))
+
+
+class GoalCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    target_amount_today: Decimal = Field(gt=Decimal("0"), le=Decimal("100000000000"))
+    target_date: date
+    current_amount: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("100000000000"))
+    linked_portfolio_id: int | None = Field(default=None, gt=0)
+    monthly_contribution: Decimal = Field(default=Decimal("0"), ge=Decimal("0"), le=Decimal("1000000000"))
+    inflation_rate: float = Field(default=0.06, ge=0, le=0.20)
+    annual_return_low: float = Field(default=0.04, ge=-0.20, le=0.30)
+    annual_return_base: float = Field(default=0.10, ge=-0.20, le=0.35)
+    annual_return_high: float = Field(default=0.14, ge=-0.20, le=0.40)
+
+    @model_validator(mode="after")
+    def validate_goal(self) -> "GoalCreateRequest":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("goal name cannot be blank")
+        if self.target_date <= date.today():
+            raise ValueError("target date must be in the future")
+        if not self.annual_return_low <= self.annual_return_base <= self.annual_return_high:
+            raise ValueError("return assumptions must satisfy low <= base <= high")
+        return self
+
+
+class PortfolioStressRequest(BaseModel):
+    scenario_name: str = Field(min_length=2, max_length=120)
+    shocks: list[HoldingShock] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_scenario(self) -> "PortfolioStressRequest":
+        self.scenario_name = self.scenario_name.strip()
+        if not self.scenario_name:
+            raise ValueError("scenario name cannot be blank")
+        codes = [item.scheme_code for item in self.shocks]
+        if len(codes) != len(set(codes)):
+            raise ValueError("each scheme can appear only once in a stress scenario")
+        return self
+
+
+class HoldingsImportRequest(BaseModel):
+    scheme_code: int = Field(gt=0)
+    as_of_date: date
+    source_document_url: str = Field(min_length=12, max_length=1000)
+    source_document_sha256: str = Field(pattern="^[a-fA-F0-9]{64}$")
+    csv_text: str = Field(min_length=10, max_length=5_000_000)
+
+    @model_validator(mode="after")
+    def validate_holdings_source(self) -> "HoldingsImportRequest":
+        self.source_document_url = self.source_document_url.strip()
+        self.source_document_sha256 = self.source_document_sha256.lower()
+        if not self.source_document_url.startswith("https://"):
+            raise ValueError("holdings source document must use an HTTPS URL")
+        return self
+
+
+class SchemeBenchmarkAssignmentCreate(BaseModel):
+    scheme_code: int = Field(gt=0)
+    benchmark_code: str = Field(min_length=2, max_length=80, pattern="^[A-Z0-9][A-Z0-9_-]+$")
+    tier: int = Field(ge=1, le=2)
+    valid_from: date
+    valid_to: date | None = None
+    source_document_url: str = Field(min_length=12, max_length=1000)
+    source_document_sha256: str = Field(pattern="^[a-fA-F0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_assignment_evidence(self) -> "SchemeBenchmarkAssignmentCreate":
+        self.benchmark_code = self.benchmark_code.strip().upper()
+        self.source_document_url = self.source_document_url.strip()
+        self.source_document_sha256 = self.source_document_sha256.lower()
+        if not self.source_document_url.startswith("https://"):
+            raise ValueError("benchmark mapping evidence must use an HTTPS source document URL")
+        if self.valid_to is not None and self.valid_to < self.valid_from:
+            raise ValueError("valid_to cannot be earlier than valid_from")
         return self
 
 
@@ -898,6 +1271,1313 @@ class RebalanceRequest(BaseModel):
         if total != Decimal("100"):
             raise ValueError("target percentages must sum to exactly 100")
         return self
+
+
+@app.get("/v1/watchlist")
+def list_fund_watchlist() -> dict[str, Any]:
+    """Return only the verified user's saved funds and their latest stored NAV."""
+    user_id = require_authenticated_user()
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(FundWatchlistItem, Scheme)
+            .join(Scheme, Scheme.scheme_code == FundWatchlistItem.scheme_code)
+            .where(FundWatchlistItem.owner_user_id == user_id)
+            .order_by(desc(FundWatchlistItem.created_at), FundWatchlistItem.id.desc())
+        ).all()
+        codes = [item.scheme_code for item, _ in rows]
+        latest_by_code: dict[int, NavObservation] = {}
+        if codes:
+            latest_dates = (
+                select(
+                    NavObservation.scheme_code.label("scheme_code"),
+                    func.max(NavObservation.nav_date).label("latest_date"),
+                )
+                .where(NavObservation.scheme_code.in_(codes))
+                .group_by(NavObservation.scheme_code)
+                .subquery()
+            )
+            latest_rows = db.execute(
+                select(NavObservation).join(
+                    latest_dates,
+                    (NavObservation.scheme_code == latest_dates.c.scheme_code)
+                    & (NavObservation.nav_date == latest_dates.c.latest_date),
+                )
+            ).scalars().all()
+            latest_by_code = {nav.scheme_code: nav for nav in latest_rows}
+        return {
+            "count": len(rows),
+            "items": [
+                {
+                    "scheme_code": item.scheme_code,
+                    "scheme_name": scheme.scheme_name,
+                    "plan_type": scheme.plan_type,
+                    "option_type": scheme.option_type,
+                    "category": scheme.category,
+                    "asset_class": scheme.asset_class,
+                    "added_at": item.created_at.isoformat(),
+                    "latest_nav": str(latest_by_code[item.scheme_code].nav_value)
+                    if item.scheme_code in latest_by_code else None,
+                    "nav_date": latest_by_code[item.scheme_code].nav_date.isoformat()
+                    if item.scheme_code in latest_by_code else None,
+                }
+                for item, scheme in rows
+            ],
+        }
+
+
+@app.post("/v1/watchlist", status_code=201)
+def add_fund_to_watchlist(payload: WatchlistCreate) -> dict[str, Any]:
+    """Save a scheme for the verified user; duplicate additions are explicit conflicts."""
+    user_id = require_authenticated_user()
+    with SessionLocal() as db:
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found")
+        current_count = db.execute(
+            select(func.count()).select_from(FundWatchlistItem).where(
+                FundWatchlistItem.owner_user_id == user_id
+            )
+        ).scalar_one()
+        if current_count >= 500:
+            raise HTTPException(409, "A watchlist can contain at most 500 funds")
+        item = FundWatchlistItem(
+            owner_user_id=user_id,
+            scheme_code=payload.scheme_code,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(item)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "This fund is already in your watchlist") from None
+        return {
+            "scheme_code": item.scheme_code,
+            "status": "added",
+            "added_at": item.created_at.isoformat(),
+        }
+
+
+@app.delete("/v1/watchlist/{scheme_code}")
+def remove_fund_from_watchlist(scheme_code: int) -> dict[str, Any]:
+    """Remove only the authenticated user's saved copy of a fund."""
+    user_id = require_authenticated_user()
+    with SessionLocal() as db:
+        item = db.execute(
+            select(FundWatchlistItem).where(
+                FundWatchlistItem.owner_user_id == user_id,
+                FundWatchlistItem.scheme_code == scheme_code,
+            )
+        ).scalar_one_or_none()
+        if item is None:
+            raise HTTPException(404, "Watchlist item not found")
+        db.delete(item)
+        db.commit()
+        return {"scheme_code": scheme_code, "status": "removed"}
+
+
+@app.get("/v1/benchmarks")
+def list_benchmarks(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """List benchmark variants and their stored observation coverage."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        indices = db.execute(
+            select(BenchmarkIndex).order_by(BenchmarkIndex.provider, BenchmarkIndex.benchmark_name, BenchmarkIndex.variant)
+        ).scalars().all()
+        items = []
+        for index in indices:
+            coverage = db.execute(
+                select(
+                    func.count(BenchmarkObservation.id),
+                    func.min(BenchmarkObservation.observation_date),
+                    func.max(BenchmarkObservation.observation_date),
+                ).where(BenchmarkObservation.benchmark_code == index.benchmark_code)
+            ).one()
+            items.append({
+                "benchmark_code": index.benchmark_code,
+                "benchmark_name": index.benchmark_name,
+                "provider": index.provider,
+                "variant": index.variant,
+                "source_url": index.source_url,
+                "observations": coverage[0],
+                "first_date": coverage[1].isoformat() if coverage[1] else None,
+                "last_date": coverage[2].isoformat() if coverage[2] else None,
+                "last_seen_at": index.last_seen_at.isoformat(),
+            })
+        return {"count": len(items), "items": items}
+
+
+@app.post("/v1/benchmarks/import-csv")
+def import_benchmark_csv(
+    payload: BenchmarkImportRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Import an official Nifty Indices TRI/NTR CSV export with correction provenance."""
+    require_operator_api_key(x_api_key)
+    try:
+        points, report = parse_nifty_tri_csv(payload.csv_text, payload.variant)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+    source_name = report.get("source_index_name")
+    def normalise_name(value: str) -> str:
+        return "".join(ch.lower() for ch in value if ch.isalnum())
+
+    if source_name and normalise_name(source_name) != normalise_name(payload.benchmark_name):
+        raise HTTPException(422, "CSV index name does not match the requested benchmark name")
+
+    source_sha256 = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
+    retrieved_at = datetime.now(timezone.utc)
+    inserted = corrected = unchanged = 0
+
+    with SessionLocal() as db:
+        benchmark = db.get(BenchmarkIndex, payload.benchmark_code)
+        if benchmark is not None and (
+            benchmark.variant != payload.variant
+            or normalise_name(benchmark.benchmark_name) != normalise_name(payload.benchmark_name)
+        ):
+            raise HTTPException(409, "Benchmark code already exists with a different name or return variant")
+        if benchmark is None:
+            benchmark = BenchmarkIndex(
+                benchmark_code=payload.benchmark_code,
+                benchmark_name=payload.benchmark_name,
+                provider="NSE Indices Ltd.",
+                variant=payload.variant,
+                source_url=NIFTY_HISTORICAL_DATA_URL,
+                created_at=retrieved_at,
+                last_seen_at=retrieved_at,
+            )
+            db.add(benchmark)
+            db.flush()
+        else:
+            benchmark.last_seen_at = retrieved_at
+
+        existing_rows = db.execute(
+            select(BenchmarkObservation).where(
+                BenchmarkObservation.benchmark_code == payload.benchmark_code,
+                BenchmarkObservation.observation_date >= points[0].observation_date,
+                BenchmarkObservation.observation_date <= points[-1].observation_date,
+            )
+        ).scalars().all()
+        existing_by_date = {row.observation_date: row for row in existing_rows}
+
+        for point in points:
+            existing = existing_by_date.get(point.observation_date)
+            if existing is None:
+                db.add(BenchmarkObservation(
+                    benchmark_code=payload.benchmark_code,
+                    observation_date=point.observation_date,
+                    index_value=point.index_value,
+                    source_sha256=source_sha256,
+                    retrieved_at=retrieved_at,
+                ))
+                inserted += 1
+            elif Decimal(existing.index_value) != point.index_value:
+                db.add(BenchmarkObservationRevision(
+                    benchmark_code=payload.benchmark_code,
+                    observation_date=point.observation_date,
+                    previous_value=existing.index_value,
+                    replacement_value=point.index_value,
+                    previous_source_sha256=existing.source_sha256,
+                    replacement_source_sha256=source_sha256,
+                    corrected_at=retrieved_at,
+                ))
+                existing.index_value = point.index_value
+                existing.source_sha256 = source_sha256
+                existing.retrieved_at = retrieved_at
+                corrected += 1
+            else:
+                existing.source_sha256 = source_sha256
+                existing.retrieved_at = retrieved_at
+                unchanged += 1
+
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Concurrent benchmark import conflict; retry the import") from None
+
+    return {
+        "status": "imported",
+        "benchmark_code": payload.benchmark_code,
+        "benchmark_name": payload.benchmark_name,
+        "provider": "NSE Indices Ltd.",
+        "variant": payload.variant,
+        "source_url": NIFTY_HISTORICAL_DATA_URL,
+        "source_sha256": source_sha256,
+        "inserted_rows": inserted,
+        "corrected_rows": corrected,
+        "unchanged_rows": unchanged,
+        **report,
+    }
+
+
+@app.post("/v1/benchmarks/assignments", status_code=201)
+def create_scheme_benchmark_assignment(
+    payload: SchemeBenchmarkAssignmentCreate,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Register a source-documented mapping; it remains pending until reviewed."""
+    require_operator_api_key(x_api_key)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found")
+        benchmark = db.get(BenchmarkIndex, payload.benchmark_code)
+        if benchmark is None:
+            raise HTTPException(404, "Benchmark index not found")
+        overlap = db.execute(
+            select(SchemeBenchmarkAssignment).where(
+                SchemeBenchmarkAssignment.scheme_code == payload.scheme_code,
+                SchemeBenchmarkAssignment.tier == payload.tier,
+                SchemeBenchmarkAssignment.valid_from <= (payload.valid_to or date.max),
+                or_(
+                    SchemeBenchmarkAssignment.valid_to.is_(None),
+                    SchemeBenchmarkAssignment.valid_to >= payload.valid_from,
+                ),
+            )
+        ).scalar_one_or_none()
+        if overlap is not None:
+            raise HTTPException(409, "An assignment already overlaps this scheme, tier and effective date range")
+        assignment = SchemeBenchmarkAssignment(
+            scheme_code=payload.scheme_code,
+            benchmark_code=payload.benchmark_code,
+            tier=payload.tier,
+            valid_from=payload.valid_from,
+            valid_to=payload.valid_to,
+            source_document_url=payload.source_document_url,
+            source_document_sha256=payload.source_document_sha256,
+            verification_status="PENDING",
+            created_at=now,
+        )
+        db.add(assignment)
+        db.commit()
+        return {
+            "assignment_id": assignment.id,
+            "scheme_code": assignment.scheme_code,
+            "benchmark_code": assignment.benchmark_code,
+            "tier": assignment.tier,
+            "valid_from": assignment.valid_from.isoformat(),
+            "valid_to": assignment.valid_to.isoformat() if assignment.valid_to else None,
+            "verification_status": assignment.verification_status,
+            "source_document_url": assignment.source_document_url,
+            "source_document_sha256": assignment.source_document_sha256,
+        }
+
+
+@app.post("/v1/benchmarks/assignments/{assignment_id}/verify")
+def verify_scheme_benchmark_assignment(
+    assignment_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Mark a mapping verified only after an operator has checked its cited document."""
+    require_operator_api_key(x_api_key)
+    with SessionLocal() as db:
+        assignment = db.get(SchemeBenchmarkAssignment, assignment_id)
+        if assignment is None:
+            raise HTTPException(404, "Benchmark assignment not found")
+        if assignment.verification_status == "REJECTED":
+            raise HTTPException(409, "A rejected benchmark assignment cannot be verified")
+        assignment.verification_status = "VERIFIED"
+        assignment.verified_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "assignment_id": assignment.id,
+            "scheme_code": assignment.scheme_code,
+            "benchmark_code": assignment.benchmark_code,
+            "tier": assignment.tier,
+            "verification_status": assignment.verification_status,
+            "verified_at": assignment.verified_at.isoformat(),
+        }
+
+
+@app.get("/v1/benchmarks/assignments/{scheme_code}")
+def list_scheme_benchmark_assignments(
+    scheme_code: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Show effective-dated benchmark mappings and their verification evidence."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(SchemeBenchmarkAssignment, BenchmarkIndex)
+            .join(BenchmarkIndex, BenchmarkIndex.benchmark_code == SchemeBenchmarkAssignment.benchmark_code)
+            .where(SchemeBenchmarkAssignment.scheme_code == scheme_code)
+            .order_by(SchemeBenchmarkAssignment.tier, SchemeBenchmarkAssignment.valid_from.desc())
+        ).all()
+        return {
+            "scheme_code": scheme_code,
+            "count": len(rows),
+            "items": [
+                {
+                    "assignment_id": assignment.id,
+                    "benchmark_code": benchmark.benchmark_code,
+                    "benchmark_name": benchmark.benchmark_name,
+                    "provider": benchmark.provider,
+                    "variant": benchmark.variant,
+                    "tier": assignment.tier,
+                    "valid_from": assignment.valid_from.isoformat(),
+                    "valid_to": assignment.valid_to.isoformat() if assignment.valid_to else None,
+                    "verification_status": assignment.verification_status,
+                    "verified_at": assignment.verified_at.isoformat() if assignment.verified_at else None,
+                    "source_document_url": assignment.source_document_url,
+                    "source_document_sha256": assignment.source_document_sha256,
+                }
+                for assignment, benchmark in rows
+            ],
+        }
+
+
+@app.get("/v1/analytics/research/{scheme_code}/evidence")
+def build_fund_research_evidence_pack(
+    scheme_code: int,
+    days: int = Query(default=3650, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Assemble source-linked fund facts and calculations for downstream research."""
+    require_api_key(x_api_key)
+    as_of = datetime.now(timezone.utc).date()
+    since = as_of - timedelta(days=days)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found")
+        nav_rows = db.execute(
+            select(NavObservation)
+            .where(
+                NavObservation.scheme_code == scheme_code,
+                NavObservation.nav_date >= since,
+                NavObservation.nav_date <= as_of,
+            )
+            .order_by(NavObservation.nav_date)
+        ).scalars().all()
+        points = [(row.nav_date, float(row.nav_value)) for row in nav_rows]
+        metrics = research_metrics(points)
+        evidence = []
+        sources = []
+        gaps = []
+
+        if nav_rows:
+            latest = nav_rows[-1]
+            ingestion = db.get(IngestionSnapshot, latest.source_snapshot_id)
+            source_id = "amfi-nav-" + str(ingestion.id if ingestion else latest.source_snapshot_id)
+            sources.append({
+                "source_id": source_id,
+                "source_type": "OFFICIAL_NAV_SOURCE",
+                "title": "AMFI Net Asset Value download",
+                "url": ingestion.source_url if ingestion else "https://www.amfiindia.com/net-asset-value/nav-download",
+                "source_sha256": ingestion.payload_sha256 if ingestion else None,
+                "retrieved_at": ingestion.retrieved_at.isoformat() if ingestion else None,
+                "effective_nav_date": latest.nav_date.isoformat(),
+            })
+            evidence.append({
+                "claim": "Latest stored scheme NAV",
+                "value": str(latest.nav_value),
+                "as_of_date": latest.nav_date.isoformat(),
+                "source_id": source_id,
+                "evidence_type": "SOURCE_FACT",
+            })
+            evidence.append({
+                "claim": "Stored NAV observation coverage",
+                "value": {
+                    "observations": len(points),
+                    "start_date": points[0][0].isoformat(),
+                    "end_date": points[-1][0].isoformat(),
+                },
+                "source_id": source_id,
+                "evidence_type": "SOURCE_COVERAGE",
+            })
+            for metric_name in ("cagr", "total_return", "annualized_volatility", "max_drawdown", "sharpe_ratio", "sortino_ratio"):
+                metric_value = metrics.get(metric_name)
+                if metric_value is not None:
+                    evidence.append({
+                        "claim": "NAV-derived " + metric_name,
+                        "value": metric_value,
+                        "methodology_version": metrics.get("methodology_version", "nav-research-v1"),
+                        "source_id": source_id,
+                        "evidence_type": "DERIVED_CALCULATION",
+                    })
+        else:
+            gaps.append("No stored NAV observations exist in the requested period.")
+
+        active_assignments = db.execute(
+            select(SchemeBenchmarkAssignment, BenchmarkIndex)
+            .join(BenchmarkIndex, BenchmarkIndex.benchmark_code == SchemeBenchmarkAssignment.benchmark_code)
+            .where(
+                SchemeBenchmarkAssignment.scheme_code == scheme_code,
+                SchemeBenchmarkAssignment.verification_status == "VERIFIED",
+                SchemeBenchmarkAssignment.valid_from <= as_of,
+                or_(
+                    SchemeBenchmarkAssignment.valid_to.is_(None),
+                    SchemeBenchmarkAssignment.valid_to >= as_of,
+                ),
+            )
+            .order_by(SchemeBenchmarkAssignment.tier)
+        ).all()
+        for assignment, benchmark in active_assignments:
+            coverage = db.execute(
+                select(
+                    func.count(BenchmarkObservation.id),
+                    func.min(BenchmarkObservation.observation_date),
+                    func.max(BenchmarkObservation.observation_date),
+                ).where(BenchmarkObservation.benchmark_code == benchmark.benchmark_code)
+            ).one()
+            source_id = "benchmark-" + benchmark.benchmark_code
+            sources.append({
+                "source_id": source_id,
+                "source_type": "BENCHMARK_TRI_SOURCE",
+                "title": benchmark.benchmark_name + " " + benchmark.variant,
+                "url": benchmark.source_url,
+                "first_date": coverage[1].isoformat() if coverage[1] else None,
+                "last_date": coverage[2].isoformat() if coverage[2] else None,
+                "observations": coverage[0],
+                "mapping_source_url": assignment.source_document_url,
+                "mapping_source_sha256": assignment.source_document_sha256,
+                "mapping_verified_at": assignment.verified_at.isoformat() if assignment.verified_at else None,
+                "tier": assignment.tier,
+            })
+            evidence.append({
+                "claim": "Verified tier-" + str(assignment.tier) + " benchmark mapping",
+                "value": {
+                    "benchmark_code": benchmark.benchmark_code,
+                    "benchmark_name": benchmark.benchmark_name,
+                    "variant": benchmark.variant,
+                    "effective_from": assignment.valid_from.isoformat(),
+                    "effective_to": assignment.valid_to.isoformat() if assignment.valid_to else None,
+                },
+                "source_id": source_id,
+                "evidence_type": "VERIFIED_MAPPING",
+            })
+        if not active_assignments:
+            gaps.append("No verified active tier-1/tier-2 benchmark mapping is available.")
+
+        holdings = db.execute(
+            select(FundHoldingDisclosure)
+            .where(
+                FundHoldingDisclosure.scheme_code == scheme_code,
+                FundHoldingDisclosure.verification_status == "VERIFIED",
+                FundHoldingDisclosure.as_of_date <= as_of,
+            )
+            .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
+            .limit(1)
+        ).scalar_one_or_none()
+        if holdings is not None:
+            source_id = "holdings-" + str(holdings.id)
+            sources.append({
+                "source_id": source_id,
+                "source_type": "VERIFIED_HOLDINGS_DISCLOSURE",
+                "title": "Scheme portfolio disclosure as of " + holdings.as_of_date.isoformat(),
+                "url": holdings.source_document_url,
+                "source_sha256": holdings.source_sha256,
+                "as_of_date": holdings.as_of_date.isoformat(),
+                "verified_at": holdings.verified_at.isoformat() if holdings.verified_at else None,
+                "row_count": holdings.row_count,
+            })
+            evidence.append({
+                "claim": "Verified scheme holdings disclosure",
+                "value": {
+                    "as_of_date": holdings.as_of_date.isoformat(),
+                    "row_count": holdings.row_count,
+                    "total_weight_pct": str(holdings.total_weight_pct),
+                },
+                "source_id": source_id,
+                "evidence_type": "VERIFIED_SOURCE_FACT",
+            })
+        else:
+            gaps.append("No verified holdings disclosure is available.")
+
+        return {
+            "scheme": {
+                "scheme_code": scheme.scheme_code,
+                "scheme_name": scheme.scheme_name,
+                "amc": scheme.amc,
+                "category": scheme.category,
+                "asset_class": scheme.asset_class,
+                "plan_type": scheme.plan_type,
+                "option_type": scheme.option_type,
+            },
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "requested_days": days,
+            "generation_status": "EVIDENCE_ONLY_NO_LLM_GENERATION",
+            "evidence": evidence,
+            "sources": sources,
+            "data_gaps": gaps,
+            "guardrails": [
+                "Do not state a fact unless it is present in evidence or a cited source.",
+                "Derived metrics are NAV-only and must retain their methodology and date coverage.",
+                "No benchmark claim is valid without a VERIFIED effective-dated assignment and TRI/NTR source.",
+                "No holdings claim is valid without a VERIFIED dated disclosure.",
+                "Do not invent AUM, TER, manager, category, benchmark or tax facts.",
+            ],
+        }
+
+
+@app.get("/v1/analytics/research/{scheme_code}/benchmark")
+def compare_fund_with_benchmark(
+    scheme_code: int,
+    days: int = Query(default=3650, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Compare fund NAV with its verified effective-dated benchmark TRI assignments."""
+    require_api_key(x_api_key)
+    as_of = datetime.now(timezone.utc).date()
+    since = as_of - timedelta(days=days)
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found")
+        assignments = db.execute(
+            select(SchemeBenchmarkAssignment, BenchmarkIndex)
+            .join(BenchmarkIndex, BenchmarkIndex.benchmark_code == SchemeBenchmarkAssignment.benchmark_code)
+            .where(
+                SchemeBenchmarkAssignment.scheme_code == scheme_code,
+                SchemeBenchmarkAssignment.verification_status == "VERIFIED",
+                SchemeBenchmarkAssignment.valid_from <= as_of,
+                or_(
+                    SchemeBenchmarkAssignment.valid_to.is_(None),
+                    SchemeBenchmarkAssignment.valid_to >= as_of,
+                ),
+            )
+            .order_by(SchemeBenchmarkAssignment.tier)
+        ).all()
+        if not assignments:
+            return {
+                "scheme_code": scheme_code,
+                "scheme_name": scheme.scheme_name,
+                "status": "UNMAPPED",
+                "message": "No verified active benchmark mapping is available for this scheme.",
+                "comparisons": [],
+            }
+
+        fund_rows = db.execute(
+            select(NavObservation.nav_date, NavObservation.nav_value)
+            .where(
+                NavObservation.scheme_code == scheme_code,
+                NavObservation.nav_date >= since,
+            )
+            .order_by(NavObservation.nav_date)
+        ).all()
+        fund_points = [(row.nav_date, float(row.nav_value)) for row in fund_rows]
+        comparisons = []
+        for assignment, benchmark in assignments:
+            benchmark_rows = db.execute(
+                select(BenchmarkObservation.observation_date, BenchmarkObservation.index_value)
+                .where(
+                    BenchmarkObservation.benchmark_code == benchmark.benchmark_code,
+                    BenchmarkObservation.observation_date >= since,
+                )
+                .order_by(BenchmarkObservation.observation_date)
+            ).all()
+            benchmark_points = [(row.observation_date, float(row.index_value)) for row in benchmark_rows]
+            metrics = benchmark_comparison_metrics(fund_points, benchmark_points)
+            comparisons.append({
+                "benchmark_code": benchmark.benchmark_code,
+                "benchmark_name": benchmark.benchmark_name,
+                "provider": benchmark.provider,
+                "variant": benchmark.variant,
+                "tier": assignment.tier,
+                "source_document_url": assignment.source_document_url,
+                "source_document_sha256": assignment.source_document_sha256,
+                "metrics": metrics,
+            })
+
+        limitations = [
+            "Only exact common NAV and benchmark dates are compared; no interpolation or forward-fill is used.",
+            "Alpha, beta, tracking error and information ratio require at least 30 adjacent common-date return pairs no more than seven calendar days apart.",
+            "Scheme benchmark mappings are effective-dated and only operator-verified mappings are used.",
+        ]
+        if (scheme.option_type or "").lower() not in {"growth", "reinvestment"}:
+            limitations.append("This scheme option may distribute cash; NAV-only fund returns are not distribution-adjusted and should not be compared as investor total returns.")
+        return {
+            "scheme_code": scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "status": "OK",
+            "days_requested": days,
+            "as_of_date": as_of.isoformat(),
+            "comparisons": comparisons,
+            "limitations": limitations,
+        }
+
+
+@app.post("/v1/portfolios/{portfolio_id}/reports", status_code=201)
+def create_portfolio_report_snapshot(
+    portfolio_id: int,
+    days: int = Query(default=1095, ge=30, le=3650),
+) -> dict[str, Any]:
+    """Generate and persist an immutable owner-scoped portfolio report snapshot."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+
+    # Reuse the same tested valuation, risk and FIFO calculation endpoints.
+    valuation = portfolio_valuation(portfolio_id, None)
+    risk = portfolio_historical_risk(portfolio_id, days, None)
+    tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
+    lookthrough = portfolio_holdings_lookthrough(portfolio_id, 180)
+    generated_at = datetime.now(timezone.utc)
+
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        holdings = valuation.get("holdings", [])
+        current_value = float(valuation.get("current_value") or 0)
+        for holding in holdings:
+            holding["weight_pct"] = (
+                round(float(holding["market_value"]) / current_value * 100, 4)
+                if current_value > 0 and holding.get("market_value") is not None else None
+            )
+            holding["freshness_status"] = holding.get("nav_freshness")
+        source_snapshot_ids = set()
+        max_nav_date = None
+        for holding in holdings:
+            code = holding.get("scheme_code")
+            nav_date = holding.get("nav_date")
+            if nav_date:
+                parsed_date = date.fromisoformat(nav_date)
+                max_nav_date = parsed_date if max_nav_date is None else max(max_nav_date, parsed_date)
+            if code:
+                latest = db.execute(
+                    select(NavObservation)
+                    .where(NavObservation.scheme_code == code)
+                    .order_by(desc(NavObservation.nav_date))
+                    .limit(1)
+                ).scalar_one_or_none()
+                if latest is not None:
+                    source_snapshot_ids.add(latest.source_snapshot_id)
+
+        sources = []
+        for snapshot_id in sorted(source_snapshot_ids):
+            snapshot = db.get(IngestionSnapshot, snapshot_id)
+            if snapshot is not None:
+                sources.append({
+                    "source_type": "AMFI_NAV_INGESTION",
+                    "source_url": snapshot.source_url,
+                    "source_sha256": snapshot.payload_sha256,
+                    "retrieved_at": snapshot.retrieved_at.isoformat(),
+                    "min_nav_date": snapshot.min_nav_date.isoformat() if snapshot.min_nav_date else None,
+                    "max_nav_date": snapshot.max_nav_date.isoformat() if snapshot.max_nav_date else None,
+                    "quality_status": snapshot.quality_status,
+                })
+
+        for source in lookthrough.get("sources", []):
+            sources.append({
+                "source_type": "VERIFIED_HOLDINGS_DISCLOSURE",
+                "title": source.get("scheme_name"),
+                "url": source.get("source_document_url"),
+                "source_sha256": source.get("source_sha256"),
+                "as_of_date": source.get("as_of_date"),
+                "disclosure_id": source.get("disclosure_id"),
+                "freshness": source.get("freshness"),
+            })
+
+        limitations = [
+            "Historical risk uses current market-value weights held constant over the lookback.",
+            "FIFO gains are pre-tax; no Indian tax rates, surcharge, cess, exemption or exit load is applied.",
+            "Portfolio-level benchmark TRI attribution is not included until every holding has a verified effective-dated benchmark mapping.",
+            "No future returns or goal achievement are guaranteed.",
+            "Look-through coverage status: " + str(lookthrough.get("coverage", {}).get("status")),
+        ]
+        if risk.get("status") != "OK":
+            limitations.append("Portfolio risk metrics are unavailable or incomplete: " + str(risk.get("status")))
+        if valuation.get("valuation_status") != "COMPLETE":
+            limitations.append("Portfolio valuation has a data-quality status: " + str(valuation.get("valuation_status")))
+
+        report = {
+            "report_version": "portfolio-report-v1",
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "generated_at": generated_at.isoformat(),
+            "lookback_days": days,
+            "valuation": valuation,
+            "risk": risk,
+            "lookthrough": lookthrough,
+            "fifo_tax_lots": tax_lots,
+            "sources": sources,
+            "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
+            "limitations": limitations,
+            "methodology": {
+                "valuation": "Latest accepted AMFI NAV multiplied by remaining units.",
+                "risk": "Exact common NAV dates; no forward-fill; current weights held constant.",
+                "capital_gains": "FIFO lot matching with recorded charges; pre-tax only.",
+            },
+        }
+        content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
+        content_sha256 = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+        snapshot = PortfolioReportSnapshot(
+            portfolio_id=portfolio_id,
+            owner_user_id=owner_id,
+            generated_at=generated_at,
+            report_version="portfolio-report-v1",
+            content_json=content_json,
+            content_sha256=content_sha256,
+            source_max_nav_date=max_nav_date,
+        )
+        db.add(snapshot)
+        db.commit()
+        return {
+            "report_id": snapshot.id,
+            "portfolio_id": portfolio_id,
+            "report_version": snapshot.report_version,
+            "generated_at": snapshot.generated_at.isoformat(),
+            "source_max_nav_date": snapshot.source_max_nav_date.isoformat() if snapshot.source_max_nav_date else None,
+            "content_sha256": snapshot.content_sha256,
+            "status": "saved",
+        }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/reports")
+def list_portfolio_report_snapshots(portfolio_id: int) -> dict[str, Any]:
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        rows = db.execute(
+            select(PortfolioReportSnapshot)
+            .where(
+                PortfolioReportSnapshot.portfolio_id == portfolio_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+            .order_by(desc(PortfolioReportSnapshot.generated_at))
+        ).scalars().all()
+        return {
+            "count": len(rows),
+            "items": [
+                {
+                    "report_id": row.id,
+                    "report_version": row.report_version,
+                    "generated_at": row.generated_at.isoformat(),
+                    "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
+                    "content_sha256": row.content_sha256,
+                }
+                for row in rows
+            ],
+        }
+
+
+@app.get("/v1/reports/{report_id}")
+def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        row = db.execute(
+            select(PortfolioReportSnapshot).where(
+                PortfolioReportSnapshot.id == report_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "Report not found")
+        return {
+            "report_id": row.id,
+            "report_version": row.report_version,
+            "generated_at": row.generated_at.isoformat(),
+            "content_sha256": row.content_sha256,
+            "integrity_status": (
+                "VERIFIED"
+                if hashlib.sha256(row.content_json.encode("utf-8")).hexdigest() == row.content_sha256
+                else "HASH_MISMATCH"
+            ),
+            "report": json.loads(row.content_json),
+        }
+
+
+@app.get("/v1/reports/{report_id}/pdf")
+def download_portfolio_report_pdf(report_id: int) -> Response:
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        row = db.execute(
+            select(PortfolioReportSnapshot).where(
+                PortfolioReportSnapshot.id == report_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(404, "Report not found")
+        report = json.loads(row.content_json)
+    pdf_bytes = build_portfolio_report_pdf(report)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="portfolio-report-{report_id}.pdf"'},
+    )
+
+
+@app.get("/v1/goals")
+def list_portfolio_goals() -> dict[str, Any]:
+    """List only goals owned by the verified Supabase user."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goals = db.execute(
+            select(PortfolioGoal)
+            .where(PortfolioGoal.owner_user_id == owner_id)
+            .order_by(PortfolioGoal.target_date, PortfolioGoal.id)
+        ).scalars().all()
+        return {
+            "count": len(goals),
+            "items": [
+                {
+                    "id": goal.id,
+                    "name": goal.name,
+                    "target_amount_today": str(goal.target_amount_today),
+                    "target_date": goal.target_date.isoformat(),
+                    "current_amount": str(goal.current_amount),
+                    "linked_portfolio_id": goal.linked_portfolio_id,
+                    "monthly_contribution": str(goal.monthly_contribution),
+                    "inflation_rate": goal.inflation_rate,
+                    "annual_return_low": goal.annual_return_low,
+                    "annual_return_base": goal.annual_return_base,
+                    "annual_return_high": goal.annual_return_high,
+                    "created_at": goal.created_at.isoformat(),
+                    "updated_at": goal.updated_at.isoformat(),
+                }
+                for goal in goals
+            ],
+        }
+
+
+@app.post("/v1/goals", status_code=201)
+def create_portfolio_goal(payload: GoalCreateRequest) -> dict[str, Any]:
+    """Create a private financial goal with explicitly user-supplied assumptions."""
+    owner_id = require_authenticated_user()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if payload.linked_portfolio_id is not None:
+            _require_portfolio_owner(db, payload.linked_portfolio_id)
+        goal = PortfolioGoal(
+            owner_user_id=owner_id,
+            linked_portfolio_id=payload.linked_portfolio_id,
+            name=payload.name,
+            target_amount_today=payload.target_amount_today,
+            target_date=payload.target_date,
+            current_amount=payload.current_amount,
+            monthly_contribution=payload.monthly_contribution,
+            inflation_rate=payload.inflation_rate,
+            annual_return_low=payload.annual_return_low,
+            annual_return_base=payload.annual_return_base,
+            annual_return_high=payload.annual_return_high,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(goal)
+        db.commit()
+        return {"id": goal.id, "status": "created", "owner_scope": "private"}
+
+
+@app.put("/v1/goals/{goal_id}")
+def update_portfolio_goal(goal_id: int, payload: GoalCreateRequest) -> dict[str, Any]:
+    """Replace a goal's assumptions only for the authenticated owner."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goal = db.execute(
+            select(PortfolioGoal).where(
+                PortfolioGoal.id == goal_id,
+                PortfolioGoal.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if goal is None:
+            raise HTTPException(404, "Goal not found")
+        if payload.linked_portfolio_id is not None:
+            _require_portfolio_owner(db, payload.linked_portfolio_id)
+        goal.linked_portfolio_id = payload.linked_portfolio_id
+        goal.name = payload.name
+        goal.target_amount_today = payload.target_amount_today
+        goal.target_date = payload.target_date
+        goal.current_amount = payload.current_amount
+        goal.monthly_contribution = payload.monthly_contribution
+        goal.inflation_rate = payload.inflation_rate
+        goal.annual_return_low = payload.annual_return_low
+        goal.annual_return_base = payload.annual_return_base
+        goal.annual_return_high = payload.annual_return_high
+        goal.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"id": goal.id, "status": "updated"}
+
+
+@app.delete("/v1/goals/{goal_id}")
+def delete_portfolio_goal(goal_id: int) -> dict[str, Any]:
+    """Delete only the authenticated owner's goal."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goal = db.execute(
+            select(PortfolioGoal).where(
+                PortfolioGoal.id == goal_id,
+                PortfolioGoal.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if goal is None:
+            raise HTTPException(404, "Goal not found")
+        db.delete(goal)
+        db.commit()
+        return {"id": goal_id, "status": "deleted"}
+
+
+@app.get("/v1/goals/{goal_id}/projection")
+def project_portfolio_goal(goal_id: int) -> dict[str, Any]:
+    """Return low/base/high goal scenarios without implying guaranteed returns."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        goal = db.execute(
+            select(PortfolioGoal).where(
+                PortfolioGoal.id == goal_id,
+                PortfolioGoal.owner_user_id == owner_id,
+            )
+        ).scalar_one_or_none()
+        if goal is None:
+            raise HTTPException(404, "Goal not found")
+        today = datetime.now(timezone.utc).date()
+        months = max(
+            0,
+            (goal.target_date.year - today.year) * 12
+            + goal.target_date.month - today.month
+            - (1 if goal.target_date.day < today.day else 0),
+        )
+        current_amount = float(goal.current_amount)
+        linked_portfolio = None
+        if goal.linked_portfolio_id is not None:
+            valuation = portfolio_valuation(goal.linked_portfolio_id, None)
+            if valuation.get("valuation_status") != "COMPLETE":
+                raise HTTPException(
+                    409,
+                    "Linked portfolio valuation is incomplete; resolve missing NAV coverage before using it for goal progress.",
+                )
+            if valuation.get("valuation_freshness") != "FRESH":
+                raise HTTPException(
+                    409,
+                    "Linked portfolio NAV is stale; refresh NAV data before using it for goal progress.",
+                )
+            current_amount = float(valuation["current_value"])
+            linked_portfolio = {
+                "portfolio_id": goal.linked_portfolio_id,
+                "portfolio_name": valuation["portfolio_name"],
+                "market_value": current_amount,
+                "valuation_date": valuation.get("valuation_date"),
+                "valuation_freshness": valuation.get("valuation_freshness"),
+            }
+        projection = project_financial_goal(
+            target_amount_today=float(goal.target_amount_today),
+            current_amount=current_amount,
+            monthly_contribution=float(goal.monthly_contribution),
+            months=months,
+            inflation_rate=goal.inflation_rate,
+            annual_return_scenarios={
+                "low": goal.annual_return_low,
+                "base": goal.annual_return_base,
+                "high": goal.annual_return_high,
+            },
+        )
+        return {
+            "goal_id": goal.id,
+            "goal_name": goal.name,
+            "target_date": goal.target_date.isoformat(),
+            "currency": "INR",
+            "linked_portfolio": linked_portfolio,
+            "current_amount_source": "LINKED_PORTFOLIO_MARKET_VALUE" if linked_portfolio else "USER_ENTERED",
+            "projection": projection,
+            "limitations": [
+                "Return and inflation rates are user-entered assumptions, not forecasts or guarantees.",
+                "Taxes, fund expenses, exit loads and contribution interruptions are not included.",
+                "This projection is not a personalised investment recommendation.",
+            ],
+        }
+
+
+@app.post("/v1/holdings/import-csv")
+def import_fund_holdings_csv(
+    payload: HoldingsImportRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Import one dated AMC/AMFI holdings disclosure as an immutable source snapshot."""
+    require_operator_api_key(x_api_key)
+    source_sha256 = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(source_sha256, payload.source_document_sha256):
+        raise HTTPException(422, "source_document_sha256 must match the exact uploaded CSV text")
+    try:
+        points, report = parse_fund_holdings_csv(payload.csv_text)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+    retrieved_at = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        if db.get(Scheme, payload.scheme_code) is None:
+            raise HTTPException(404, "Scheme code not found")
+        existing = db.execute(
+            select(FundHoldingDisclosure).where(
+                FundHoldingDisclosure.scheme_code == payload.scheme_code,
+                FundHoldingDisclosure.as_of_date == payload.as_of_date,
+                FundHoldingDisclosure.source_sha256 == source_sha256,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return {
+                "status": "already_imported",
+                "verification_status": existing.verification_status,
+                "disclosure_id": existing.id,
+                "scheme_code": existing.scheme_code,
+                "as_of_date": existing.as_of_date.isoformat(),
+                "row_count": existing.row_count,
+                "source_sha256": existing.source_sha256,
+                **report,
+            }
+
+        supersedes = db.execute(
+            select(FundHoldingDisclosure)
+            .where(
+                FundHoldingDisclosure.scheme_code == payload.scheme_code,
+                FundHoldingDisclosure.as_of_date == payload.as_of_date,
+            )
+            .order_by(desc(FundHoldingDisclosure.retrieved_at), desc(FundHoldingDisclosure.id))
+            .limit(1)
+        ).scalar_one_or_none()
+        disclosure = FundHoldingDisclosure(
+            scheme_code=payload.scheme_code,
+            as_of_date=payload.as_of_date,
+            source_document_url=payload.source_document_url,
+            source_sha256=source_sha256,
+            retrieved_at=retrieved_at,
+            row_count=len(points),
+            total_weight_pct=Decimal(report["total_weight_pct"]),
+            verification_status="PENDING",
+            supersedes_disclosure_id=supersedes.id if supersedes else None,
+        )
+        db.add(disclosure)
+        db.flush()
+        db.add_all([
+            FundHolding(
+                disclosure_id=disclosure.id,
+                security_id=point.security_id,
+                security_name=point.security_name,
+                is_isin=point.is_isin,
+                asset_type=point.asset_type,
+                sector=point.sector,
+                weight_pct=point.weight_pct,
+                market_value_inr=point.market_value_inr,
+            )
+            for point in points
+        ])
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Concurrent holdings import conflict; retry the import") from None
+
+        return {
+            "status": "imported",
+            "verification_status": disclosure.verification_status,
+            "disclosure_id": disclosure.id,
+            "scheme_code": disclosure.scheme_code,
+            "as_of_date": disclosure.as_of_date.isoformat(),
+            "source_document_url": disclosure.source_document_url,
+            "source_sha256": disclosure.source_sha256,
+            "supersedes_disclosure_id": disclosure.supersedes_disclosure_id,
+            "row_count": disclosure.row_count,
+            **report,
+        }
+
+
+@app.post("/v1/holdings/disclosures/{disclosure_id}/verify")
+def verify_fund_holdings_disclosure(
+    disclosure_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Approve a disclosure only after an operator checks the linked official source file."""
+    require_operator_api_key(x_api_key)
+    with SessionLocal() as db:
+        disclosure = db.get(FundHoldingDisclosure, disclosure_id)
+        if disclosure is None:
+            raise HTTPException(404, "Holdings disclosure not found")
+        if disclosure.verification_status == "REJECTED":
+            raise HTTPException(409, "A rejected holdings disclosure cannot be verified")
+        disclosure.verification_status = "VERIFIED"
+        disclosure.verified_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "disclosure_id": disclosure.id,
+            "scheme_code": disclosure.scheme_code,
+            "as_of_date": disclosure.as_of_date.isoformat(),
+            "verification_status": disclosure.verification_status,
+            "verified_at": disclosure.verified_at.isoformat(),
+            "source_document_url": disclosure.source_document_url,
+            "source_sha256": disclosure.source_sha256,
+        }
+
+
+@app.get("/v1/holdings/{scheme_code}")
+def get_fund_holdings(
+    scheme_code: int,
+    as_of_date: date | None = None,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Return the latest accepted holdings disclosure on or before the requested date."""
+    require_api_key(x_api_key)
+    cutoff = as_of_date or datetime.now(timezone.utc).date()
+    with SessionLocal() as db:
+        scheme = db.get(Scheme, scheme_code)
+        if scheme is None:
+            raise HTTPException(404, "Scheme code not found")
+        disclosure = db.execute(
+            select(FundHoldingDisclosure)
+            .where(
+                FundHoldingDisclosure.scheme_code == scheme_code,
+                FundHoldingDisclosure.as_of_date <= cutoff,
+                FundHoldingDisclosure.verification_status == "VERIFIED",
+            )
+            .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
+            .limit(1)
+        ).scalar_one_or_none()
+        if disclosure is None:
+            raise HTTPException(404, "No holdings disclosure is available for this scheme")
+        rows = db.execute(
+            select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            .order_by(desc(FundHolding.weight_pct), FundHolding.security_name)
+        ).scalars().all()
+        return {
+            "scheme_code": scheme_code,
+            "scheme_name": scheme.scheme_name,
+            "disclosure_id": disclosure.id,
+            "verification_status": disclosure.verification_status,
+            "verified_at": disclosure.verified_at.isoformat() if disclosure.verified_at else None,
+            "as_of_date": disclosure.as_of_date.isoformat(),
+            "retrieved_at": disclosure.retrieved_at.isoformat(),
+            "source_document_url": disclosure.source_document_url,
+            "source_sha256": disclosure.source_sha256,
+            "supersedes_disclosure_id": disclosure.supersedes_disclosure_id,
+            "row_count": disclosure.row_count,
+            "total_weight_pct": str(disclosure.total_weight_pct),
+            "items": [
+                {
+                    "security_id": row.security_id,
+                    "security_name": row.security_name,
+                    "is_isin": row.is_isin,
+                    "asset_type": row.asset_type,
+                    "sector": row.sector,
+                    "weight_pct": str(row.weight_pct),
+                    "market_value_inr": str(row.market_value_inr) if row.market_value_inr is not None else None,
+                }
+                for row in rows
+            ],
+        }
+
+
+@app.get("/v1/analytics/holdings-overlap")
+def compare_fund_holdings_overlap(
+    scheme_a: int = Query(gt=0),
+    scheme_b: int = Query(gt=0),
+    as_of_date: date | None = None,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Calculate transparent, symmetric overlap using positive matched ISIN weights."""
+    require_api_key(x_api_key)
+    if scheme_a == scheme_b:
+        raise HTTPException(422, "Choose two different scheme codes")
+    cutoff = as_of_date or datetime.now(timezone.utc).date()
+
+    with SessionLocal() as db:
+        schemes = {
+            scheme.scheme_code: scheme
+            for scheme in db.execute(
+                select(Scheme).where(Scheme.scheme_code.in_([scheme_a, scheme_b]))
+            ).scalars().all()
+        }
+        if len(schemes) != 2:
+            raise HTTPException(404, "One or both scheme codes were not found")
+
+        disclosures = {}
+        for code in (scheme_a, scheme_b):
+            disclosure = db.execute(
+                select(FundHoldingDisclosure)
+                .where(
+                    FundHoldingDisclosure.scheme_code == code,
+                    FundHoldingDisclosure.as_of_date <= cutoff,
+                    FundHoldingDisclosure.verification_status == "VERIFIED",
+                )
+                .order_by(desc(FundHoldingDisclosure.as_of_date), desc(FundHoldingDisclosure.retrieved_at))
+                .limit(1)
+            ).scalar_one_or_none()
+            if disclosure is None:
+                raise HTTPException(409, f"No holdings disclosure is available for scheme {code}")
+            disclosures[code] = disclosure
+
+        holdings_by_scheme: dict[int, dict[str, FundHolding]] = {}
+        coverage = {}
+        for code, disclosure in disclosures.items():
+            rows = db.execute(
+                select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            ).scalars().all()
+            all_positive = sum((row.weight_pct for row in rows if row.weight_pct > 0), Decimal("0"))
+            isin_rows = {
+                row.security_id: row
+                for row in rows
+                if row.is_isin and row.weight_pct > 0
+            }
+            isin_positive = sum((row.weight_pct for row in isin_rows.values()), Decimal("0"))
+            holdings_by_scheme[code] = isin_rows
+            coverage[code] = {
+                "total_positive_weight_pct": all_positive,
+                "isin_matched_weight_pct": isin_positive,
+                "isin_coverage_pct": (isin_positive / all_positive * 100) if all_positive > 0 else None,
+            }
+
+        left = holdings_by_scheme[scheme_a]
+        right = holdings_by_scheme[scheme_b]
+        common_ids = set(left).intersection(right)
+        shared = []
+        overlap_weight = Decimal("0")
+        shared_a = Decimal("0")
+        shared_b = Decimal("0")
+        for security_id in common_ids:
+            weight_a = left[security_id].weight_pct
+            weight_b = right[security_id].weight_pct
+            matched_weight = min(weight_a, weight_b)
+            overlap_weight += matched_weight
+            shared_a += weight_a
+            shared_b += weight_b
+            shared.append({
+                "isin": security_id,
+                "security_name": left[security_id].security_name,
+                "weight_in_scheme_a_pct": str(weight_a),
+                "weight_in_scheme_b_pct": str(weight_b),
+                "matched_overlap_weight_pct": str(matched_weight),
+            })
+        shared.sort(key=lambda item: Decimal(item["matched_overlap_weight_pct"]), reverse=True)
+
+        age_a = (cutoff - disclosures[scheme_a].as_of_date).days
+        age_b = (cutoff - disclosures[scheme_b].as_of_date).days
+        stale = age_a > 90 or age_b > 90
+        return {
+            "status": "STALE_DISCLOSURE" if stale else "OK",
+            "scheme_a": {
+                "scheme_code": scheme_a,
+                "scheme_name": schemes[scheme_a].scheme_name,
+                "as_of_date": disclosures[scheme_a].as_of_date.isoformat(),
+                "disclosure_age_days": age_a,
+                "source_document_url": disclosures[scheme_a].source_document_url,
+                "source_sha256": disclosures[scheme_a].source_sha256,
+                "coverage": {key: str(value) if value is not None else None for key, value in coverage[scheme_a].items()},
+            },
+            "scheme_b": {
+                "scheme_code": scheme_b,
+                "scheme_name": schemes[scheme_b].scheme_name,
+                "as_of_date": disclosures[scheme_b].as_of_date.isoformat(),
+                "disclosure_age_days": age_b,
+                "source_document_url": disclosures[scheme_b].source_document_url,
+                "source_sha256": disclosures[scheme_b].source_sha256,
+                "coverage": {key: str(value) if value is not None else None for key, value in coverage[scheme_b].items()},
+            },
+            "common_isin_count": len(common_ids),
+            "holdings_overlap_pct": str(overlap_weight),
+            "shared_weight_in_scheme_a_pct": str(shared_a),
+            "shared_weight_in_scheme_b_pct": str(shared_b),
+            "top_shared_holdings": shared[:20],
+            "methodology": (
+                "For each common ISIN, overlap contribution is the lower of the two positive "
+                "weights (% of each scheme's net assets); total overlap is the sum of those "
+                "contributions. Non-ISIN rows and negative exposures are excluded. No fuzzy "
+                "security-name matching is used."
+            ),
+            "limitations": [
+                "Disclosure dates may differ between schemes; the response shows each as-of date and age.",
+                "Coverage is the positive portfolio weight represented by valid ISIN rows divided by total positive reported weight.",
+                "Overlap is a holdings snapshot, not a forecast of future correlation or portfolio risk.",
+            ],
+        }
 
 
 _STATEMENT_COLUMNS = {
@@ -1504,6 +3184,474 @@ def rebalance_preview(
         }
 
 
+@app.get("/v1/portfolios/{portfolio_id}/lookthrough")
+def portfolio_holdings_lookthrough(
+    portfolio_id: int,
+    max_disclosure_age_days: int = Query(default=180, ge=30, le=730),
+) -> dict[str, Any]:
+    """Aggregate verified constituent and sector exposures across owned fund holdings."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    as_of = datetime.now(timezone.utc).date()
+    total_value = Decimal(str(valuation.get("current_value") or "0"))
+    valuation_complete = valuation.get("valuation_status") == "COMPLETE"
+    security_totals: dict[str, dict[str, Any]] = {}
+    sector_totals: dict[str, Decimal] = {}
+    source_rows = []
+    missing_codes = []
+    stale_codes = []
+    covered_value = Decimal("0")
+    fresh_covered_value = Decimal("0")
+    stale_covered_value = Decimal("0")
+    holdings_with_value = [
+        item for item in valuation.get("holdings", [])
+        if item.get("market_value") is not None and Decimal(str(item.get("market_value"))) > 0
+    ]
+
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        for holding in holdings_with_value:
+            scheme_code = int(holding["scheme_code"])
+            market_value = Decimal(str(holding["market_value"]))
+            disclosure = db.execute(
+                select(FundHoldingDisclosure)
+                .where(
+                    FundHoldingDisclosure.scheme_code == scheme_code,
+                    FundHoldingDisclosure.verification_status == "VERIFIED",
+                    FundHoldingDisclosure.as_of_date <= as_of,
+                )
+                .order_by(
+                    desc(FundHoldingDisclosure.as_of_date),
+                    desc(FundHoldingDisclosure.retrieved_at),
+                    desc(FundHoldingDisclosure.id),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if disclosure is None:
+                missing_codes.append(scheme_code)
+                continue
+
+            age_days = (as_of - disclosure.as_of_date).days
+            is_stale = age_days > max_disclosure_age_days
+            if is_stale:
+                stale_codes.append(scheme_code)
+                stale_covered_value += market_value
+            else:
+                fresh_covered_value += market_value
+            covered_value += market_value
+
+            source_rows.append({
+                "scheme_code": scheme_code,
+                "scheme_name": holding["scheme_name"],
+                "disclosure_id": disclosure.id,
+                "as_of_date": disclosure.as_of_date.isoformat(),
+                "age_days": age_days,
+                "freshness": "STALE" if is_stale else "FRESH",
+                "source_document_url": disclosure.source_document_url,
+                "source_sha256": disclosure.source_sha256,
+                "row_count": disclosure.row_count,
+            })
+
+            rows = db.execute(
+                select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            ).scalars().all()
+            for row in rows:
+                exposure = market_value * Decimal(row.weight_pct) / Decimal("100")
+                # Only ISINs are stable cross-fund identifiers. Name-derived
+                # fallback IDs are disclosure-local to avoid false issuer matches.
+                security_key = (
+                    ("ISIN:" + row.security_id.upper())
+                    if row.is_isin
+                    else ("NONISIN:" + str(disclosure.id) + ":" + row.security_id.upper())
+                )
+                aggregate = security_totals.setdefault(
+                    security_key,
+                    {
+                        "security_id": row.security_id,
+                        "security_name": row.security_name,
+                        "is_isin": row.is_isin,
+                        "identity_basis": "ISIN" if row.is_isin else "DISCLOSURE_LOCAL_NAME_KEY",
+                        "asset_type": row.asset_type,
+                        "sector": row.sector or "Unclassified",
+                        "lookthrough_value": Decimal("0"),
+                        "fresh_lookthrough_value": Decimal("0"),
+                        "stale_lookthrough_value": Decimal("0"),
+                        "scheme_codes": set(),
+                        "source_disclosure_ids": set(),
+                    },
+                )
+                aggregate["lookthrough_value"] += exposure
+                aggregate["stale_lookthrough_value" if is_stale else "fresh_lookthrough_value"] += exposure
+                aggregate["scheme_codes"].add(scheme_code)
+                aggregate["source_disclosure_ids"].add(disclosure.id)
+                sector_key = row.sector or "Unclassified"
+                sector_totals[sector_key] = sector_totals.get(sector_key, Decimal("0")) + exposure
+
+    security_rows = []
+    for item in security_totals.values():
+        exposure_value = item["lookthrough_value"]
+        security_rows.append({
+            "security_id": item["security_id"],
+            "security_name": item["security_name"],
+            "is_isin": item["is_isin"],
+            "identity_basis": item["identity_basis"],
+            "asset_type": item["asset_type"],
+            "sector": item["sector"],
+            "lookthrough_value": str(exposure_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "fresh_disclosure_exposure_inr": str(item["fresh_lookthrough_value"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stale_disclosure_exposure_inr": str(item["stale_lookthrough_value"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "portfolio_weight_pct": (
+                float((exposure_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+            "scheme_count": len(item["scheme_codes"]),
+            "scheme_codes": sorted(item["scheme_codes"]),
+            "source_disclosure_ids": sorted(item["source_disclosure_ids"]),
+        })
+    security_rows.sort(
+        key=lambda item: (Decimal(item["lookthrough_value"]), item["security_name"].casefold()),
+        reverse=True,
+    )
+
+    sector_rows = []
+    for sector, exposure_value in sector_totals.items():
+        sector_rows.append({
+            "sector": sector,
+            "lookthrough_value": str(exposure_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "portfolio_weight_pct": (
+                float((exposure_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+        })
+    sector_rows.sort(key=lambda item: Decimal(item["lookthrough_value"]), reverse=True)
+    concentration = security_concentration_metrics(
+        security_rows,
+        portfolio_value=total_value,
+        valuation_complete=valuation_complete,
+    )
+
+    return {
+        "portfolio_id": portfolio_id,
+        "portfolio_name": valuation["portfolio_name"],
+        "as_of_date": as_of.isoformat(),
+        "valuation_date": valuation.get("valuation_date"),
+        "valuation_status": valuation.get("valuation_status"),
+        "valuation_freshness": valuation.get("valuation_freshness"),
+        "portfolio_value": str(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "disclosure_max_age_days": max_disclosure_age_days,
+        "coverage": {
+            "status": (
+                "INCOMPLETE_PORTFOLIO_VALUATION" if not valuation_complete
+                else "PARTIAL_MISSING_DISCLOSURES" if missing_codes
+                else "PARTIAL_STALE_DISCLOSURES" if stale_codes
+                else "COMPLETE"
+            ),
+            "covered_market_value": str(covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "fresh_covered_market_value": str(fresh_covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stale_covered_market_value": str(stale_covered_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "missing_disclosure_scheme_codes": sorted(missing_codes),
+            "missing_nav_scheme_codes": sorted(valuation.get("missing_nav_scheme_codes", [])),
+            "stale_nav_scheme_codes": sorted(valuation.get("stale_nav_scheme_codes", [])),
+            "stale_disclosure_scheme_codes": sorted(stale_codes),
+            "covered_weight_pct": (
+                float((covered_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+            "fresh_covered_weight_pct": (
+                float((fresh_covered_value / total_value * 100).quantize(Decimal("0.0001")))
+                if valuation_complete and total_value > 0 else None
+            ),
+        },
+        "top_securities": security_rows[:50],
+        "sector_exposure": sector_rows,
+        "security_concentration": concentration,
+        "sources": source_rows,
+        "methodology": (
+            "Current scheme market value is multiplied by the constituent weight in the latest "
+            "VERIFIED disclosure on or before the as-of date. Same securities are aggregated by "
+            "ISIN where available; non-ISIN rows remain disclosure-local because normalized names "
+            "are not reliable cross-fund security identifiers. "
+            "No holdings are inferred for missing disclosures. Stale disclosures are included "
+            "but explicitly separated from fresh coverage."
+        ),
+        "limitations": [
+            "This is a disclosure look-through, not live underlying security valuation.",
+            "Fund portfolio weights may not total 100% because of cash, derivatives, rounding or disclosure conventions.",
+            "Unverified disclosures are never used.",
+            "Portfolio weight percentages are withheld when portfolio NAV valuation is incomplete.",
+            "Security names and sector classifications are source-reported and may differ across AMCs.",
+        ],
+    }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/tax-lots")
+def portfolio_fifo_tax_lots(
+    portfolio_id: int,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Return FIFO acquisition/redemption lots without applying unverified tax rates."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        transactions = db.execute(
+            select(PortfolioTransaction)
+            .where(
+                PortfolioTransaction.portfolio_id == portfolio_id,
+                PortfolioTransaction.voided_at.is_(None),
+            )
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        latest_nav_by_scheme: dict[int, Decimal] = {}
+        scheme_metadata = {}
+        transaction_rows = []
+        for transaction in transactions:
+            transaction_rows.append({
+                "id": transaction.id,
+                "scheme_code": transaction.scheme_code,
+                "transaction_type": transaction.transaction_type,
+                "transaction_date": transaction.transaction_date,
+                "units": transaction.units,
+                "amount": transaction.amount,
+                "charges": transaction.charges,
+            })
+            if transaction.scheme_code not in scheme_metadata:
+                scheme = db.get(Scheme, transaction.scheme_code)
+                scheme_metadata[transaction.scheme_code] = {
+                    "scheme_name": scheme.scheme_name if scheme else str(transaction.scheme_code),
+                    "asset_class": scheme.asset_class if scheme else None,
+                    "category": scheme.category if scheme else None,
+                    "tax_rule_status": "UNVERIFIED_SCHEME_TAX_CLASSIFICATION",
+                }
+                latest = db.execute(
+                    select(NavObservation)
+                    .where(NavObservation.scheme_code == transaction.scheme_code)
+                    .order_by(desc(NavObservation.nav_date))
+                    .limit(1)
+                ).scalar_one_or_none()
+                if latest is not None:
+                    latest_nav_by_scheme[transaction.scheme_code] = Decimal(latest.nav_value)
+
+        try:
+            result = fifo_capital_gains(transaction_rows, latest_nav_by_scheme)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        result["portfolio_id"] = portfolio_id
+        result["portfolio_name"] = portfolio.name
+        result["schemes"] = scheme_metadata
+        result["tax_note"] = (
+            result["tax_note"]
+            + " Scheme asset-class/category metadata is not yet sufficiently verified for tax classification. "
+            + "No equity/debt holding-period threshold, surcharge, cess, exemption, indexation or tax rate is applied."
+        )
+        return result
+
+
+@app.get("/v1/portfolios/{portfolio_id}/risk")
+def portfolio_historical_risk(
+    portfolio_id: int,
+    days: int = Query(default=1095, ge=30, le=3650),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Historical NAV-based portfolio risk, scoped to the authenticated owner."""
+    require_api_key(x_api_key)
+    as_of = datetime.now(timezone.utc).date()
+    since = as_of - timedelta(days=days)
+
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        transactions = db.execute(
+            select(PortfolioTransaction)
+            .where(
+                PortfolioTransaction.portfolio_id == portfolio_id,
+                PortfolioTransaction.voided_at.is_(None),
+            )
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        positions: dict[int, Decimal] = {}
+        for transaction in transactions:
+            units = Decimal(transaction.units)
+            current_units = positions.get(transaction.scheme_code, Decimal("0"))
+            if transaction.transaction_type == "BUY":
+                positions[transaction.scheme_code] = current_units + units
+            else:
+                if units > current_units:
+                    raise HTTPException(409, f"Sell transaction exceeds available units for scheme {transaction.scheme_code}")
+                positions[transaction.scheme_code] = current_units - units
+        positions = {code: units for code, units in positions.items() if units > 0}
+        if not positions:
+            return {
+                "portfolio_id": portfolio_id,
+                "portfolio_name": portfolio.name,
+                "status": "NO_ACTIVE_HOLDINGS",
+                "holdings_count": 0,
+                "metrics": None,
+                "note": "Add active BUY holdings before calculating portfolio risk.",
+            }
+
+        weighted_series = []
+        holdings = []
+        missing_codes = []
+        stale_codes = []
+        portfolio_value = Decimal("0")
+        for code, units in positions.items():
+            latest = db.execute(
+                select(NavObservation)
+                .where(NavObservation.scheme_code == code)
+                .order_by(desc(NavObservation.nav_date))
+                .limit(1)
+            ).scalar_one_or_none()
+            if latest is None:
+                missing_codes.append(code)
+                continue
+            market_value = units * Decimal(latest.nav_value)
+            portfolio_value += market_value
+            age_days = (as_of - latest.nav_date).days
+            if age_days > MAX_NAV_STALENESS_DAYS:
+                stale_codes.append(code)
+            history = db.execute(
+                select(NavObservation.nav_date, NavObservation.nav_value)
+                .where(
+                    NavObservation.scheme_code == code,
+                    NavObservation.nav_date >= since,
+                    NavObservation.nav_date <= latest.nav_date,
+                )
+                .order_by(NavObservation.nav_date)
+            ).all()
+            points = [(row.nav_date, float(row.nav_value)) for row in history]
+            weighted_series.append((float(market_value), points))
+            scheme = db.get(Scheme, code)
+            holdings.append({
+                "scheme_code": code,
+                "scheme_name": scheme.scheme_name if scheme else str(code),
+                "units": str(units),
+                "market_value": str(market_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "weight_pct": None,
+                "nav_date": latest.nav_date.isoformat(),
+                "nav_age_days": age_days,
+            })
+
+        if missing_codes:
+            return {
+                "portfolio_id": portfolio_id,
+                "portfolio_name": portfolio.name,
+                "status": "PARTIAL_MISSING_NAV",
+                "holdings_count": len(positions),
+                "missing_nav_scheme_codes": missing_codes,
+                "metrics": None,
+                "note": "Portfolio-level risk is withheld when any active holding has no accepted NAV series.",
+            }
+        for holding in holdings:
+            holding["weight_pct"] = (
+                float(Decimal(holding["market_value"]) / portfolio_value * 100)
+                if portfolio_value > 0 else None
+            )
+        metrics = portfolio_risk_metrics(weighted_series)
+        status = "STALE_NAV" if stale_codes and metrics["status"] == "OK" else metrics["status"]
+        return {
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "status": status,
+            "lookback_days": days,
+            "as_of_date": as_of.isoformat(),
+            "portfolio_value": str(portfolio_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "holdings_count": len(positions),
+            "holdings": holdings,
+            "stale_nav_scheme_codes": stale_codes,
+            "maximum_allowed_nav_age_days": MAX_NAV_STALENESS_DAYS,
+            "metrics": metrics,
+            "note": (
+                "Historical NAV-based risk uses current market-value weights held constant over the lookback. "
+                "It is a backward-looking estimate, not a forecast. Missing NAV series are never interpolated."
+            ),
+        }
+
+
+@app.post("/v1/portfolios/{portfolio_id}/stress")
+def portfolio_custom_stress(
+    portfolio_id: int,
+    payload: PortfolioStressRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Apply an explicit user-defined percentage shock to every active scheme holding."""
+    require_api_key(x_api_key)
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        transactions = db.execute(
+            select(PortfolioTransaction)
+            .where(
+                PortfolioTransaction.portfolio_id == portfolio_id,
+                PortfolioTransaction.voided_at.is_(None),
+            )
+            .order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+        positions: dict[int, Decimal] = {}
+        for transaction in transactions:
+            units = Decimal(transaction.units)
+            current_units = positions.get(transaction.scheme_code, Decimal("0"))
+            if transaction.transaction_type == "BUY":
+                positions[transaction.scheme_code] = current_units + units
+            else:
+                if units > current_units:
+                    raise HTTPException(409, f"Sell transaction exceeds available units for scheme {transaction.scheme_code}")
+                positions[transaction.scheme_code] = current_units - units
+        positions = {code: units for code, units in positions.items() if units > 0}
+        if not positions:
+            raise HTTPException(409, "Portfolio has no active holdings to stress")
+        shocks = {item.scheme_code: item.shock_pct for item in payload.shocks}
+        if set(shocks) != set(positions):
+            raise HTTPException(422, "Provide exactly one explicit shock for every active holding; omitted holdings are not assumed to have zero shock")
+
+        total_value = Decimal("0")
+        total_impact = Decimal("0")
+        rows = []
+        stale_codes = []
+        as_of = datetime.now(timezone.utc).date()
+        for code, units in positions.items():
+            latest = db.execute(
+                select(NavObservation)
+                .where(NavObservation.scheme_code == code)
+                .order_by(desc(NavObservation.nav_date))
+                .limit(1)
+            ).scalar_one_or_none()
+            if latest is None:
+                raise HTTPException(409, f"No NAV is available for active holding {code}")
+            market_value = units * Decimal(latest.nav_value)
+            shock = shocks[code]
+            impact = market_value * shock / Decimal("100")
+            total_value += market_value
+            total_impact += impact
+            age_days = (as_of - latest.nav_date).days
+            if age_days > MAX_NAV_STALENESS_DAYS:
+                stale_codes.append(code)
+            scheme = db.get(Scheme, code)
+            rows.append({
+                "scheme_code": code,
+                "scheme_name": scheme.scheme_name if scheme else str(code),
+                "market_value": str(market_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "shock_pct": str(shock),
+                "estimated_impact": str(impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "stressed_value": str((market_value + impact).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "nav_date": latest.nav_date.isoformat(),
+                "nav_age_days": age_days,
+            })
+        return {
+            "portfolio_id": portfolio_id,
+            "portfolio_name": portfolio.name,
+            "scenario_name": payload.scenario_name,
+            "scenario_type": "USER_DEFINED_SENSITIVITY_NOT_FORECAST",
+            "base_portfolio_value": str(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "estimated_portfolio_impact": str(total_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stressed_portfolio_value": str((total_value + total_impact).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "stale_nav_scheme_codes": stale_codes,
+            "holdings": rows,
+            "limitations": [
+                "This is a deterministic user-entered sensitivity, not a probability-weighted forecast.",
+                "It applies the supplied shock directly to current scheme market values; underlying stock/sector exposures are not inferred.",
+                "NAV freshness and source-date limitations remain applicable.",
+            ],
+        }
+
+
 @app.get("/v1/portfolios/{portfolio_id}/valuation")
 def portfolio_valuation(
     portfolio_id: int,
@@ -1630,3 +3778,9 @@ def portfolio_valuation(
                 "are withheld when an active holding has no stored NAV; XIRR is also withheld when NAV inputs are stale."
             ),
         }
+
+
+# Operator-only historical NAV backfill routes. Execution is locked by default.
+from app.nav_history_api import router as nav_history_backfill_router
+
+app.include_router(nav_history_backfill_router)

@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, audit/production-foundation, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified, fix/0009-production-trigger-reconciliation]
+    branches: [main, audit/production-foundation, feature/auth-onboarding-and-session-fixes, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified, fix/0009-production-trigger-reconciliation]
   pull_request:
     branches: [main, audit/production-foundation]
   workflow_dispatch:
@@ -11,6 +11,7 @@ permissions:
 jobs:
   test-sqlite:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -33,6 +34,72 @@ jobs:
           node --check app/static/dashboard.js
           node --check app/static/research.js
           node --check app/static/fund-detail.js
+      - name: Validate authentication and portfolio DOM contracts
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          contracts = {
+              "app/static/dashboard.html": {
+                  "authForm", "authEmail", "authPassword", "signIn", "signUp",
+                  "resetPassword", "signOut", "passwordRecoveryPanel", "saveNewPassword",
+                  "newPassword", "portfolioCommandCentre", "commandCentreStatus", "ccMarketValue", "ccCostBasis", "ccUnrealized", "ccPortfolioCount", "ccPortfolioCards", "portfolioOverview", "portfolioCurrentValue",
+                  "portfolioCostBasis", "portfolioRealized", "portfolioUnrealized",
+                  "portfolioTotalGain", "portfolioXirr", "portfolioValuationDate",
+                  "portfolioValuationStatus", "holdingCount", "holdingRows",
+                  "portfolioRiskStatus", "portfolioRiskDays", "loadPortfolioRisk",
+                  "portfolioRiskResult", "stressScenarioName", "stressShockPct",
+                  "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult", "generatePortfolioReport", "portfolioReportResult", "refreshPortfolioReports", "portfolioReportCount", "portfolioReportHistory",
+                  "transactionForm", "transactionRows", "transactionCount",
+                  "transactionMessage", "addTransaction", "refreshTransactions",
+                  "goalsWorkspace", "goalForm", "goalName", "goalTarget", "goalDate", "goalPortfolio", "lookthroughAgeDays", "loadLookthrough", "lookthroughCoverage", "lookthroughSecurities",
+                  "goalCurrent", "goalMonthly", "goalInflation", "goalReturnLow",
+                  "goalReturnBase", "goalReturnHigh", "createGoal", "goalCount",
+                  "goalList", "goalProjection", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
+              },
+              "app/static/research.html": {
+                  "researchAuthForm", "authEmail", "authPassword", "signIn", "signUp",
+                  "resetPassword", "signOut", "researchRecoveryPanel", "newPassword",
+                  "saveNewPassword", "authStatus", "notice", "fundRows", "watchlist", "watchlistRows", "refreshWatchlist", "category", "assetClass", "sortBy", "sortOrder", "minObservations", "screenerFreshness", "overlap", "overlapSchemeA", "overlapSchemeB", "runOverlap", "overlapBody",
+              },
+          }
+          for filename, required in contracts.items():
+              source = Path(filename).read_text(encoding="utf-8")
+              present = set(re.findall(r'id="([^"]+)"', source))
+              missing = sorted(required - present)
+              if missing:
+                  raise SystemExit(f"{filename} is missing required DOM ids: {missing}")
+          from html.parser import HTMLParser
+
+          class StructureCheck(HTMLParser):
+              VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+              def __init__(self):
+                  super().__init__()
+                  self.stack = []
+                  self.ancestors = {}
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  node_id = attrs.get("id")
+                  if node_id:
+                      self.ancestors[node_id] = list(self.stack)
+                  if tag not in self.VOID:
+                      self.stack.append((tag, attrs))
+              def handle_endtag(self, tag):
+                  for index in range(len(self.stack) - 1, -1, -1):
+                      if self.stack[index][0] == tag:
+                          del self.stack[index:]
+                          break
+
+          parser = StructureCheck()
+          parser.feed(Path("app/static/dashboard.html").read_text(encoding="utf-8"))
+          portfolio_ancestors = parser.ancestors.get("portfolioOverview", [])
+          if any(attrs.get("class", "").find("filebox") >= 0 for _, attrs in portfolio_ancestors):
+              raise SystemExit("Portfolio overview must not be nested inside an import/rebalance filebox.")
+          if any(attrs.get("class", "").find("formgrid") >= 0 for _, attrs in portfolio_ancestors):
+              raise SystemExit("Portfolio overview must be outside the portfolio setup form grid.")
+          print("Dashboard and Research Terminal DOM contracts and layout passed.")
+          PY
       - name: Test SQLite
         run: python -m pytest -q
         env:
@@ -40,6 +107,7 @@ jobs:
 
   test-postgresql:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16

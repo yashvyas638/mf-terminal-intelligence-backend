@@ -1,8 +1,9 @@
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 
-from app.analytics import max_drawdown, performance_metrics, rolling_return_series, research_metrics, xirr
+from app.analytics import benchmark_comparison_metrics, fifo_capital_gains, max_drawdown, performance_metrics, portfolio_risk_metrics, project_financial_goal, rolling_return_series, research_metrics, xirr
 
 
 def test_performance_metrics_are_finite_and_have_expected_return():
@@ -99,3 +100,173 @@ def test_drawdown_profile_marks_unrecovered_drawdown_open():
     assert result["worst_recovery_days"] is None
     assert result["longest_underwater_days"] == 22
     assert result["current_drawdown"] == pytest.approx(-0.125)
+
+def test_benchmark_comparison_uses_exact_common_dates_and_reports_risk_statistics():
+    start = date(2025, 1, 1)
+    fund_points = []
+    benchmark_points = []
+    fund_value = 100.0
+    benchmark_value = 100.0
+    for index in range(80):
+        observed = start + timedelta(days=index)
+        fund_value *= 1 + 0.001 + (index % 5) * 0.0002
+        benchmark_value *= 1 + 0.0006 + (index % 7) * 0.00015
+        fund_points.append((observed, fund_value))
+        if index not in {11, 12, 13, 14, 15, 16, 17, 18}:
+            benchmark_points.append((observed, benchmark_value))
+
+    result = benchmark_comparison_metrics(fund_points, benchmark_points)
+    assert result["status"] == "OK"
+    assert result["common_observations"] == 72
+    assert result["risk_return_observations"] == 70
+    assert result["fund_total_return"] > result["benchmark_total_return"]
+    assert result["risk_statistics_status"] == "OK"
+    assert result["tracking_error"] is not None
+    assert result["information_ratio"] is not None
+    assert "No forward-fill or interpolation" in result["methodology"]
+
+
+def test_benchmark_comparison_does_not_interpolate_or_fabricate_daily_risk_statistics():
+    start = date(2025, 1, 1)
+    fund_points = [(start + timedelta(days=index), 100 + index) for index in range(80)]
+    benchmark_points = [(start + timedelta(days=index), 100 + index * 0.8) for index in range(0, 80, 10)]
+    result = benchmark_comparison_metrics(fund_points, benchmark_points)
+    assert result["common_observations"] == len(benchmark_points)
+    assert result["risk_return_observations"] == 0
+    assert result["risk_statistics_status"] == "INSUFFICIENT_DAILY_OBSERVATIONS"
+    assert result["beta"] is None
+    assert result["tracking_error"] is None
+
+
+def test_benchmark_comparison_returns_insufficient_data_without_common_dates():
+    result = benchmark_comparison_metrics(
+        [(date(2025, 1, 1), 100.0), (date(2025, 1, 2), 101.0)],
+        [(date(2025, 1, 3), 100.0), (date(2025, 1, 4), 101.0)],
+    )
+    assert result["status"] == "INSUFFICIENT_DATA"
+    assert result["common_observations"] == 0
+
+def test_portfolio_risk_uses_current_value_weights_and_reports_empirical_tail_risk():
+    start = date(2025, 1, 1)
+    first = []
+    second = []
+    value_a = 100.0
+    value_b = 100.0
+    for index in range(100):
+        observed = start + timedelta(days=index)
+        return_a = (0.001 if index % 6 else -0.012)
+        return_b = (0.0007 if index % 8 else -0.008)
+        value_a *= 1 + return_a
+        value_b *= 1 + return_b
+        first.append((observed, value_a))
+        second.append((observed, value_b))
+
+    result = portfolio_risk_metrics([(0.7, first), (0.3, second)])
+    assert result["status"] == "OK"
+    assert result["common_observations"] == 100
+    assert result["daily_return_observations"] == 99
+    assert result["annualized_volatility"] > 0
+    assert result["historical_var_95"] > 0
+    assert result["historical_cvar_95"] >= result["historical_var_95"]
+    assert result["worst_1d_return"] < 0
+    assert result["worst_5d_return"] is not None
+    assert result["worst_21d_return"] is not None
+    assert result["max_drawdown"] < 0
+
+
+def test_portfolio_risk_does_not_forward_fill_or_join_across_large_gaps():
+    start = date(2025, 1, 1)
+    first = [(start + timedelta(days=index), 100 + index * 0.2) for index in range(80)]
+    second = [(start + timedelta(days=index), 100 + index * 0.1) for index in range(0, 80, 10)]
+    result = portfolio_risk_metrics([(0.5, first), (0.5, second)])
+    assert result["common_observations"] == 8
+    assert result["daily_return_observations"] == 0
+    assert result["status"] == "INSUFFICIENT_HISTORY"
+    assert result["annualized_volatility"] is None
+
+
+def test_portfolio_risk_returns_insufficient_history_for_short_series():
+    start = date(2025, 1, 1)
+    points = [(start + timedelta(days=index), 100 + index) for index in range(10)]
+    result = portfolio_risk_metrics([(1.0, points)])
+    assert result["status"] == "INSUFFICIENT_HISTORY"
+    assert result["annualized_volatility"] is None
+
+def test_fifo_capital_gains_matches_redemptions_to_acquisition_lots():
+    transactions = [
+        {
+            "id": 1, "scheme_code": 120001, "transaction_type": "BUY",
+            "transaction_date": date(2024, 1, 1), "units": "5",
+            "amount": "500", "charges": "5",
+        },
+        {
+            "id": 2, "scheme_code": 120001, "transaction_type": "BUY",
+            "transaction_date": date(2025, 1, 1), "units": "5",
+            "amount": "600", "charges": "5",
+        },
+        {
+            "id": 3, "scheme_code": 120001, "transaction_type": "SELL",
+            "transaction_date": date(2025, 6, 1), "units": "6",
+            "amount": "720", "charges": "6",
+        },
+    ]
+    result = fifo_capital_gains(
+        transactions,
+        {120001: Decimal("130")},
+    )
+    assert result["realized_lot_count"] == 2
+    assert result["open_lot_count"] == 1
+    assert result["realized_gain_loss"] == "88.00"
+    assert result["unrealized_gain_loss"] == "36.00"
+    assert result["realized_lots"][0]["units"] == "5"
+    assert result["realized_lots"][0]["holding_period_days"] == 517
+    assert result["realized_lots"][1]["units"] == "1"
+    assert result["open_lots"][0]["units"] == "4"
+    assert result["tax_status"] == "TAX_RULES_NOT_APPLIED"
+
+
+def test_fifo_capital_gains_rejects_redemptions_exceeding_available_lots():
+    transactions = [
+        {
+            "id": 1, "scheme_code": 120002, "transaction_type": "BUY",
+            "transaction_date": date(2025, 1, 1), "units": "2",
+            "amount": "200", "charges": "0",
+        },
+        {
+            "id": 2, "scheme_code": 120002, "transaction_type": "SELL",
+            "transaction_date": date(2025, 2, 1), "units": "3",
+            "amount": "330", "charges": "0",
+        },
+    ]
+    with pytest.raises(ValueError, match="exceeds FIFO lots"):
+        fifo_capital_gains(transactions, {})
+
+def test_goal_projection_uses_inflation_and_explicit_low_base_high_scenarios():
+    result = project_financial_goal(
+        target_amount_today=1_000_000,
+        current_amount=100_000,
+        monthly_contribution=5_000,
+        months=120,
+        inflation_rate=0.06,
+        annual_return_scenarios={"low": 0.04, "base": 0.10, "high": 0.14},
+    )
+    assert result["inflation_adjusted_target"] > result["target_amount_today"]
+    assert result["scenarios"]["low"]["projected_future_value"] < result["scenarios"]["base"]["projected_future_value"]
+    assert result["scenarios"]["base"]["projected_future_value"] < result["scenarios"]["high"]["projected_future_value"]
+    assert result["scenarios"]["base"]["required_monthly_contribution"] > 0
+    assert "not forecasts" in result["methodology"]
+
+
+def test_goal_projection_handles_zero_return_and_invalid_assumptions():
+    result = project_financial_goal(
+        target_amount_today=100_000,
+        current_amount=10_000,
+        monthly_contribution=1_000,
+        months=12,
+        inflation_rate=0,
+        annual_return_scenarios={"zero": 0},
+    )
+    assert result["inflation_adjusted_target"] == 100_000
+    assert result["scenarios"]["zero"]["projected_future_value"] == 22_000
+    with pytest.raises(ValueError, match="inflation assumption"):
+        project_financial_goal(100_000, 0, 0, 12, 0.25, {"base": 0.1})

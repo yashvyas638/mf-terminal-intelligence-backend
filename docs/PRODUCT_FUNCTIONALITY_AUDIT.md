@@ -1,0 +1,59 @@
+# Product functionality audit — 2026-11-12
+
+## Executive finding
+
+The repository has a useful backend foundation, but it is not yet the complete Mutual Fund Intelligence Terminal in the product blueprint. This branch adds missing authentication and portfolio workflows. Those browser changes are not production-verified until latest CI, deployment and real browser tests pass.
+
+## Authentication
+
+- Main dashboard and Research Terminal use Supabase email/password authentication.
+- Sign-in is a form (Enter submits); email and password are validated before requests.
+- Sign-up confirmation messaging, password-reset email, password update, sign-out and session restoration are implemented.
+- Auth state changes hydrate the Research Terminal workspace; the dashboard clears private portfolio and transaction UI state on sign-out.
+- Supabase Auth logs for recent failed attempts showed requests with missing email/phone fields. The Research Terminal's previous controls did not validate credentials; this branch now blocks blank/invalid credentials before sending the request.
+- Backend validates protected bearer tokens against Supabase Auth `/auth/v1/user`.
+- Render environment variables `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` were set. Live Supabase Email provider, Site URL, redirect allow-list, SMTP delivery and real browser confirmation/reset still require verification.
+
+## Implemented API capabilities (not equivalent to complete UI)
+
+- NAV health/status, scheme search/list with AMC/category/asset-class/plan/option filters and server-side pagination, scheme details with NAV history series and NAV history API.
+- Single-scheme performance/research metrics, screener and 2–10 scheme comparison.
+- Portfolio create/list, transaction create/list, statement CSV preview/import, void/audit, valuation and rebalance preview.
+- User ownership checks and PostgreSQL RLS foundations.
+- Latest NAV feed parser/ingestion and historical backfill planner, checkpoint and atomic persistence foundations.
+- GitHub Actions daily latest-NAV refresh schedule is configured for Monday–Saturday at 17:15 UTC (22:45 IST). Required repository secrets and successful scheduled runs are not independently verified here.
+- Historical NAV HTTP adapter is not enabled: AMFI's official page states a maximum 90-day download window, but the exact request parameters and response contract still need a live official-form capture and fixture validation.
+
+## Major product gaps
+
+| Area | Current state | Missing before product-grade |
+|---|---|---|
+| Authentication | Dashboard and Research Terminal flows implemented in this PR; live E2E pending | Verified provider settings, email delivery, redirect configuration and two-account browser test |
+| Home | Portfolio-first command centre with consolidated value/cost/unrealized P&L, per-portfolio XIRR and NAV freshness (this PR; end-to-end pending) | Activity feed, alerts, goal progress and proactive actionable insights |
+| Fund Explorer | Search, AMC/category/asset-class/plan/option filters, facets and server-side pagination (this PR; classification facets depend on stored metadata coverage) | Watchlist, benchmark metadata and global metric-ranked screening |
+| Fund profile | Scheme metadata, NAV-derived metrics, coverage and historical NAV line chart (this PR; end-to-end pending) | Factsheet, AUM, expense ratio, manager, benchmark TRI, exit load, documents and distribution-adjusted return history |
+| Research | NAV-derived CAGR/volatility/drawdown and ratios | Full verified historical NAV, calendar returns, benchmark TRI, peer context and methodology UI |
+| Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
+| Portfolio | Create/list, valuation, statement preview/import, manual BUY/SELL, transaction history, audited void, holdings breakdown, cost basis, realized/unrealized/total gain-loss, conditional XIRR, scheme concentration bars and consolidated multi-portfolio overview (this PR; end-to-end pending) | Asset-class/sector exposure, cashflow attribution and tax/exit-load-aware performance |
+| Rebalance | Target-weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
+| Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
+| Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
+| Goals/tax/reports | Not implemented | Goal tracking, tax lots, capital-gains reports and exports |
+| AI research | Not implemented | Source-linked assistant, citations, explainability and report builder |
+| Operations | CI, migrations, daily NAV workflow and basic deployment | Verified scheduled runs, historical coverage dashboard, freshness alerts, backup/restore drill, operator controls and production E2E |
+
+## Priority order
+
+1. **P0-A Auth release gate:** Render environment, Supabase Email provider, Site URL, allowed redirects, SMTP/delivery, sign-up confirmation, sign-in, reset, sign-out, session refresh and two-user isolation.
+2. **P0-B Product workflow gate:** authenticated first-run empty state; create portfolio; add BUY/SELL; import preview/confirm; valuation; transaction history and audited void; sign out/in and verify persistence.
+3. **P0-C Data gate:** official AMFI historical request contract, historical coverage by scheme, idempotent replay, correction provenance, freshness and reconciliation.
+4. **P1 Fund research:** fund master enrichment, history, rolling/calendar returns, benchmark TRI, peer comparisons and screener UI.
+5. **P2–P6:** holdings overlap, macro/stress, optimisation, tax/goals/reports, AI research and production hardening.
+
+## Evidence boundaries
+
+- CI run #545 passed SQLite and PostgreSQL migrations/tests, lint, JavaScript syntax checks and dashboard/research DOM/layout contracts on commit `b8402391a7f845497006ff0affae9685c1fd518d`. A no-tree-change commit was pushed afterward to queue a final push-triggered run.
+- CI success proves only the commit and tests actually run in CI; it does not prove live Supabase settings, SMTP delivery or real browser sign-up.
+- Setting Render environment variables triggers a deployment but does not prove that the expected commit is live.
+- No test account was created and no production portfolio/NAV records were modified for this audit.
+- CI run #535 passed SQLite and PostgreSQL tests and JavaScript syntax checks on commit `1b4e465fa7f83f6763b4de0e32b2f8d93d4a5c43`. A subsequent one-line rounding refinement to per-holding P/L is not included in that run. Live browser verification is still required before merge/deploy.

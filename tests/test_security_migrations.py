@@ -49,6 +49,11 @@ def test_supabase_client_roles_have_only_rls_scoped_read_access():
             "alembic_version", "schemes", "ingestion_snapshots", "portfolios",
             "nav_observations", "portfolio_transactions", "portfolio_transaction_audit",
             "nav_observation_revisions", "portfolio_import_batches",
+            "fund_watchlist_items", "fund_research_snapshots",
+            "benchmark_indices", "benchmark_observations",
+            "benchmark_observation_revisions", "scheme_benchmark_assignments",
+            "fund_holding_disclosures", "fund_holdings",
+            "portfolio_goals", "portfolio_report_snapshots",
         }.issubset(rls_tables)
 
         sequences = connection.execute(text(
