@@ -30,7 +30,7 @@ def build_amfi_history_url(window: HistoryWindow, scheme_type: int) -> str:
         raise TypeError("window must be a HistoryWindow")
     if window.day_count > AMFI_MAX_HISTORY_WINDOW_DAYS:
         raise ValueError("AMFI history requests cannot exceed 90 calendar days")
-    if scheme_type not in {1, 2, 3}:
+    if not isinstance(scheme_type, int) or isinstance(scheme_type, bool) or scheme_type not in {1, 2, 3}:
         raise ValueError("scheme_type must be 1 (open), 2 (close), or 3 (interval)")
     query = urlencode({
         "tp": scheme_type,
