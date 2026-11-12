@@ -221,3 +221,44 @@ def test_history_batch_startup_hook_passes_configured_stale_threshold(monkeypatc
         "source_contract_verified": True,
         "stale_after_minutes": 2,
     }]
+
+
+
+def test_history_batch_startup_hook_caps_multi_batch_run_and_stops_when_queue_drains(monkeypatch):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_BATCH_LIMIT", "3")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", "8")
+    calls = []
+
+    def fake_run(**kwargs):
+        calls.append(kwargs)
+        selected = 3 if len(calls) == 1 else 2
+        return {
+            "status": "completed",
+            "selected": selected,
+            "completed": selected,
+            "failed": 0,
+            "results": [{"status": "complete"}] * selected,
+            "max_attempts": 3,
+        }
+
+    monkeypatch.setattr(main, "run_history_backfill_batch", fake_run)
+    result = main._maybe_run_historical_backfill_batch_from_environment()
+
+    assert result["selected"] == 5
+    assert result["completed"] == 5
+    assert result["failed"] == 0
+    assert len(calls) == 2
+    assert [call["limit"] for call in calls] == [3, 3]
+
+
+@pytest.mark.parametrize("max_windows", ["0", "21", "bad"])
+def test_history_batch_startup_hook_rejects_unsafe_max_windows(monkeypatch, max_windows):
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_RUN_ON_START", "true")
+    monkeypatch.setenv("AMFI_HISTORY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_ENABLED", "true")
+    monkeypatch.setenv("AMFI_HISTORY_BACKFILL_MAX_WINDOWS_PER_START", max_windows)
+    with pytest.raises(RuntimeError, match="max windows per start"):
+        main._maybe_run_historical_backfill_batch_from_environment()
