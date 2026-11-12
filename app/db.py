@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -211,4 +211,35 @@ class FundWatchlistItem(Base):
     __table_args__ = (
         UniqueConstraint("owner_user_id", "scheme_code", name="uq_fund_watchlist_owner_scheme"),
         Index("ix_fund_watchlist_owner_created", "owner_user_id", "created_at"),
+    )
+
+
+class FundResearchSnapshot(Base):
+    """Precomputed, source-derived metrics for global screener ordering."""
+
+    __tablename__ = "fund_research_snapshots"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scheme_code: Mapped[int] = mapped_column(ForeignKey("schemes.scheme_code", ondelete="CASCADE"), nullable=False)
+    window_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    nav_as_of_date: Mapped[object] = mapped_column(Date, nullable=False)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observations: Mapped[int] = mapped_column(Integer, nullable=False)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False)
+    return_1m: Mapped[float | None] = mapped_column(Float)
+    return_1y: Mapped[float | None] = mapped_column(Float)
+    return_3y: Mapped[float | None] = mapped_column(Float)
+    cagr: Mapped[float | None] = mapped_column(Float)
+    volatility: Mapped[float | None] = mapped_column(Float)
+    sharpe_ratio: Mapped[float | None] = mapped_column(Float)
+    sortino_ratio: Mapped[float | None] = mapped_column(Float)
+    max_drawdown: Mapped[float | None] = mapped_column(Float)
+    positive_month_rate: Mapped[float | None] = mapped_column(Float)
+    rolling_1y_positive_rate: Mapped[float | None] = mapped_column(Float)
+    __table_args__ = (
+        UniqueConstraint("scheme_code", "window_days", name="uq_fund_research_scheme_window"),
+        CheckConstraint("window_days IN (365, 1095, 1825, 3650)", name="ck_fund_research_window_days"),
+        CheckConstraint("observations >= 0", name="ck_fund_research_observations_nonnegative"),
+        Index("ix_fund_research_window_return_1y", "window_days", "return_1y"),
+        Index("ix_fund_research_window_sharpe", "window_days", "sharpe_ratio"),
+        Index("ix_fund_research_window_cagr", "window_days", "cagr"),
     )
