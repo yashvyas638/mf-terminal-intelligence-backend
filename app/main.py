@@ -1881,17 +1881,6 @@ def compare_fund_with_benchmark(
                 "metrics": metrics,
             })
 
-        for source in lookthrough.get("sources", []):
-            sources.append({
-                "source_type": "VERIFIED_HOLDINGS_DISCLOSURE",
-                "title": source.get("scheme_name"),
-                "url": source.get("source_document_url"),
-                "source_sha256": source.get("source_sha256"),
-                "as_of_date": source.get("as_of_date"),
-                "disclosure_id": source.get("disclosure_id"),
-                "freshness": source.get("freshness"),
-            })
-
         limitations = [
             "Only exact common NAV and benchmark dates are compared; no interpolation or forward-fill is used.",
             "Alpha, beta, tracking error and information ratio require at least 30 adjacent common-date return pairs no more than seven calendar days apart.",
@@ -1968,6 +1957,17 @@ def create_portfolio_report_snapshot(
                     "max_nav_date": snapshot.max_nav_date.isoformat() if snapshot.max_nav_date else None,
                     "quality_status": snapshot.quality_status,
                 })
+
+        for source in lookthrough.get("sources", []):
+            sources.append({
+                "source_type": "VERIFIED_HOLDINGS_DISCLOSURE",
+                "title": source.get("scheme_name"),
+                "url": source.get("source_document_url"),
+                "source_sha256": source.get("source_sha256"),
+                "as_of_date": source.get("as_of_date"),
+                "disclosure_id": source.get("disclosure_id"),
+                "freshness": source.get("freshness"),
+            })
 
         limitations = [
             "Historical risk uses current market-value weights held constant over the lookback.",
