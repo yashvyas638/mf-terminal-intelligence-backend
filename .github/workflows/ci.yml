@@ -50,7 +50,7 @@ jobs:
                   "portfolioValuationStatus", "holdingCount", "holdingRows",
                   "portfolioRiskStatus", "portfolioRiskDays", "loadPortfolioRisk",
                   "portfolioRiskResult", "stressScenarioName", "stressShockPct",
-                  "runPortfolioStress", "portfolioStressResult",
+                  "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult",
                   "transactionForm", "transactionRows", "transactionCount",
                   "transactionMessage", "addTransaction", "refreshTransactions", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
               },
