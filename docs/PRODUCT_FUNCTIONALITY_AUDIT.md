@@ -32,7 +32,7 @@ The repository currently contains a useful backend foundation and a small dashbo
 | Fund profile | Basic NAV/ISIN/performance detail | Factsheet, AUM, expense ratio, manager, benchmark, exit load, documents and history coverage |
 | Research | NAV-derived CAGR/volatility/drawdown and ratios | Verified full historical NAV, rolling/calendar returns, benchmark TRI, peer context and methodology UI |
 | Compare | Scheme-code based comparison | Like-for-like plan/option/benchmark/category validation and charts |
-| Portfolio | Create/list, valuation, statement import, manual BUY/SELL entry and transaction-history UI (added in current auth/product PR; end-to-end pending) | Holdings-level allocation/gain-loss presentation, cashflow/XIRR dashboard, multi-portfolio overview and audited void UI |
+| Portfolio | Create/list, valuation, statement import, manual BUY/SELL entry, transaction-history UI and audited void action (added in current auth/product PR; end-to-end pending) | Holdings-level allocation/gain-loss presentation, cashflow/XIRR dashboard, holdings-level allocation/gain-loss presentation, cashflow/XIRR dashboard and multi-portfolio overview |
 | Rebalance | Target weight preview | Constraints, tax/exit-load estimates, drift visualisation, scenario history and approval workflow |
 | Holdings intelligence | Not implemented | Factsheet holdings ingestion, security master, overlap and concentration |
 | Macro/stress | Not implemented | RBI/macro feeds, regime indicators and reproducible stress scenarios |
