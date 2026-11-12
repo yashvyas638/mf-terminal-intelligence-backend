@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [main, audit/production-foundation]
+    branches: [main, audit/production-foundation, feature/research-layer-integration, feature/research-layer-integration-sync]
   pull_request:
-    branches: [main]
+    branches: [main, audit/production-foundation]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,8 +28,10 @@ jobs:
           DATABASE_URL: sqlite:///./ci_migrations.db
       - name: Lint
         run: ruff check --select F,B .
-      - name: Validate dashboard JavaScript
-        run: node --check app/static/dashboard.js
+      - name: Validate dashboard and research JavaScript
+        run: |
+          node --check app/static/dashboard.js
+          node --check app/static/research.js
       - name: Test SQLite
         run: python -m pytest -q
         env:
