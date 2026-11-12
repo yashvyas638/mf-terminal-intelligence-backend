@@ -154,19 +154,19 @@ Open Ended Schemes(Equity Scheme - PowerUp)
 
 def test_maps_2026_life_cycle_group_separately_from_other_schemes():
     payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
-Open Ended Schemes(Life Cycle Funds - Life Cycle Fund with Maturity of 10 Years)
+Open Ended Schemes(Life Cycle Funds)
 120589;INF109K01480;-;Life Cycle Fund 2036;23.4567;21-Oct-2026
 """
     records, _ = parse_amfi_nav_text(payload)
     assert records[0].category_group == "Life Cycle Funds"
-    assert records[0].category == "Life Cycle Fund with Maturity of 10 Years"
-    assert records[0].asset_class == "Life Cycle"
+    assert records[0].category is None
+    assert records[0].asset_class is None
 
 
 
 def test_maps_official_other_scheme_subcategories_and_does_not_guess_retired_groups():
     other, _ = parse_amfi_nav_text(
-        "Open Ended Schemes(Other Schemes - Fund of Funds (Domestic))\n"
+        "Open Ended Schemes(Other Schemes - FoFs (Overseas/Domestic))\n"
         "120590;INF109K01480;-;Domestic Fund of Funds;23.4567;21-Oct-2026\n"
     )
     retired, _ = parse_amfi_nav_text(
@@ -174,8 +174,24 @@ def test_maps_official_other_scheme_subcategories_and_does_not_guess_retired_gro
         "120591;INF109K01480;-;Retirement Goal Fund;23.4567;21-Oct-2026\n"
     )
     assert other[0].category_group == "Other Schemes"
-    assert other[0].category == "Fund of Funds (Domestic)"
+    assert other[0].category == "FoFs (Overseas/Domestic)"
     assert other[0].asset_class == "Other"
     assert retired[0].category_group is None
     assert retired[0].category is None
     assert retired[0].asset_class is None
+
+
+
+def test_unrecognized_legacy_group_does_not_inherit_previous_amfi_section():
+    payload = """Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Open Ended Schemes(Equity Scheme - Large Cap Fund)
+120592;INF109K01480;-;Example Large Cap Fund;23.4567;21-Oct-2026
+Open Ended Schemes(Solution Oriented Scheme)
+120593;INF109K01480;-;Legacy Solution Oriented Fund;23.4567;21-Oct-2026
+"""
+    records, _ = parse_amfi_nav_text(payload)
+    assert records[0].category_group == "Equity Scheme"
+    assert records[0].category == "Large Cap Fund"
+    assert records[1].category_group is None
+    assert records[1].category is None
+    assert records[1].asset_class is None
