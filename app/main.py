@@ -43,6 +43,7 @@ from app.db import (
     IngestionSnapshot,
     NavObservation,
     NavObservationRevision,
+    NavBackfillCheckpoint,
     Portfolio,
     PortfolioImportBatch,
     PortfolioGoal,
@@ -285,8 +286,44 @@ def _maybe_run_historical_backfill_batch_from_environment() -> dict[str, Any] | 
     )
     return result
 
+def _hybrid_baseline_buffer_complete() -> bool:
+    """Require both daily baseline windows for all AMFI scheme types before ranking."""
+    if os.getenv("AMFI_HISTORY_PLAN_MODE", "daily").strip().lower() != "hybrid":
+        return True
+    monthly_start_raw = os.getenv("AMFI_HISTORY_MONTHLY_START_DATE", "").strip()
+    try:
+        monthly_start = date.fromisoformat(monthly_start_raw)
+    except ValueError:
+        return False
+    expected_starts = {
+        monthly_start - timedelta(days=14),
+        monthly_start - timedelta(days=7),
+    }
+    expected = {
+        (scheme_type, start_date)
+        for scheme_type in (1, 2, 3)
+        for start_date in expected_starts
+    }
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(
+                NavBackfillCheckpoint.scheme_type,
+                NavBackfillCheckpoint.start_date,
+                NavBackfillCheckpoint.status,
+            ).where(
+                NavBackfillCheckpoint.sampling_mode == "daily",
+                NavBackfillCheckpoint.start_date.in_(expected_starts),
+            )
+        ).all()
+    observed = {
+        (int(row[0]), row[1]): row[2]
+        for row in rows
+    }
+    return all(observed.get(key) == "complete" for key in expected)
+
+
 def _maybe_refresh_research_after_history_completion() -> dict[str, Any]:
-    """Refresh ranking snapshots only after all non-paused history work is settled."""
+    """Refresh rankings only after non-paused history and the 5Y baseline are complete."""
     status = history_backfill_status()
     blocking = [
         group for group in status.get("groups", [])
@@ -298,6 +335,9 @@ def _maybe_refresh_research_after_history_completion() -> dict[str, Any]:
             len(blocking),
         )
         return {"status": "deferred", "blocking_groups": len(blocking)}
+    if not _hybrid_baseline_buffer_complete():
+        logger.info("research_snapshot_refresh_deferred_five_year_baseline_incomplete")
+        return {"status": "deferred", "reason": "five_year_baseline_incomplete"}
     return _refresh_research_snapshots_after_ingestion()
 
 
