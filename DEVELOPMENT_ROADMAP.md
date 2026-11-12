@@ -389,3 +389,10 @@ P0 remains **OPEN — BLOCKED**. No P1 implementation, main merge, production pe
 - Added navigation from the existing dashboard. Portfolio, valuation, ledger, NAV ingestion and correction routes remain in the existing application.
 - Not delivered by this slice: authoritative category/AMC/asset-class mapping, benchmark TRI, distribution-adjusted total returns, AUM, P/E/P/B, expense ratio, exit load, holdings, manager data, proprietary recency/volatility/consistency scores, peer leaderboards or tax engine. These require trusted sources, methodology and additional migrations.
 - This is an implementation slice, not P1 sign-off. Run all CI and migration checks on the exact branch SHA before considering merge or deployment.
+
+
+## 2026-11-12 — Foundation security guard integrated into research branch
+
+- Integrated the production startup guard from the foundation branch. Startup checks PostgreSQL `current_user` and rejects Supabase `anon` and `authenticated` client roles; regression tests cover both rejected roles and an accepted server-side role.
+- Foundation CI run `43143080013` passed SQLite and PostgreSQL jobs on commit `cac21e0e4daba3680e2bee99481e93b099d83031`. This research branch must pass its own complete CI before PR review or merge.
+- This code-level guard does not replace private verification of the actual Render database role, Supabase grants/RLS, backup/restore, secret rotation or production smoke tests. P0 remains open and blocked.
