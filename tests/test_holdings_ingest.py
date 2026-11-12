@@ -55,7 +55,7 @@ def test_holdings_parser_rejects_empty_and_oversized_files():
 
 def test_optional_blank_market_value_is_not_multiplied_or_rejected():
     points, report = parse_fund_holdings_csv(
-        "ISIN,Name of Instrument,% to Net Assets,Market Value (Rs.)\n"
+        "ISIN,Name of Instrument,% to Net Assets,Market Value in Rs.\n"
         "INE002A01018,Example Bank,5.25,\n"
     )
     assert points[0].market_value_inr is None
@@ -70,7 +70,7 @@ def test_holdings_parser_rejects_precision_loss_in_weight_and_market_value():
         )
     with pytest.raises(ValueError, match="more than 2 decimal places"):
         parse_fund_holdings_csv(
-            "ISIN,Name of Instrument,% to Net Assets,Market Value (Rs.)\n"
+            "ISIN,Name of Instrument,% to Net Assets,Market Value in Rs.\n"
             "INE002A01018,Bank,5,100.001\n"
         )
 
