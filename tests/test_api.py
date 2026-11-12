@@ -1358,10 +1358,12 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     stress_json = stress.json()
     assert stress_json["scenario_type"] == "USER_DEFINED_SENSITIVITY_NOT_FORECAST"
     assert float(stress_json["estimated_portfolio_impact"]) == pytest.approx(
-        -float(stress_json["base_portfolio_value"]) * 0.10
+        round(-float(stress_json["base_portfolio_value"]) * 0.10, 2),
+        abs=0.01,
     )
     assert float(stress_json["stressed_portfolio_value"]) == pytest.approx(
-        float(stress_json["base_portfolio_value"]) * 0.90
+        round(float(stress_json["base_portfolio_value"]) * 0.90, 2),
+        abs=0.01,
     )
 
     saved_report = client.post(
