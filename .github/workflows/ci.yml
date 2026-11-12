@@ -53,7 +53,7 @@ jobs:
                   "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult", "generatePortfolioReport", "portfolioReportResult", "refreshPortfolioReports", "portfolioReportCount", "portfolioReportHistory",
                   "transactionForm", "transactionRows", "transactionCount",
                   "transactionMessage", "addTransaction", "refreshTransactions",
-                  "goalsWorkspace", "goalForm", "goalName", "goalTarget", "goalDate", "goalPortfolio",
+                  "goalsWorkspace", "goalForm", "goalName", "goalTarget", "goalDate", "goalPortfolio", "lookthroughAgeDays", "loadLookthrough", "lookthroughCoverage", "lookthroughSecurities",
                   "goalCurrent", "goalMonthly", "goalInflation", "goalReturnLow",
                   "goalReturnBase", "goalReturnHigh", "createGoal", "goalCount",
                   "goalList", "goalProjection", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
