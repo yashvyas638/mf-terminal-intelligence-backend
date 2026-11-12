@@ -37,13 +37,19 @@ def security_concentration_metrics(
 
     positive: list[tuple[Decimal, bool]] = []
     negative_total = Decimal("0")
+    fresh_positive = Decimal("0")
+    stale_positive = Decimal("0")
     for item in securities:
         exposure = _decimal(item.get("lookthrough_value", 0), "lookthrough_value")
+        fresh_exposure = _decimal(item.get("fresh_disclosure_exposure_inr", 0), "fresh_disclosure_exposure_inr")
+        stale_exposure = _decimal(item.get("stale_disclosure_exposure_inr", 0), "stale_disclosure_exposure_inr")
         is_isin = bool(item.get("is_isin"))
         if exposure > 0:
             positive.append((exposure, is_isin))
         elif exposure < 0:
             negative_total += exposure
+        fresh_positive += max(fresh_exposure, Decimal("0"))
+        stale_positive += max(stale_exposure, Decimal("0"))
 
     positive.sort(key=lambda item: item[0], reverse=True)
     positive_total = sum((value for value, _ in positive), Decimal("0"))
@@ -62,6 +68,8 @@ def security_concentration_metrics(
         "basis": "OBSERVED_VERIFIED_DISCLOSURES_ONLY",
         "positive_disclosed_exposure_inr": str(positive_total.quantize(Decimal("0.01"))),
         "negative_disclosed_exposure_inr": str(negative_total.quantize(Decimal("0.01"))),
+        "fresh_positive_disclosed_exposure_inr": str(fresh_positive.quantize(Decimal("0.01"))),
+        "stale_positive_disclosed_exposure_inr": str(stale_positive.quantize(Decimal("0.01"))),
         "positive_security_count": len(positive),
         "isin_security_count": sum(1 for _, is_isin in positive if is_isin),
         "non_isin_security_count": sum(1 for _, is_isin in positive if not is_isin),
