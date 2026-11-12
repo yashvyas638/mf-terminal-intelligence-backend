@@ -28,10 +28,10 @@ The JSON body contains:
 - `csv_text`: official CSV export text
 
 Parser requirements:
-- Date and matching total-return value column must be present.
+- `IndexName`, `Date` and the matching total-return value column must be present; the exported index identity must match the operator-selected benchmark name.
 - Rows are sorted by date; exact duplicate rows are deduplicated.
-- Conflicting duplicate dates, multiple index names, non-positive values, malformed dates, empty files, files over 5 MB and exports over 20,000 rows are rejected.
-- Values are stored as Decimal-backed numeric data with eight decimal places.
+- Conflicting duplicate dates, missing/multiple index names, future dates, non-positive values, malformed dates, empty files, files over 5 MB and exports over 20,000 rows are rejected.
+- Values must be exactly representable to eight decimal places; the parser rejects precision loss rather than silently rounding.
 - The SHA-256 of the exact imported CSV is stored with every observation.
 - Re-importing unchanged values is idempotent; changed values create a separate correction revision before the current value is replaced.
 
@@ -62,4 +62,4 @@ The app retains the evidence URL/hash and verification timestamp. Never map ever
 
 ## Current status
 
-The schema, strict CSV parser, operator import endpoint, correction provenance, effective-dated mapping workflow, verification gate, exact-date comparison function and profile panel are implemented with fixture/API tests. The live official CSV export has not yet been imported or validated against a real scheme's latest official factsheet. No production benchmark series or scheme assignments are asserted as loaded.
+The schema, strict CSV parser, operator import endpoint, correction provenance, effective-dated mapping workflow, verification gate, exact-date comparison function and profile panel are implemented with fixture/API tests. The official portal currently exposes index-type/sub-index/index/date selection and a CSV export; the visible CSV format identifies `IndexName`, `Date` and `Total Returns Index`. The exact downloaded NTR variant and a real downloaded CSV still require an operator capture/fixture before enabling any automated feed. No live official CSV has yet been imported or validated against a real scheme's latest official factsheet. No production benchmark series or scheme assignments are asserted as loaded.
