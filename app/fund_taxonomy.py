@@ -158,3 +158,51 @@ def canonical_group(group: str | None) -> str | None:
 def canonical_asset_class(group: str | None, asset_class: str | None) -> str | None:
     expected = SCHEME_GROUP_ASSET_CLASS.get(canonical_group(group) or "")
     return expected if expected is not None and asset_class == expected else None
+
+
+_GROUP_FILTER_ALIASES = {
+    "Other Schemes": ("Other Scheme",),
+}
+
+_SUBCATEGORY_FILTER_ALIASES = {
+    "ELSS Tax Saver Fund": ("ELSS-Tax Saver Fund", "ELSS - Tax Saver Fund"),
+    "Banking and PSU Debt Fund": ("Banking and PSU Fund", "Banking & PSU Debt Fund"),
+    "10-year Constant Maturity Gilt Fund": ("10 Year Constant Maturity Gilt Fund",),
+    "Floating Interest Rates Fund": ("Floating Rate Fund",),
+    "Focused Fund (No. of Stocks)": ("Focused Fund",),
+    "FoFs (Overseas/Domestic)": (
+        "FoFs (Domestic)", "FoFs (Overseas)", "FoF Domestic", "FoF Overseas",
+        "Fund of Funds (Domestic)", "Fund of Funds (Overseas)",
+        "Fund of Funds Scheme (Domestic)", "Fund of Funds Scheme (Overseas)",
+    ),
+    "Dynamic Asset Allocation Fund": (
+        "Dynamic Asset Allocation or Balanced Advantage",
+        "Balanced Advantage Fund / Dynamic Asset Allocation",
+    ),
+    "Multi Asset Allocation": ("Multi Asset Allocation Fund",),
+    "Equity Savings": ("Equity Savings Fund",),
+    "Index Funds / ETFs": ("Index Funds/ ETFs",),
+}
+
+def scheme_group_filter_values(group: str | None) -> tuple[str, ...]:
+    """Include known legacy AMFI labels when filtering a canonical group."""
+    canonical = canonical_group(group)
+    if canonical is None:
+        return (group,) if group else ()
+    return (canonical, *_GROUP_FILTER_ALIASES.get(canonical, ()))
+
+def subcategory_filter_values(group: str | None, category: str | None) -> tuple[str, ...]:
+    """Match canonical categories plus explicitly mapped historic AMFI spellings."""
+    if not category:
+        return ()
+    canonical = canonical_subcategory(group, category) if group else None
+    if canonical is None and group is None:
+        matches = {
+            value
+            for candidate_group in SUBCATEGORIES_BY_GROUP
+            if (value := canonical_subcategory(candidate_group, category)) is not None
+        }
+        canonical = next(iter(matches)) if len(matches) == 1 else None
+    if canonical is None:
+        return (category,)
+    return (canonical, *_SUBCATEGORY_FILTER_ALIASES.get(canonical, ()))
