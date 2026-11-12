@@ -96,13 +96,14 @@ def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
             continue
         if line.casefold().startswith("scheme code;"):
             continue
+        section_text = line.rstrip(";").strip()
+        section = re.match(r"^(Open|Close|Interval)\s+Ended\s+Schemes?\s*\((.*?)\)\s*$", section_text, re.IGNORECASE)
+        if section:
+            current_structure = {"open": "Open Ended", "close": "Close Ended", "interval": "Interval"}[section.group(1).casefold()]
+            current_category_group, current_category, current_asset_class = _classify_amfi_category(section.group(2))
+            metadata_present = True
+            continue
         if ";" not in line:
-            section = re.match(r"^(Open|Close|Interval)\s+Ended\s+Schemes?\s*\((.*?)\)\s*$", line, re.IGNORECASE)
-            if section:
-                current_structure = {"open": "Open Ended", "close": "Close Ended", "interval": "Interval"}[section.group(1).casefold()]
-                current_category_group, current_category, current_asset_class = _classify_amfi_category(section.group(2))
-                metadata_present = True
-                continue
             if re.search(r"\b(schemes|funds|etfs)\b", line, re.IGNORECASE):
                 group, sub, asset = _classify_amfi_category(line)
                 if group:
