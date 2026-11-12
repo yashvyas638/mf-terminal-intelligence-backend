@@ -149,3 +149,17 @@ def test_mixed_frequency_window_suppresses_daily_risk_statistics_only():
     assert result["total_return"] == pytest.approx(0.02)
     assert result["period_returns"]["1Y"] == pytest.approx(0.04)
     assert flags[0]["type"] == "mixed_frequency_risk_series"
+
+
+
+def test_unclaimed_overnight_subplan_is_not_given_the_verified_face_value_adjustment():
+    points = [
+        (date(2022, 7, 29), 100.0),
+        (date(2022, 8, 30), 1000.0),
+    ]
+
+    adjusted, applied = apply_verified_nav_adjustments(149411, points)
+
+    assert adjusted == points
+    assert applied == []
+    assert len(detect_nav_discontinuities(adjusted)) == 1
