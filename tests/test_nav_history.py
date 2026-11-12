@@ -95,3 +95,4 @@ def test_reports_malformed_numeric_candidate_without_dropping_valid_rows():
     records, report = parse_amfi_history_text(payload)
     assert len(records) == 2
     assert report["invalid_rows"] == 1
+    assert sum(report["invalid_issue_counts"].values()) == 1
