@@ -88,7 +88,7 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
     assert client.get(
         f"/v1/portfolios/{portfolio_id}/reports",
         headers=user_b_headers,
-    ).json()["count"] == 0
+    ).status_code == 404
     assert client.get(f"/v1/reports/{report_id}", headers=user_a_headers).status_code == 200
     assert client.get(f"/v1/reports/{report_id}", headers=user_b_headers).status_code == 404
     assert client.get(f"/v1/reports/{report_id}/pdf", headers=user_a_headers).status_code == 200
