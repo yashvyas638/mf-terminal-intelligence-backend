@@ -153,6 +153,7 @@ _SUBCATEGORY_ALIASES = {
     _key("Debt Funds"): "Index Funds / ETFs",
     _key("Hybrid Fund"): "Index Funds / ETFs",
     _key("Index Funds"): "Index Funds / ETFs",
+    _key("Index Fund"): "Index Funds / ETFs",
     _key("Money Market"): "Money Market Fund",
     _key("Other ETFs"): "Other ETF",
     _key("Gold ETFs"): "Gold ETF",
