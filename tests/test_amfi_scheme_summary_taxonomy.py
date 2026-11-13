@@ -239,6 +239,21 @@ def test_scheme_details_fallback_resolves_bare_categories_only_when_unique():
         "Thematic Fund",
         "Equity",
     )
+    assert classify_amfi_scheme_details_category("Equity Scheme Sectoral/Thematic Fund") == (
+        "Equity Scheme",
+        "Sectoral/Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Equity Schemes – Thematic Fund") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Equity: Thematic Funds") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
 
 
 def test_discontinued_solution_oriented_and_fmp_labels_stay_unclassified():
