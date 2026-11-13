@@ -94,6 +94,20 @@ _GROUP_ALIASES = {
 }
 
 _SUBCATEGORY_ALIASES = {
+    # AMFI Fund Performance service uses short labels for current SEBI categories.
+    _key("Large Cap"): "Large Cap Fund",
+    _key("Large & Mid Cap"): "Large & Mid Cap Fund",
+    _key("Flexi Cap"): "Flexi Cap Fund",
+    _key("Multi Cap"): "Multi Cap Fund",
+    _key("Mid Cap"): "Mid Cap Fund",
+    _key("Small Cap"): "Small Cap Fund",
+    _key("Value"): "Value Fund",
+    _key("ELSS"): "ELSS Tax Saver Fund",
+    _key("Contra"): "Contra Fund",
+    _key("Dividend Yield"): "Dividend Yield Fund",
+    _key("Focused"): "Focused Fund (No. of Stocks)",
+    _key("Sectoral"): "Sectoral Fund",
+    _key("Thematic"): "Thematic Fund",
     _key("ELSS-Tax Saver Fund"): "ELSS Tax Saver Fund",
     _key("ELSS - Tax Saver Fund"): "ELSS Tax Saver Fund",
     _key("Banking and PSU Fund"): "Banking and PSU Debt Fund",
