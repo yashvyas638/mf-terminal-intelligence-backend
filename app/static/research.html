@@ -55,18 +55,24 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 </section>
 <div class="tabs"><button class="active" data-tab="screener">Fund Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
 <section id="screener" class="panel">
-<div class="toolbar">
-<input id="q" type="search" placeholder="Search fund name, AMC, scheme code or ISIN">
-<select id="category" aria-label="Scheme group"><option value="">All scheme groups</option></select><select id="subCategory" aria-label="Scheme sub-category"><option value="">All sub-categories</option></select>
-<select id="assetClass"><option value="">All asset classes</option></select>
-<select id="plan"><option value="">All plans</option></select>
-<select id="option"><option value="">All options</option></select>
-<select id="days"><option value="30">1 month history</option><option value="365">1 year history</option><option value="1095" selected>3 years history</option><option value="1825">5 years history</option></select>
-<select id="sortBy"><option value="return_1m">Rank by trailing 1M return</option><option value="return_3m">Rank by trailing 3M return</option><option value="return_6m">Rank by trailing 6M return</option><option value="return_1y">Rank by 1Y return</option><option value="cagr">Rank by CAGR</option><option value="return_3y">Rank by 3Y return</option><option value="return_5y">Rank by 5Y return</option><option value="sharpe_ratio">Rank by Sharpe</option><option value="sortino_ratio">Rank by Sortino</option><option value="volatility">Rank by volatility</option><option value="max_drawdown">Rank by max drawdown</option><option value="positive_month_rate">Rank by positive months</option><option value="rolling_1y_positive_rate">Rank by positive 1Y windows</option></select>
-<select id="sortOrder"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select>
-<select id="minObservations"><option value="0">Any history</option><option value="100">100+ observations</option><option value="250">250+ observations</option><option value="500">500+ observations</option></select>
-<button class="primary" id="runScreen">Screen funds</button>
+<div class="screener-primary-filters">
+  <input id="q" type="search" placeholder="Search fund name, AMC, scheme code or ISIN">
+  <select id="category" aria-label="Scheme group"><option value="">All scheme groups</option></select>
+  <select id="subCategory" aria-label="Scheme sub-category"><option value="">All categories</option></select>
+  <select id="sortBy" aria-label="Rank funds by"><option value="return_1m">Rank by trailing 1M return</option><option value="return_3m">Rank by trailing 3M return</option><option value="return_6m">Rank by trailing 6M return</option><option value="return_1y">Rank by 1Y return</option><option value="cagr">Rank by CAGR</option><option value="return_3y">Rank by 3Y return</option><option value="return_5y">Rank by 5Y return</option><option value="sharpe_ratio">Rank by Sharpe</option><option value="sortino_ratio">Rank by Sortino</option><option value="volatility">Rank by volatility</option><option value="max_drawdown">Rank by max drawdown</option><option value="positive_month_rate">Rank by positive months</option><option value="rolling_1y_positive_rate">Rank by positive 1Y windows</option></select>
+  <button class="primary" id="runScreen">Find top funds</button>
 </div>
+<details class="advanced-filters">
+  <summary>More filters <span>Plan, option, asset class &amp; data coverage</span></summary>
+  <div class="advanced-filter-grid">
+    <label>Asset class<select id="assetClass"><option value="">All asset classes</option></select></label>
+    <label>Plan<select id="plan"><option value="">All plans</option></select></label>
+    <label>Option<select id="option"><option value="">All options</option></select></label>
+    <label>History window<select id="days"><option value="30">1 month history</option><option value="365">1 year history</option><option value="1095" selected>3 years history</option><option value="1825">5 years history</option></select></label>
+    <label>Sort order<select id="sortOrder"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label>
+    <label>Minimum observations<select id="minObservations"><option value="0">Any history</option><option value="100">100+ observations</option><option value="250">250+ observations</option><option value="500">500+ observations</option></select></label>
+  </div>
+</details>
 <div class="footnote" id="screenerFreshness" style="margin-top:10px">Global ranking is prepared from stored NAV history. Loading the first verified research snapshot…</div>
 <div class="tablewrap"><table id="fundTable"><thead><tr>
 <th>Global rank</th><th>Category rank</th><th>Fund / Scheme</th><th>Latest NAV</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Positive months</th><th>Positive 1Y windows</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="17" class="muted">Sign in to load the global fund ranking.</td></tr></tbody></table></div>
