@@ -115,6 +115,9 @@ _SUBCATEGORY_ALIASES = {
     _key("Long Term"): "Long Term Fund",
     _key("Medium to Long Term"): "Medium to Long Term Fund",
     _key("Short Term"): "Short Term Fund",
+    # SEBI 2026 renamed the former 1-3 year Short Duration Fund to Short Term Fund.
+    _key("Short Duration"): "Short Term Fund",
+    _key("Short Duration Fund"): "Short Term Fund",
     _key("Medium Term"): "Medium Term Fund",
     _key("Ultra Short to Short Term"): "Ultra Short to Short Term Fund",
     _key("Ultra Short Term"): "Ultra Short Term Fund",
@@ -152,6 +155,7 @@ _SUBCATEGORY_ALIASES = {
     _key("FoF Overseas"): "FoFs (Overseas/Domestic)",
     _key("Fund of Funds (Domestic)"): "FoFs (Overseas/Domestic)",
     _key("Fund of Funds (Overseas)"): "FoFs (Overseas/Domestic)",
+    _key("Fund of Funds investing overseas"): "FoFs (Overseas/Domestic)",
     _key("Fund of Funds Scheme (Domestic)"): "FoFs (Overseas/Domestic)",
     _key("Fund of Funds Scheme (Overseas)"): "FoFs (Overseas/Domestic)",
     _key("Dynamic Asset Allocation or Balanced Advantage"): "Dynamic Asset Allocation Fund",
