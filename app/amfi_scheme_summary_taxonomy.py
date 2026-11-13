@@ -52,21 +52,14 @@ def _field(row: dict[str, Any], *names: str) -> Any:
     return None
 
 
-def parse_scheme_summary_category(
-    xml_bytes: bytes,
-    *,
-    expected_scheme_name: str,
-) -> dict[str, str | None] | None:
-    """Parse the explicit SEBI category field from one AMFI Scheme Summary XML."""
+def _extract_scheme_summary_fields(xml_bytes: bytes) -> dict[str, str]:
     if not xml_bytes or len(xml_bytes) > MAX_XML_BYTES:
         raise ValueError("AMFI Scheme Summary XML is empty or exceeds the size limit")
-    if re.search(br"<!\s*(DOCTYPE|ENTITY)", xml_bytes, re.IGNORECASE):
+    if re.search(br"<!\\s*(DOCTYPE|ENTITY)", xml_bytes, re.IGNORECASE):
         raise ValueError("AMFI Scheme Summary XML contains a forbidden declaration")
 
     root = ET.fromstring(xml_bytes)
     fields: dict[str, str] = {}
-
-    # AMFI publishes both SpreadsheetML Row/Cell documents and field-named XML.
     for row in root.iter():
         if row.tag.split("}")[-1] != "Row":
             continue
@@ -79,7 +72,7 @@ def parse_scheme_summary_category(
                     value = html.unescape(" ".join(data.itertext()).strip())
                     if value:
                         cells.append(value)
-        if cells and re.fullmatch(r"\d+(?:\.0)?", cells[0]):
+        if cells and re.fullmatch(r"\\d+(?:\\.0)?", cells[0]):
             cells = cells[1:]
         if len(cells) >= 2:
             fields[_key(cells[0])] = " ".join(cells[1:])
@@ -88,15 +81,10 @@ def parse_scheme_summary_category(
         for node in root.iter():
             if len(node) == 0 and node.text and node.text.strip():
                 fields[_key(node.tag.split("}")[-1])] = html.unescape(node.text.strip())
+    return fields
 
-    source_name = (
-        fields.get("fundname")
-        or fields.get("schemename")
-        or fields.get("nameofthescheme")
-    )
-    if source_name and _exact_name(source_name) != _exact_name(expected_scheme_name):
-        raise ValueError("AMFI Scheme Summary name does not match the requested scheme")
 
+def _scheme_summary_category_fields(fields: dict[str, str]) -> tuple[str | None, str]:
     raw_category = next(
         (
             fields[key]
@@ -110,10 +98,29 @@ def parse_scheme_summary_category(
         ),
         None,
     )
+    fund_type = fields.get("fundtype") or fields.get("typeofscheme") or ""
+    return raw_category, fund_type
+
+
+def parse_scheme_summary_category(
+    xml_bytes: bytes,
+    *,
+    expected_scheme_name: str,
+) -> dict[str, str | None] | None:
+    """Parse the explicit SEBI category field from one AMFI Scheme Summary XML."""
+    fields = _extract_scheme_summary_fields(xml_bytes)
+    source_name = (
+        fields.get("fundname")
+        or fields.get("schemename")
+        or fields.get("nameofthescheme")
+    )
+    if source_name and _exact_name(source_name) != _exact_name(expected_scheme_name):
+        raise ValueError("AMFI Scheme Summary name does not match the requested scheme")
+
+    raw_category, fund_type = _scheme_summary_category_fields(fields)
     if not raw_category:
         return None
 
-    fund_type = fields.get("fundtype") or fields.get("typeofscheme") or ""
     lowered_type = fund_type.casefold()
     if "equity scheme" in lowered_type:
         group_hint = "Equity Scheme"
@@ -188,6 +195,9 @@ def fetch_amfi_scheme_summary_taxonomy(
     mappings: dict[str, dict[str, str | None]] = {}
     matched = unmatched = documents_missing = ambiguous = 0
     category_counts: Counter[str] = Counter()
+    unclassified_category_labels: Counter[str] = Counter()
+    unclassified_fund_types: Counter[str] = Counter()
+    source_documents_without_category = 0
 
     try:
         if requests_made >= max_requests:
@@ -296,6 +306,15 @@ def fetch_amfi_scheme_summary_taxonomy(
                             classification["category"] or "",
                             classification["asset_class"],
                         ))
+                    else:
+                        fields = _extract_scheme_summary_fields(xml_response.content)
+                        raw_category, raw_fund_type = _scheme_summary_category_fields(fields)
+                        if raw_category:
+                            unclassified_category_labels[raw_category] += 1
+                        else:
+                            source_documents_without_category += 1
+                        if raw_fund_type:
+                            unclassified_fund_types[raw_fund_type] += 1
                 if not source_document_found:
                     documents_missing += 1
                     continue
@@ -327,6 +346,9 @@ def fetch_amfi_scheme_summary_taxonomy(
             "source_names_ambiguous": ambiguous,
             "requests_made": requests_made,
             "category_counts": dict(sorted(category_counts.items())),
+            "unclassified_category_labels": dict(sorted(unclassified_category_labels.items())),
+            "unclassified_fund_types": dict(sorted(unclassified_fund_types.items())),
+            "source_documents_without_category": source_documents_without_category,
             "payload_sha256": hashlib.sha256(canonical_json.encode()).hexdigest(),
         }
     finally:
