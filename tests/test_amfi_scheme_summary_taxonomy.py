@@ -98,7 +98,7 @@ def test_parse_official_amfi_summary_resolves_theme_descriptor_using_official_gr
     result = parse_scheme_summary_category(
         _spreadsheetml(
             "UTI - ESG Theme Fund",
-            "Thematic Fund-\\u2011 ESG Theme",
+            "Thematic Fund-\u2011 ESG Theme",
             "An open ended equity scheme.",
         ),
         expected_scheme_name="UTI - ESG Theme Fund",
@@ -230,7 +230,7 @@ def test_scheme_details_fallback_resolves_bare_categories_only_when_unique():
         "Thematic Fund",
         "Equity",
     )
-    for dash in ("\\u2010", "\\u2011", "\\u2012", "\\u2013", "\\u2014", "\\u2015", "\\u2212", "\\u00ad"):
+    for dash in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2015", "\u2212", "\u00ad"):
         assert classify_amfi_scheme_details_category(f"Thematic Fund{dash} ESG Theme") == (
             "Equity Scheme",
             "Thematic Fund",
@@ -295,7 +295,7 @@ def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
                 assert params == {"MF_ID": 28, "scheme_id": "1134"}
                 return _FakeResponse(payload=[{
                     "Scheme_Name": "UTI - Banking and Financial Services Fund",
-                    "SchemeCat_Desc": "Thematic Fund\\u2011 ESG Theme",
+                    "SchemeCat_Desc": "Thematic Fund\u2011 ESG Theme",
                     "SchemeType_Desc": "Open Ended",
                 }])
             return super().get(url, params=params, timeout=timeout)
