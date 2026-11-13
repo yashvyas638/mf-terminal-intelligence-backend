@@ -516,10 +516,23 @@ async def lifespan(_: FastAPI):
         performance_taxonomy_requested = (
             os.getenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", "").strip().lower() == "true"
         )
-        if sum((history_requested, metadata_requested, performance_taxonomy_requested)) > 1:
+        performance_taxonomy_source_check_requested = (
+            os.getenv("AMFI_PERFORMANCE_TAXONOMY_SOURCE_CHECK_ON_START", "").strip().lower() == "true"
+        )
+        if sum((
+            history_requested,
+            metadata_requested,
+            performance_taxonomy_requested,
+            performance_taxonomy_source_check_requested,
+        )) > 1:
             raise RuntimeError(
-                "Run only one of historical NAV backfill, NAV-feed metadata refresh, or AMFI performance taxonomy refresh per deployment"
+                "Run only one of historical NAV backfill, NAV-feed metadata refresh, AMFI performance taxonomy refresh, or read-only taxonomy source check per deployment"
             )
+        if performance_taxonomy_source_check_requested:
+            source_check_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_check_amfi_performance_taxonomy_source_from_environment)
+            )
+            source_check_task.add_done_callback(_log_amfi_performance_taxonomy_task_result)
         if performance_taxonomy_requested:
             taxonomy_task = asyncio.create_task(
                 asyncio.to_thread(_maybe_refresh_amfi_performance_taxonomy_from_environment)
@@ -796,6 +809,35 @@ def _refresh_scheme_metadata_from_amfi() -> dict[str, Any]:
         },
     )
     return response
+
+
+def _check_amfi_performance_taxonomy_source() -> dict[str, Any]:
+    """Read-only production-side connectivity and schema check; never writes data."""
+    source = fetch_amfi_performance_taxonomy()
+    result = {key: value for key, value in source.items() if key != "mappings"}
+    result.update({
+        "status": "source_verified",
+        "database_writes": 0,
+        "nav_observations_written": 0,
+        "research_snapshots_written": 0,
+    })
+    logger.warning(
+        "amfi_performance_taxonomy_source_check_completed",
+        extra={
+            "scheme_codes": result.get("scheme_codes"),
+            "subcategory_queries": result.get("subcategory_queries"),
+            "requests_made": result.get("requests_made"),
+            "payload_sha256": result.get("payload_sha256"),
+            "database_writes": 0,
+        },
+    )
+    return result
+
+
+def _maybe_check_amfi_performance_taxonomy_source_from_environment() -> dict[str, Any] | None:
+    if os.getenv("AMFI_PERFORMANCE_TAXONOMY_SOURCE_CHECK_ON_START", "").strip().lower() != "true":
+        return None
+    return _check_amfi_performance_taxonomy_source()
 
 
 def _maybe_refresh_amfi_performance_taxonomy_from_environment() -> dict[str, Any] | None:
