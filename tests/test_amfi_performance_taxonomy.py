@@ -48,6 +48,37 @@ def test_amfi_short_category_labels_map_to_current_sebi_allowlist(source_label, 
     assert canonical_subcategory("Equity Scheme", source_label) == canonical
 
 
+@pytest.mark.parametrize(
+    ("group", "source_label", "canonical"),
+    [
+        ("Debt Scheme", "Long Term", "Long Term Fund"),
+        ("Debt Scheme", "Medium to Long Term", "Medium to Long Term Fund"),
+        ("Debt Scheme", "Short Term", "Short Term Fund"),
+        ("Debt Scheme", "Medium Term", "Medium Term Fund"),
+        ("Debt Scheme", "Ultra Short to Short Term", "Ultra Short to Short Term Fund"),
+        ("Debt Scheme", "Ultra Short Term", "Ultra Short Term Fund"),
+        ("Debt Scheme", "Liquid", "Liquid Fund"),
+        ("Debt Scheme", "Overnight", "Overnight Fund"),
+        ("Debt Scheme", "Dynamic Term", "Dynamic Term Fund"),
+        ("Debt Scheme", "Corporate Bond", "Corporate Bond Fund"),
+        ("Debt Scheme", "Credit Risk", "Credit Risk Fund"),
+        ("Debt Scheme", "Banking and PSU Debt", "Banking and PSU Debt Fund"),
+        ("Debt Scheme", "Floating Interest Rates", "Floating Interest Rates Fund"),
+        ("Debt Scheme", "Gilt", "Gilt Fund"),
+        ("Debt Scheme", "Sectoral Debt Fund", "Sectoral Fund"),
+        ("Hybrid Scheme", "Aggressive Hybrid", "Aggressive Hybrid Fund"),
+        ("Hybrid Scheme", "Conservative Hyrbid", "Conservative Hybrid Fund"),
+        ("Hybrid Scheme", "Balanced Hybrid", "Balanced Hybrid Fund"),
+        ("Hybrid Scheme", "Arbitrage", "Arbitrage Fund"),
+        ("Other Schemes", "Index Funds ETFs", "Index Funds / ETFs"),
+    ],
+)
+def test_amfi_short_debt_hybrid_and_other_labels_map_to_current_sebi_allowlist(group, source_label, canonical):
+    from app.fund_taxonomy import canonical_subcategory
+
+    assert canonical_subcategory(group, source_label) == canonical
+
+
 def test_unknown_amfi_subcategory_fails_closed():
     mappings, rejected = canonicalize_performance_rows(
         [{"Scheme_Code": "119551"}],
