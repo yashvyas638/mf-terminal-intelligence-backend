@@ -29,6 +29,7 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 @media(max-width:850px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.twocol{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
 @media(max-width:560px){.wrap{padding:18px 12px 42px}h1{font-size:23px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat strong{font-size:19px}.panel{padding:13px}.toolbar input[type=search]{min-width:100%}}
 </style>
+<link rel="stylesheet" href="/static/product-redesign.css?v=1">
 </head>
 <body>
 <header><div class="brand">MF TERMINAL<small>FUND RESEARCH WORKSPACE</small></div><form id="researchAuthForm" class="toolbar"><input id="authEmail" type="email" autocomplete="username" placeholder="Email" aria-label="Account email" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password (8+ characters)" aria-label="Account password" minlength="8" required><button id="signIn" type="submit">Sign in</button><button id="signUp" type="button">Create account</button><button id="resetPassword" type="button">Forgot password?</button><button id="signOut" type="button" hidden>Sign out</button><a href="/">← Overview</a></form><div id="researchRecoveryPanel" class="toolbar hidden"><input id="newPassword" type="password" autocomplete="new-password" minlength="8" placeholder="New password (8+ characters)" aria-label="New password"><button id="saveNewPassword" type="button">Update password</button></div></header>
