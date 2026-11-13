@@ -55,7 +55,7 @@ def _field(row: dict[str, Any], *names: str) -> Any:
 def _extract_scheme_summary_fields(xml_bytes: bytes) -> dict[str, str]:
     if not xml_bytes or len(xml_bytes) > MAX_XML_BYTES:
         raise ValueError("AMFI Scheme Summary XML is empty or exceeds the size limit")
-    if re.search(br"<!\\s*(DOCTYPE|ENTITY)", xml_bytes, re.IGNORECASE):
+    if re.search(br"<!\s*(DOCTYPE|ENTITY)", xml_bytes, re.IGNORECASE):
         raise ValueError("AMFI Scheme Summary XML contains a forbidden declaration")
 
     root = ET.fromstring(xml_bytes)
@@ -72,7 +72,7 @@ def _extract_scheme_summary_fields(xml_bytes: bytes) -> dict[str, str]:
                     value = html.unescape(" ".join(data.itertext()).strip())
                     if value:
                         cells.append(value)
-        if cells and re.fullmatch(r"\\d+(?:\\.0)?", cells[0]):
+        if cells and re.fullmatch(r"\d+(?:\.0)?", cells[0]):
             cells = cells[1:]
         if len(cells) >= 2:
             fields[_key(cells[0])] = " ".join(cells[1:])
