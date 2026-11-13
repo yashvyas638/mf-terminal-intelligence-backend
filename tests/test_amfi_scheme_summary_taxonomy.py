@@ -94,6 +94,22 @@ def test_parse_official_amfi_summary_decodes_double_escaped_ampersands():
     }
 
 
+def test_parse_official_amfi_summary_resolves_theme_descriptor_using_official_group_hint():
+    result = parse_scheme_summary_category(
+        _spreadsheetml(
+            "UTI - ESG Theme Fund",
+            "Thematic Fund-\\u2011 ESG Theme",
+            "An open ended equity scheme.",
+        ),
+        expected_scheme_name="UTI - ESG Theme Fund",
+    )
+    assert result == {
+        "category_group": "Equity Scheme",
+        "category": "Thematic Fund",
+        "asset_class": "Equity",
+    }
+
+
 def test_parse_official_amfi_summary_rejects_fmp_not_in_current_allowlist():
     result = parse_scheme_summary_category(
         _spreadsheetml(
