@@ -351,3 +351,104 @@ jobs:
               }
           }, indent=2))
           PY
+
+      - name: Live read-only AMFI Fund Performance taxonomy contract check
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+
+          from app.amfi_performance_taxonomy import (
+              PERFORMANCE_PATH,
+              SUBCATEGORIES_PATH,
+              _field,
+              _recent_business_dates,
+              _post,
+              canonicalize_performance_rows,
+          )
+          from app.fund_taxonomy import canonical_subcategory
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": "https://www.amfiindia.com",
+              "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
+              "X-Requested-With": "XMLHttpRequest",
+              "Sec-Fetch-Site": "same-origin",
+              "Sec-Fetch-Mode": "cors",
+              "Sec-Fetch-Dest": "empty",
+          })
+          landing = session.get("https://www.amfiindia.com/otherdata/fund-performance", timeout=(8, 45))
+          landing.raise_for_status()
+          source_labels_by_category = {}
+          selected = None
+          for category_id, group in (
+              (1, "Equity Scheme"),
+              (2, "Debt Scheme"),
+              (3, "Hybrid Scheme"),
+              (5, "Other Schemes"),
+          ):
+              subcategories = _post(session, SUBCATEGORIES_PATH, {"category": category_id})
+              source_labels_by_category[str(category_id)] = []
+              for item in subcategories:
+                  name = _field(item, "name", "subCategory", "subCategoryName")
+                  subcategory_id = _field(item, "id", "subCategoryId")
+                  if isinstance(name, str):
+                      source_labels_by_category[str(category_id)].append(name)
+                      if category_id == 1 and selected is None and subcategory_id is not None and canonical_subcategory(group, name):
+                          selected = {"id": subcategory_id, "name": name}
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "source_subcategories_by_category": source_labels_by_category,
+              "database_writes": 0,
+          }, indent=2), flush=True)
+          if selected is None:
+              raise SystemExit(
+                  "AMFI Equity subcategory endpoint exposed no current allow-listed label: "
+                  + json.dumps(source_labels_by_category)
+              )
+
+          rows = []
+          report_date = None
+          for candidate_date in _recent_business_dates(5):
+              rows = _post(session, PERFORMANCE_PATH, {
+                  "maturityType": 1,
+                  "category": 1,
+                  "subCategory": int(selected["id"]),
+                  "mfid": 0,
+                  "reportDate": candidate_date,
+              })
+              if rows:
+                  report_date = candidate_date
+                  break
+          print(json.dumps({
+              "report_date": report_date,
+              "performance_rows_received": len(rows),
+              "first_row_keys": list(rows[0].keys()) if rows else [],
+              "first_row_sample": rows[0] if rows else None,
+          }, indent=2), flush=True)
+          if not rows:
+              raise SystemExit("AMFI Fund Performance returned no records for the five most recent business dates")
+          mappings, rejected = canonicalize_performance_rows(
+              rows,
+              category_group="Equity Scheme",
+              subcategory=selected["name"],
+          )
+          if not mappings:
+              raise SystemExit("AMFI Fund Performance endpoint returned no valid scheme-code or exact scheme-name identifiers")
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "report_date": report_date,
+              "category_group": "Equity Scheme",
+              "subcategory": selected["name"],
+              "source_subcategories_by_category": source_labels_by_category,
+              "rows_received": len(rows),
+              "valid_scheme_identifiers": len(mappings),
+              "rejected_rows": rejected,
+              "database_writes": 0,
+          }, indent=2))
+          session.close()
+          PY
