@@ -6,6 +6,7 @@ legacy, or ambiguous categories are deliberately left unclassified.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -75,7 +76,7 @@ def parse_scheme_summary_category(
                 continue
             for data in cell:
                 if data.tag.split("}")[-1] == "Data":
-                    value = " ".join(data.itertext()).strip()
+                    value = html.unescape(" ".join(data.itertext()).strip())
                     if value:
                         cells.append(value)
         if cells and re.fullmatch(r"\d+(?:\.0)?", cells[0]):
@@ -86,7 +87,7 @@ def parse_scheme_summary_category(
     if root.tag.split("}")[-1] == "SchemeSummaryDocument":
         for node in root.iter():
             if len(node) == 0 and node.text and node.text.strip():
-                fields[_key(node.tag.split("}")[-1])] = node.text.strip()
+                fields[_key(node.tag.split("}")[-1])] = html.unescape(node.text.strip())
 
     source_name = (
         fields.get("fundname")

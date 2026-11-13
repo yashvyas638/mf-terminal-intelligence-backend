@@ -78,6 +78,22 @@ def test_parse_official_amfi_summary_maps_explicit_sectoral_category():
     }
 
 
+def test_parse_official_amfi_summary_decodes_double_escaped_ampersands():
+    result = parse_scheme_summary_category(
+        _spreadsheetml(
+            "HDFC Banking &amp;amp; Financial Services Fund",
+            "Sectoral Fund",
+            "An open ended equity scheme investing in Banking and Financial Services Sector.",
+        ),
+        expected_scheme_name="HDFC Banking & Financial Services Fund",
+    )
+    assert result == {
+        "category_group": "Equity Scheme",
+        "category": "Sectoral Fund",
+        "asset_class": "Equity",
+    }
+
+
 def test_parse_official_amfi_summary_rejects_fmp_not_in_current_allowlist():
     result = parse_scheme_summary_category(
         _spreadsheetml(
