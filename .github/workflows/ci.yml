@@ -589,3 +589,96 @@ jobs:
           }, indent=2), flush=True)
           session.close()
           PY
+
+      - name: Read-only AMFI scheme-summary category metadata probe
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import requests
+          import xml.etree.ElementTree as ET
+
+          base = "https://www.amfiindia.com"
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": base,
+              "Referer": base + "/otherdata/scheme-details",
+              "X-Requested-With": "XMLHttpRequest",
+          })
+          probes = [
+              ("UTI Mutual Fund", "UTI - Banking and Financial Services Fund"),
+              ("HDFC Mutual Fund", "HDFC Banking & Financial Services Fund"),
+              ("SBI Mutual Fund", "SBI Long Term Advantage Fund - Series IV"),
+          ]
+          amcs_response = session.get(base + "/api/populate-mf", timeout=(8, 30))
+          amcs_response.raise_for_status()
+          amcs = amcs_response.json()
+          results = []
+          for amc_name, target_name in probes:
+              amc_rows = amcs if isinstance(amcs, list) else amcs.get("data", [])
+              matches = [
+                  row for row in amc_rows
+                  if str(row.get("mfname") or row.get("name") or "").strip().casefold() == amc_name.casefold()
+              ]
+              if len(matches) != 1:
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "AMC exact match unavailable", "matches": len(matches)})
+                  continue
+              mf_id = matches[0].get("mfId") or matches[0].get("mf_id") or matches[0].get("id")
+              scheme_response = session.get(base + "/api/populate-scheme", params={"MF_ID": mf_id}, timeout=(8, 30))
+              scheme_response.raise_for_status()
+              scheme_payload = scheme_response.json()
+              scheme_rows = scheme_payload if isinstance(scheme_payload, list) else scheme_payload.get("data", [])
+              scheme_matches = [
+                  row for row in scheme_rows
+                  if str(row.get("scheme_name") or row.get("schemeName") or row.get("name") or "").strip().casefold() == target_name.casefold()
+              ]
+              if len(scheme_matches) != 1:
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "scheme exact match unavailable", "matches": len(scheme_matches)})
+                  continue
+              scheme_id = scheme_matches[0].get("scheme_id") or scheme_matches[0].get("schemeId") or scheme_matches[0].get("id")
+              details_response = session.get(base + "/api/scheme-details", params={"MF_ID": mf_id, "scheme_id": scheme_id}, timeout=(8, 30))
+              details_response.raise_for_status()
+              details_payload = details_response.json()
+              detail_rows = details_payload if isinstance(details_payload, list) else details_payload.get("data", [])
+              detail = detail_rows[0] if detail_rows else {}
+              category_fields = {k: v for k, v in detail.items() if "category" in k.casefold() or "type" in k.casefold()}
+              xml_response = session.get(f"https://portal.amfiindia.com/spages/SSD_{scheme_id}.xml", timeout=(8, 30))
+              xml_status = xml_response.status_code
+              xml_fields = {}
+              if xml_response.ok and len(xml_response.content) <= 3_000_000 and not re.search(br"<!\\s*(DOCTYPE|ENTITY)", xml_response.content, re.I):
+                  root = ET.fromstring(xml_response.content)
+                  for row in root.findall(".//{*}Row"):
+                      cells = [" ".join(cell.itertext()).strip() for cell in row.findall("{*}Cell/{*}Data")]
+                      cells = [value for value in cells if value]
+                      if len(cells) >= 2:
+                          xml_fields[cells[0]] = " ".join(cells[1:])
+                  if root.tag.split("}")[-1] == "SchemeSummaryDocument":
+                      for node in root.iter():
+                          if len(node) == 0 and node.text and node.text.strip():
+                              xml_fields[node.tag.split("}")[-1]] = node.text.strip()
+              results.append({
+                  "amc": amc_name,
+                  "scheme": target_name,
+                  "mf_id": mf_id,
+                  "scheme_id": scheme_id,
+                  "details_keys": sorted(detail.keys()),
+                  "details_category_or_type_fields": category_fields,
+                  "scheme_summary_http_status": xml_status,
+                  "scheme_summary_category_or_type_fields": {
+                      k: v for k, v in xml_fields.items()
+                      if "category" in k.casefold() or "type" in k.casefold()
+                  },
+              })
+          print(json.dumps({
+              "source": "AMFI official Scheme Details / Scheme Summary",
+              "results": results,
+              "database_writes": 0,
+              "nav_observations_written": 0,
+              "research_snapshots_written": 0,
+          }, indent=2), flush=True)
+          session.close()
+          PY
