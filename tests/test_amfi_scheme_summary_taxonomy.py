@@ -151,3 +151,29 @@ def test_fetch_amfi_summary_matches_exact_amc_and_base_scheme_name():
     assert result["source_names_unmatched"] == 0
     assert result["requests_made"] == 4
     assert result["category_counts"] == {"Equity Scheme / Sectoral Fund": 1}
+
+
+def test_scheme_summary_parser_exposes_unmapped_legacy_category_fields():
+    from app.amfi_scheme_summary_taxonomy import (
+        _extract_scheme_summary_fields,
+        _scheme_summary_category_fields,
+    )
+
+    fields = _extract_scheme_summary_fields(
+        _spreadsheetml(
+            "Legacy Children's Solution Fund",
+            "Solution Oriented Scheme",
+            "An open ended solution oriented scheme.",
+        )
+    )
+    raw_category, fund_type = _scheme_summary_category_fields(fields)
+    assert raw_category == "Solution Oriented Scheme"
+    assert fund_type == "An open ended solution oriented scheme."
+    assert parse_scheme_summary_category(
+        _spreadsheetml(
+            "Legacy Children's Solution Fund",
+            "Solution Oriented Scheme",
+            "An open ended solution oriented scheme.",
+        ),
+        expected_scheme_name="Legacy Children's Solution Fund",
+    ) is None
