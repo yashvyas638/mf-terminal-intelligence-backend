@@ -79,6 +79,21 @@ def test_amfi_short_debt_hybrid_and_other_labels_map_to_current_sebi_allowlist(g
     assert canonical_subcategory(group, source_label) == canonical
 
 
+def test_canonicalizes_amfi_performance_scheme_name_when_source_has_no_scheme_code():
+    mappings, rejected = canonicalize_performance_rows(
+        [{"schemeName": "Aditya Birla Sun Life Large Cap Fund"}],
+        category_group="Equity Scheme",
+        subcategory="Large Cap",
+    )
+    assert mappings == {
+        "name:aditya birla sun life large cap fund": {
+            "category_group": "Equity Scheme",
+            "category": "Large Cap Fund",
+        }
+    }
+    assert rejected == 0
+
+
 def test_canonicalizes_amfi_performance_base_scheme_name():
     from app.amfi_performance_taxonomy import canonical_scheme_name
 
