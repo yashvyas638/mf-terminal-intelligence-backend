@@ -22,8 +22,32 @@ $("signOut").onclick=async()=>{try{const {error}=await authClient.auth.signOut()
 authClient.auth.onAuthStateChange((event,nextSession)=>{if(event==="PASSWORD_RECOVERY"){passwordRecoveryMode=true;note("Choose a new password to finish account recovery.")}queueMicrotask(()=>updateAuthState(nextSession).catch(e=>note(e.message||"Could not load your workspace.",true)))});
 $("saveNewPassword").onclick=async()=>{if(authBusy)return;try{const password=$("newPassword").value;if(!password||password.length<8)throw new Error("New password must contain at least 8 characters.");authBusy=true;$("saveNewPassword").disabled=true;$("saveNewPassword").textContent="Updating…";const {error}=await authClient.auth.updateUser({password});if(error)throw error;passwordRecoveryMode=false;$("newPassword").value="";const {data}=await authClient.auth.getSession();await updateAuthState(data.session);note("Password updated successfully.")}catch(e){note(e.message||"Could not update your password.",true)}finally{authBusy=false;$("saveNewPassword").disabled=false;$("saveNewPassword").textContent="Update password"}};
 function setFacetOptions(id,values,label){const element=$(id),current=element.value;element.innerHTML='<option value="">All '+esc(label)+'</option>'+(values||[]).map(value=>'<option value="'+esc(value)+'">'+esc(value)+'</option>').join("");if((values||[]).includes(current))element.value=current}
-async function loadFacets(){if(!session?.access_token)return null;const d=await api("/v1/nav/facets");setFacetOptions("category",d.categories,"scheme groups");setFacetOptions("subCategory",d.sub_categories,"sub-categories");setFacetOptions("assetClass",d.asset_classes,"asset classes");setFacetOptions("plan",d.plan_types,"plans");setFacetOptions("option",d.option_types,"options");facetsLoaded=true;return d}
-async function loadScreen(){if(!session?.access_token)throw new Error("Please sign in first.");const p=new URLSearchParams({limit:String(limit),offset:String(page*limit),days:$("days").value,sort_by:$("sortBy").value,sort_order:$("sortOrder").value,min_observations:$("minObservations").value});if($("q").value.trim())p.set("q",$("q").value.trim());if($("category").value)p.set("category_group",$("category").value);if($("subCategory").value)p.set("sub_category",$("subCategory").value);if($("assetClass").value)p.set("asset_class",$("assetClass").value);if($("plan").value)p.set("plan_type",$("plan").value);if($("option").value)p.set("option_type",$("option").value);const d=await api("/v1/analytics/screener?"+p.toString());items=d.items||[];renderRows();$("pageInfo").textContent=(d.total_matching?("Showing global ranks "+(page*limit+1)+"–"+(page*limit+items.length)+" of "+d.total_matching):"No matching funds");$("prev").disabled=page===0;$("next").disabled=(page+1)*limit>=d.total_matching;$("screenerFreshness").textContent="Research snapshot refreshed "+new Date(d.refreshed_at).toLocaleString()+" · "+d.total_matching+" matching schemes · "+d.days_requested+"-day window · Global ranking by "+d.sort_by.replaceAll("_"," ");return d}
+function renderCategoryQuickFilters(facets){
+  const root=$("categoryQuickFilters");if(!root)return;
+  const groups=Array.isArray(facets?.categories)?facets.categories:[];
+  const subs=Array.isArray(facets?.sub_categories)?facets.sub_categories:[];
+  const groupButtons=groups.map(value=>'<button type="button" data-quick-kind="group" data-quick-value="'+esc(value)+'">'+esc(value.replace(/ Scheme$/,""))+'</button>').join("");
+  const subButtons=subs.map(value=>'<button type="button" data-quick-kind="sub" data-quick-value="'+esc(value)+'">'+esc(value)+'</button>').join("");
+  root.innerHTML='<span class="quick-label">Asset groups</span><button type="button" data-quick-kind="all" class="active" aria-pressed="true">All categories</button>'+groupButtons+(subButtons?'<span class="quick-label">Categories</span>'+subButtons:"");
+  root.querySelectorAll("[data-quick-kind]").forEach(button=>button.addEventListener("click",()=>{
+    const kind=button.dataset.quickKind,value=button.dataset.quickValue||"";
+    if(kind==="all"){$("category").value="";$("subCategory").value=""}
+    else if(kind==="group"){$("category").value=value;$("subCategory").value=""}
+    else {$("category").value="";$("subCategory").value=value}
+    page=0;syncCategoryQuickFilters();loadScreen().catch(error=>note(error.message,true));
+  }));
+  syncCategoryQuickFilters();
+}
+function syncCategoryQuickFilters(){
+  const root=$("categoryQuickFilters");if(!root)return;
+  const group=$("category")?.value||"",sub=$("subCategory")?.value||"";
+  root.querySelectorAll("[data-quick-kind]").forEach(button=>{
+    const kind=button.dataset.quickKind,value=button.dataset.quickValue||"";
+    const active=kind==="all"?!group&&!sub:kind==="group"?!!group&&group===value:!!sub&&sub===value;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));
+  });
+}
+async function loadFacets(){if(!session?.access_token)return null;const d=await api("/v1/nav/facets");setFacetOptions("category",d.categories,"scheme groups");setFacetOptions("subCategory",d.sub_categories,"sub-categories");setFacetOptions("assetClass",d.asset_classes,"asset classes");setFacetOptions("plan",d.plan_types,"plans");setFacetOptions("option",d.option_types,"options");renderCategoryQuickFilters(d);facetsLoaded=true;return d}
+async function loadScreen(){if(!session?.access_token)throw new Error("Please sign in first.");const p=new URLSearchParams({limit:String(limit),offset:String(page*limit),days:$("days").value,sort_by:$("sortBy").value,sort_order:$("sortOrder").value,min_observations:$("minObservations").value});if($("q").value.trim())p.set("q",$("q").value.trim());if($("category").value)p.set("category_group",$("category").value);if($("subCategory").value)p.set("sub_category",$("subCategory").value);if($("assetClass").value)p.set("asset_class",$("assetClass").value);if($("plan").value)p.set("plan_type",$("plan").value);if($("option").value)p.set("option_type",$("option").value);const d=await api("/v1/analytics/screener?"+p.toString());items=d.items||[];syncCategoryQuickFilters();renderRows();$("pageInfo").textContent=(d.total_matching?("Showing global ranks "+(page*limit+1)+"–"+(page*limit+items.length)+" of "+d.total_matching):"No matching funds");$("prev").disabled=page===0;$("next").disabled=(page+1)*limit>=d.total_matching;$("screenerFreshness").textContent="Research snapshot refreshed "+new Date(d.refreshed_at).toLocaleString()+" · "+d.total_matching+" matching schemes · "+d.days_requested+"-day window · Global ranking by "+d.sort_by.replaceAll("_"," ");return d}
 function renderRows(){
   const qualityLabel=x=>{
     const details=(x.quality_flags||[]).map(flag=>[
