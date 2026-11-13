@@ -10,6 +10,7 @@ import html
 import json
 import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections import Counter
 from typing import Any
@@ -134,7 +135,16 @@ def classify_amfi_scheme_details_category(
 ) -> tuple[str | None, str | None, str | None]:
     """Resolve AMFI's legacy descriptor only when its subcategory is unique."""
     raw = " ".join(str(raw_category or "").strip().split())
-    normalized = re.sub(r"\s*[-\u2013\u2014]\s*", " - ", raw)
+    # AMFI exports use several Unicode dash punctuation characters, not only
+    # ASCII hyphen/en dash/em dash. Normalize the whole Unicode Pd class plus
+    # minus/soft-hyphen variants before splitting category descriptors.
+    dash_normalized = "".join(
+        "-"
+        if unicodedata.category(char) == "Pd" or char in {"\u00ad", "\u2212"}
+        else char
+        for char in raw
+    )
+    normalized = re.sub(r"\s*-\s*", " - ", dash_normalized)
     group, category, asset = classify_amfi_category(normalized)
     if group and category:
         return group, category, asset
@@ -227,6 +237,16 @@ def parse_scheme_summary_category(
 
     if group_hint:
         category = canonical_subcategory(group_hint, raw_category)
+        if not category:
+            # AMFI's official summary can carry a category descriptor plus a
+            # theme suffix. Reuse the strict allowlist resolver, but require
+            # its resolved group to agree with the official Fund_Type hint.
+            fallback_group, fallback_category, _ = classify_amfi_scheme_details_category(
+                raw_category
+            )
+            if fallback_group != group_hint:
+                return None
+            category = fallback_category
         if not category:
             return None
         return {
