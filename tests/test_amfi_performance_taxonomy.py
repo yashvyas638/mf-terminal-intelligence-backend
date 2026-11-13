@@ -24,6 +24,30 @@ def test_canonicalizes_explicit_amfi_scheme_code_and_allowlisted_category():
     assert rejected == 0
 
 
+@pytest.mark.parametrize(
+    ("source_label", "canonical"),
+    [
+        ("Large Cap", "Large Cap Fund"),
+        ("Large & Mid Cap", "Large & Mid Cap Fund"),
+        ("Flexi Cap", "Flexi Cap Fund"),
+        ("Multi Cap", "Multi Cap Fund"),
+        ("Mid Cap", "Mid Cap Fund"),
+        ("Small Cap", "Small Cap Fund"),
+        ("Value", "Value Fund"),
+        ("ELSS", "ELSS Tax Saver Fund"),
+        ("Contra", "Contra Fund"),
+        ("Dividend Yield", "Dividend Yield Fund"),
+        ("Focused", "Focused Fund (No. of Stocks)"),
+        ("Sectoral", "Sectoral Fund"),
+        ("Thematic", "Thematic Fund"),
+    ],
+)
+def test_amfi_short_category_labels_map_to_current_sebi_allowlist(source_label, canonical):
+    from app.fund_taxonomy import canonical_subcategory
+
+    assert canonical_subcategory("Equity Scheme", source_label) == canonical
+
+
 def test_unknown_amfi_subcategory_fails_closed():
     mappings, rejected = canonicalize_performance_rows(
         [{"Scheme_Code": "119551"}],
