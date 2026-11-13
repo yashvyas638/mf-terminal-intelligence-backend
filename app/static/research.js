@@ -28,7 +28,7 @@ function renderCategoryQuickFilters(facets){
   const subs=Array.isArray(facets?.sub_categories)?facets.sub_categories:[];
   const groupButtons=groups.map(value=>'<button type="button" data-quick-kind="group" data-quick-value="'+esc(value)+'">'+esc(value.replace(/ Scheme$/,""))+'</button>').join("");
   const subButtons=subs.map(value=>'<button type="button" data-quick-kind="sub" data-quick-value="'+esc(value)+'">'+esc(value)+'</button>').join("");
-  root.innerHTML='<span class="quick-label">Asset groups</span><button type="button" data-quick-kind="all" class="active">All funds</button>'+groupButtons+(subButtons?'<span class="quick-label">Categories</span>'+subButtons:"");
+  root.innerHTML='<span class="quick-label">Asset groups</span><button type="button" data-quick-kind="all" class="active" aria-pressed="true">All categories</button>'+groupButtons+(subButtons?'<span class="quick-label">Categories</span>'+subButtons:"");
   root.querySelectorAll("[data-quick-kind]").forEach(button=>button.addEventListener("click",()=>{
     const kind=button.dataset.quickKind,value=button.dataset.quickValue||"";
     if(kind==="all"){$("category").value="";$("subCategory").value=""}
@@ -43,7 +43,7 @@ function syncCategoryQuickFilters(){
   const group=$("category")?.value||"",sub=$("subCategory")?.value||"";
   root.querySelectorAll("[data-quick-kind]").forEach(button=>{
     const kind=button.dataset.quickKind,value=button.dataset.quickValue||"";
-    button.classList.toggle("active",kind==="all"?!group&&!sub:kind==="group"?!!group&&group===value:!!sub&&sub===value);
+    const active=kind==="all"?!group&&!sub:kind==="group"?!!group&&group===value:!!sub&&sub===value;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));
   });
 }
 async function loadFacets(){if(!session?.access_token)return null;const d=await api("/v1/nav/facets");setFacetOptions("category",d.categories,"scheme groups");setFacetOptions("subCategory",d.sub_categories,"sub-categories");setFacetOptions("assetClass",d.asset_classes,"asset classes");setFacetOptions("plan",d.plan_types,"plans");setFacetOptions("option",d.option_types,"options");renderCategoryQuickFilters(d);facetsLoaded=true;return d}
