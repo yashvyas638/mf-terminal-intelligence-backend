@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from app.amfi_scheme_summary_taxonomy import (
