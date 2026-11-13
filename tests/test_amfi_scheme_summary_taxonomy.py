@@ -110,6 +110,22 @@ def test_parse_official_amfi_summary_resolves_theme_descriptor_using_official_gr
     }
 
 
+def test_parse_official_amfi_summary_resolves_allowlisted_category_without_formal_group_hint():
+    result = parse_scheme_summary_category(
+        _spreadsheetml(
+            "UTI - ESG Theme Fund",
+            "Thematic Fund-\u2011 ESG Theme",
+            "Equity",
+        ),
+        expected_scheme_name="UTI - ESG Theme Fund",
+    )
+    assert result == {
+        "category_group": "Equity Scheme",
+        "category": "Thematic Fund",
+        "asset_class": "Equity",
+    }
+
+
 def test_parse_official_amfi_summary_rejects_fmp_not_in_current_allowlist():
     result = parse_scheme_summary_category(
         _spreadsheetml(
@@ -120,6 +136,18 @@ def test_parse_official_amfi_summary_rejects_fmp_not_in_current_allowlist():
         expected_scheme_name="HDFC Fixed Maturity Plan",
     )
     assert result is None
+
+
+def test_parse_official_amfi_summary_keeps_legacy_categories_unclassified_without_group_hint():
+    for category, fund_type, name in (
+        ("Fixed Maturity Plan", "Debt", "HDFC Fixed Maturity Plan"),
+        ("Solution Oriented - Retirement Fund", "", "ABC Retirement Fund"),
+    ):
+        result = parse_scheme_summary_category(
+            _spreadsheetml(name, category, fund_type),
+            expected_scheme_name=name,
+        )
+        assert result is None
 
 
 def test_parse_official_amfi_summary_rejects_scheme_name_mismatch():

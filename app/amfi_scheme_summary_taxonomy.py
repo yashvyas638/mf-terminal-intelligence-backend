@@ -255,6 +255,20 @@ def parse_scheme_summary_category(
             "asset_class": SCHEME_GROUP_ASSET_CLASS[group_hint],
         }
 
+    # Fund_Type is not consistently populated with a formal group name in
+    # AMFI's XML. When it is absent or descriptive, allow the strict
+    # Scheme-Details resolver to identify a group only if the category label
+    # maps uniquely to the current SEBI allowlist. Never infer from scheme name.
+    fallback_group, fallback_category, fallback_asset = (
+        classify_amfi_scheme_details_category(raw_category)
+    )
+    if fallback_group and fallback_category:
+        return {
+            "category_group": fallback_group,
+            "category": fallback_category,
+            "asset_class": fallback_asset,
+        }
+
     matches = [
         (group, category)
         for group in VALID_GROUPS
