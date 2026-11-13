@@ -111,6 +111,10 @@ _SUBCATEGORY_ALIASES = {
     # AMFI's current performance feed and AMC scheme disclosures retain a
     # combined Sectoral/Thematic label; do not guess which half applies.
     _key("Sectoral / Thematic"): "Sectoral/Thematic Fund",
+    _key("Sectoral/Thematic"): "Sectoral/Thematic Fund",
+    _key("Sectoral/Thematic Funds"): "Sectoral/Thematic Fund",
+    _key("Thematic/Sectoral"): "Sectoral/Thematic Fund",
+    _key("Thematic Funds"): "Thematic Fund",
     # AMFI performance filters expose current debt categories without "Fund".
     _key("Long Term"): "Long Term Fund",
     _key("Medium to Long Term"): "Medium to Long Term Fund",
@@ -145,6 +149,9 @@ _SUBCATEGORY_ALIASES = {
     _key("10 Year Constant Maturity Gilt Fund"): "10-year Constant Maturity Gilt Fund",
     _key("Floating Rate Fund"): "Floating Interest Rates Fund",
     _key("Index Funds/ ETFs"): "Index Funds / ETFs",
+    _key("Equity Funds"): "Index Funds / ETFs",
+    _key("Debt Funds"): "Index Funds / ETFs",
+    _key("Hybrid Fund"): "Index Funds / ETFs",
     _key("Index Funds"): "Index Funds / ETFs",
     _key("Money Market"): "Money Market Fund",
     _key("Other ETFs"): "Other ETF",
