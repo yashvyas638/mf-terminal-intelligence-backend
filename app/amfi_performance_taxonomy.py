@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any
 
 import requests
@@ -126,6 +128,15 @@ def _post(session: requests.Session, path: str, body: dict[str, Any]) -> list[di
     ) from None
 
 
+def _last_business_date() -> str:
+    report_day = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    if report_day.weekday() == 5:
+        report_day -= timedelta(days=1)
+    elif report_day.weekday() == 6:
+        report_day -= timedelta(days=2)
+    return report_day.strftime("%d-%b-%Y")
+
+
 def fetch_amfi_performance_taxonomy(
     *,
     session: requests.Session | None = None,
@@ -146,6 +157,7 @@ def fetch_amfi_performance_taxonomy(
         mappings: dict[int, dict[str, str]] = {}
         rejected = 0
         requests_made = 0
+        report_date = _last_business_date()
         subcategory_queries = 0
         performance_rows = 0
         for category_id, group in CATEGORY_GROUPS.items():
@@ -170,6 +182,7 @@ def fetch_amfi_performance_taxonomy(
                         "category": category_id,
                         "subCategory": int(subcategory_id),
                         "mfid": 0,
+                        "reportDate": report_date,
                     })
                     requests_made += 1
                     subcategory_queries += 1
@@ -205,6 +218,7 @@ def fetch_amfi_performance_taxonomy(
             "rejected_rows": rejected,
             "requests_made": requests_made,
             "subcategory_queries": subcategory_queries,
+            "report_date": report_date,
         }
     finally:
         if own_session:
