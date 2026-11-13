@@ -229,6 +229,16 @@ def test_scheme_details_fallback_resolves_bare_categories_only_when_unique():
         "Index Funds / ETFs",
         "Other",
     )
+    assert classify_amfi_scheme_details_category("Index Funds - Equity Funds") == (
+        "Other Schemes",
+        "Index Funds / ETFs",
+        "Other",
+    )
+    assert classify_amfi_scheme_details_category("Equity - Thematic") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
 
 
 def test_discontinued_solution_oriented_and_fmp_labels_stay_unclassified():
