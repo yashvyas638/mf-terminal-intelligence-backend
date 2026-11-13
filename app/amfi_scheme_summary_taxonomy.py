@@ -150,7 +150,7 @@ def fetch_amfi_scheme_summary_taxonomy(
     schemes: list[dict[str, Any]],
     *,
     session: requests.Session | None = None,
-    max_requests: int = 300,
+    max_requests: int = 600,
 ) -> dict[str, Any]:
     """Fetch exact category evidence for active missing schemes, read-only."""
     if not schemes:
