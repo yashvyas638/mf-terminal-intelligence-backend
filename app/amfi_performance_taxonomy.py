@@ -231,7 +231,7 @@ def fetch_amfi_performance_taxonomy(
         if selected_report_date is None:
             raise RuntimeError("AMFI Fund Performance returned no rows for the five most recent business dates")
 
-        for category_id, group, subcategory_id, subcategory_name, canonical in entries:
+        for category_id, group, subcategory_id, _subcategory_name, canonical in entries:
             for maturity_type in MATURITY_TYPES:
                 if requests_made >= max_requests:
                     raise RuntimeError("AMFI Fund Performance request safety limit exceeded")
