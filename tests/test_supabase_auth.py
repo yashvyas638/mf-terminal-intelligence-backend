@@ -1,11 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.db import FundWatchlistItem, Scheme, SessionLocal, init_db
+from app.db import FundWatchlistItem, PortfolioReportSnapshot, Scheme, SessionLocal, init_db
 
 
 def test_supabase_users_get_isolated_portfolios(monkeypatch):
@@ -64,6 +65,34 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
     )
     assert created.status_code == 201
     portfolio_id = created.json()["id"]
+
+    report_payload = '{"report_version":"portfolio-report-v1","summary":{"current_value":12345}}'
+    with SessionLocal() as db:
+        report_snapshot = PortfolioReportSnapshot(
+            portfolio_id=portfolio_id,
+            owner_user_id=user_a,
+            generated_at=datetime.now(timezone.utc),
+            report_version="portfolio-report-v1",
+            content_json=report_payload,
+            content_sha256=hashlib.sha256(report_payload.encode("utf-8")).hexdigest(),
+            source_max_nav_date=date.today(),
+        )
+        db.add(report_snapshot)
+        db.commit()
+        report_id = report_snapshot.id
+
+    assert client.get(
+        f"/v1/portfolios/{portfolio_id}/reports",
+        headers=user_a_headers,
+    ).json()["count"] == 1
+    assert client.get(
+        f"/v1/portfolios/{portfolio_id}/reports",
+        headers=user_b_headers,
+    ).json()["count"] == 0
+    assert client.get(f"/v1/reports/{report_id}", headers=user_a_headers).status_code == 200
+    assert client.get(f"/v1/reports/{report_id}", headers=user_b_headers).status_code == 404
+    assert client.get(f"/v1/reports/{report_id}/pdf", headers=user_a_headers).status_code == 200
+    assert client.get(f"/v1/reports/{report_id}/pdf", headers=user_b_headers).status_code == 404
 
     assert client.get("/v1/portfolios", headers=user_a_headers).json()["count"] == 1
     assert client.get("/v1/portfolios", headers=user_b_headers).json()["count"] == 0
