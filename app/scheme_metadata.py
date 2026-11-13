@@ -132,7 +132,9 @@ def refresh_scheme_taxonomy(
         asset = canonical_asset_class(group, item.get("asset_class")) if item.get("asset_class") else (
             {"Equity Scheme": "Equity", "Debt Scheme": "Debt", "Hybrid Scheme": "Hybrid", "Other Schemes": "Other"}.get(group)
         )
-        if not group or not category or not asset:
+        if not group or not category:
+            continue
+        if group != "Life Cycle Funds" and not asset:
             continue
         source = {
             "category_group": group,
