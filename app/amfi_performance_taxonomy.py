@@ -169,7 +169,7 @@ def fetch_amfi_performance_taxonomy(
         mappings: dict[int, dict[str, str]] = {}
         rejected = 0
         requests_made = 0
-        report_date = _last_business_date()
+        report_dates: set[str] = set()
         subcategory_queries = 0
         performance_rows = 0
         for category_id, group in CATEGORY_GROUPS.items():
@@ -194,11 +194,15 @@ def fetch_amfi_performance_taxonomy(
                         "category": category_id,
                         "subCategory": int(subcategory_id),
                         "mfid": 0,
-                        "reportDate": report_date,
                     })
                     requests_made += 1
                     subcategory_queries += 1
                     performance_rows += len(rows)
+                    report_dates.update(
+                        str(value)
+                        for row in rows
+                        if (value := _field(row, "Report_Date", "reportDate", "report_date")) not in (None, "")
+                    )
                     parsed, rejected_rows = canonicalize_performance_rows(
                         rows,
                         category_group=group,
@@ -230,7 +234,7 @@ def fetch_amfi_performance_taxonomy(
             "rejected_rows": rejected,
             "requests_made": requests_made,
             "subcategory_queries": subcategory_queries,
-            "report_date": report_date,
+            "report_dates": sorted(report_dates),
         }
     finally:
         if own_session:
