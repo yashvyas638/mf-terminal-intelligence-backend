@@ -301,3 +301,21 @@ def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
     }
     assert result["source_names_matched"] == 1
     assert result["requests_made"] == 5
+
+
+def test_owned_amfi_session_retries_transient_get_failures():
+    import requests
+
+    from app.amfi_scheme_summary_taxonomy import _configure_amfi_retry_policy
+
+    session = _configure_amfi_retry_policy(requests.Session())
+    try:
+        policy = session.get_adapter("https://www.amfiindia.com").max_retries
+        assert policy.total == 3
+        assert policy.connect == 3
+        assert policy.read == 3
+        assert policy.status == 3
+        assert policy.status_forcelist == frozenset({429, 500, 502, 503, 504})
+        assert policy.allowed_methods == frozenset({"GET"})
+    finally:
+        session.close()
