@@ -293,3 +293,84 @@ def test_fetches_current_amfi_performance_categories_with_latest_business_date()
     ]
     assert performance_calls
     assert all(call["reportDate"] == result["report_dates"][0] for call in performance_calls)
+
+
+
+def test_taxonomy_refresh_maps_exact_amfi_base_name_to_all_active_plan_variants():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    base_name = "Aditya Birla Sun Life Large Cap Fund"
+    try:
+        with factory.begin() as db:
+            snapshot = IngestionSnapshot(
+                source_url="https://portal.amfiindia.com/spages/NAVAll.txt",
+                retrieved_at=now,
+                payload_sha256="c" * 64,
+                records_valid=2,
+                unique_scheme_codes=2,
+                min_nav_date=date.today(),
+                max_nav_date=date.today(),
+                invalid_rows=0,
+                duplicate_rows_skipped=0,
+                quality_status="PASS",
+                report_json="{}",
+            )
+            db.add(snapshot)
+            db.flush()
+            db.add_all([
+                Scheme(
+                    scheme_code=119561,
+                    scheme_name=base_name + " - Direct Plan - Growth",
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    plan_type="Direct Plan",
+                    option_type="Growth",
+                ),
+                Scheme(
+                    scheme_code=119562,
+                    scheme_name=base_name + " - Regular Plan - IDCW",
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    plan_type="Regular Plan",
+                    option_type="IDCW",
+                ),
+            ])
+            db.flush()
+            db.add_all([
+                NavObservation(
+                    scheme_code=119561,
+                    nav_date=date.today(),
+                    nav_value="10.0",
+                    source_snapshot_id=snapshot.id,
+                ),
+                NavObservation(
+                    scheme_code=119562,
+                    nav_date=date.today(),
+                    nav_value="11.0",
+                    source_snapshot_id=snapshot.id,
+                ),
+            ])
+
+        result = refresh_scheme_taxonomy(
+            {
+                "name:aditya birla sun life large cap fund": {
+                    "category_group": "Equity Scheme",
+                    "category": "Large Cap Fund",
+                },
+            },
+            now,
+            session_factory=factory,
+        )
+        with factory() as db:
+            direct = db.get(Scheme, 119561)
+            regular = db.get(Scheme, 119562)
+            assert direct.category == "Large Cap Fund"
+            assert regular.category == "Large Cap Fund"
+            assert direct.category_group == "Equity Scheme"
+            assert regular.category_group == "Equity Scheme"
+        assert result["category_rows_updated"] == 2
+        assert result["source_names_unmatched"] == 0
+    finally:
+        engine.dispose()
