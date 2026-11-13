@@ -68,7 +68,7 @@ def canonicalize_performance_rows(
     category_group: str,
     subcategory: str,
 ) -> tuple[dict[int | str, dict[str, str]], int]:
-    """Validate explicit AMFI scheme identifiers/names against SEBI allowlists."""
+    """Validate AMFI scheme codes or exact scheme names against SEBI allowlists."""
     canonical_category = canonical_subcategory(category_group, subcategory)
     if canonical_category is None:
         return {}, len(rows)
@@ -304,7 +304,9 @@ def fetch_amfi_performance_taxonomy(
             "mappings": mappings,
             "source_url": AMFI_PERFORMANCE_BASE_URL,
             "payload_sha256": hashlib.sha256(canonical_json.encode()).hexdigest(),
-            "scheme_codes": len(mappings),
+            "scheme_codes": sum(isinstance(key, int) for key in mappings),
+            "scheme_names": sum(isinstance(key, str) and key.startswith("name:") for key in mappings),
+            "scheme_identifiers": len(mappings),
             "performance_rows": performance_rows,
             "rejected_rows": rejected,
             "requests_made": requests_made,
