@@ -238,6 +238,16 @@ def parse_scheme_summary_category(
     if group_hint:
         category = canonical_subcategory(group_hint, raw_category)
         if not category:
+            # AMFI's official summary can carry a category descriptor plus a
+            # theme suffix. Reuse the strict allowlist resolver, but require
+            # its resolved group to agree with the official Fund_Type hint.
+            fallback_group, fallback_category, _ = classify_amfi_scheme_details_category(
+                raw_category
+            )
+            if fallback_group != group_hint:
+                return None
+            category = fallback_category
+        if not category:
             return None
         return {
             "category_group": group_hint,
