@@ -150,3 +150,68 @@ def test_taxonomy_refresh_only_fills_active_missing_categories_and_never_overwri
         assert result["not_active_in_nav_window"] == 1
     finally:
         engine.dispose()
+
+
+
+class _FakeResponse:
+    status_code = 200
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def json(self):
+        return self.payload
+
+    def raise_for_status(self):
+        return None
+
+    def close(self):
+        return None
+
+
+class _FakeSession:
+    def __init__(self):
+        self.headers = {}
+        self.calls = []
+
+    def post(self, url, *, json, timeout):
+        self.calls.append((url, json, timeout))
+        if url.endswith("/api/amfi/getsubcategory"):
+            labels = {
+                1: (11, "Flexi Cap Fund"),
+                2: (22, "Liquid Fund"),
+                3: (33, "Arbitrage Fund"),
+                5: (55, "Index Funds"),
+            }
+            category_id = json["category"]
+            if category_id not in labels:
+                return _FakeResponse({"data": []})
+            sub_id, name = labels[category_id]
+            return _FakeResponse({"data": [{"id": sub_id, "name": name}]})
+        category_id = json["category"]
+        codes = {1: "119551", 2: "120503", 3: "130001", 5: "140001"}
+        return _FakeResponse({
+            "data": [{"Scheme_Code": codes[category_id], "Scheme_Name": "AMFI test"}]
+        })
+
+
+def test_fetches_current_amfi_performance_categories_with_latest_business_date():
+    from app.amfi_performance_taxonomy import fetch_amfi_performance_taxonomy
+
+    session = _FakeSession()
+    result = fetch_amfi_performance_taxonomy(session=session, max_requests=20)
+
+    assert result["scheme_codes"] == 4
+    assert result["requests_made"] == 12
+    assert result["performance_rows"] == 8
+    assert result["mappings"][119551]["category"] == "Flexi Cap Fund"
+    assert result["mappings"][120503]["category_group"] == "Debt Scheme"
+    assert result["mappings"][130001]["category"] == "Arbitrage Fund"
+    assert result["mappings"][140001]["category"] == "Index Funds / ETFs"
+    assert all(call[1].get("category") != 4 for call in session.calls)
+    performance_calls = [
+        call[1] for call in session.calls
+        if call[0].endswith("/api/amfi/fundperformance")
+    ]
+    assert performance_calls
+    assert all(call["reportDate"] == result["report_date"] for call in performance_calls)
