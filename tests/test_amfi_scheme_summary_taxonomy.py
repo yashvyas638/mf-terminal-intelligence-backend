@@ -301,3 +301,46 @@ def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
     }
     assert result["source_names_matched"] == 1
     assert result["requests_made"] == 5
+
+
+def test_amfi_source_request_retries_transient_disconnect(monkeypatch):
+    import requests
+    import app.amfi_scheme_summary_taxonomy as taxonomy
+
+    class FlakySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise requests.exceptions.ConnectionError("temporary remote disconnect")
+            return _FakeResponse(payload=[])
+
+    monkeypatch.setattr(taxonomy.time, "sleep", lambda _: None)
+    session = FlakySession()
+    response, attempts = taxonomy._get_with_retries(session, "https://amfi.example.test")
+
+    assert response.status_code == 200
+    assert attempts == 2
+    assert session.calls == 2
+
+
+def test_amfi_source_request_retries_transient_gateway_status(monkeypatch):
+    import app.amfi_scheme_summary_taxonomy as taxonomy
+
+    class FlakySession:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            return _FakeResponse(payload=[], status_code=503 if self.calls == 1 else 200)
+
+    monkeypatch.setattr(taxonomy.time, "sleep", lambda _: None)
+    session = FlakySession()
+    response, attempts = taxonomy._get_with_retries(session, "https://amfi.example.test")
+
+    assert response.status_code == 200
+    assert attempts == 2
+    assert session.calls == 2
