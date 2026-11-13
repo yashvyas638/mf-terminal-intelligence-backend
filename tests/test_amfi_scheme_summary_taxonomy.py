@@ -315,7 +315,7 @@ def test_owned_amfi_session_retries_transient_get_failures():
         assert policy.connect == 3
         assert policy.read == 3
         assert policy.status == 3
-        assert policy.status_forcelist == frozenset({429, 500, 502, 503, 504})
+        assert policy.status_forcelist == (429, 500, 502, 503, 504)
         assert policy.allowed_methods == frozenset({"GET"})
     finally:
         session.close()
