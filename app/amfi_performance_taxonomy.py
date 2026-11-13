@@ -153,9 +153,19 @@ def fetch_amfi_performance_taxonomy(
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         ),
         "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://www.amfiindia.com",
         "Referer": REFERER,
+        "X-Requested-With": "XMLHttpRequest",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
     })
     try:
+        # Establish the same first-party session as the AMFI Fund Performance page.
+        if hasattr(client, "get"):
+            landing = client.get(REFERER, timeout=(8, 45))
+            landing.raise_for_status()
         mappings: dict[int, dict[str, str]] = {}
         rejected = 0
         requests_made = 0
