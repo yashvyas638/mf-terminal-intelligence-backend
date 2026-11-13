@@ -22,7 +22,7 @@ SUBCATEGORIES_BY_GROUP = {
         "Multi Cap Fund", "Large Cap Fund", "Large & Mid Cap Fund",
         "Mid Cap Fund", "Small Cap Fund", "Flexi Cap Fund",
         "Dividend Yield Fund", "Value Fund", "Contra Fund", "Focused Fund (No. of Stocks)",
-        "Sectoral Fund", "Thematic Fund", "ELSS Tax Saver Fund",
+        "Sectoral Fund", "Thematic Fund", "Sectoral/Thematic Fund", "ELSS Tax Saver Fund",
     }),
     "Debt Scheme": frozenset({
         "Overnight Fund", "Liquid Fund", "Ultra Short Term Fund",
@@ -108,6 +108,9 @@ _SUBCATEGORY_ALIASES = {
     _key("Focused"): "Focused Fund (No. of Stocks)",
     _key("Sectoral"): "Sectoral Fund",
     _key("Thematic"): "Thematic Fund",
+    # AMFI's current performance feed and AMC scheme disclosures retain a
+    # combined Sectoral/Thematic label; do not guess which half applies.
+    _key("Sectoral / Thematic"): "Sectoral/Thematic Fund",
     # AMFI performance filters expose current debt categories without "Fund".
     _key("Long Term"): "Long Term Fund",
     _key("Medium to Long Term"): "Medium to Long Term Fund",
