@@ -123,17 +123,19 @@ def _post(session: requests.Session, path: str, body: dict[str, Any]) -> list[di
                 break
             if attempt < 3:
                 time.sleep(min(2 ** (attempt - 1), 4))
+    status = getattr(getattr(last_error, "response", None), "status_code", None)
     raise RuntimeError(
         f"AMFI Fund Performance request failed: {type(last_error).__name__ if last_error else 'unknown'}"
+        + (f" (HTTP {status})" if status is not None else "")
     ) from None
 
 
 def _last_business_date() -> str:
-    report_day = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    if report_day.weekday() == 5:
+    # Use a fully completed business date; the live AMFI service can lag the
+    # NAV portal by a day while its performance calculations are refreshed.
+    report_day = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=2)
+    while report_day.weekday() >= 5:
         report_day -= timedelta(days=1)
-    elif report_day.weekday() == 6:
-        report_day -= timedelta(days=2)
     return report_day.strftime("%d-%b-%Y")
 
 
