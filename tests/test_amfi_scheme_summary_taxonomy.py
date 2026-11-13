@@ -138,6 +138,18 @@ def test_parse_official_amfi_summary_rejects_fmp_not_in_current_allowlist():
     assert result is None
 
 
+def test_parse_official_amfi_summary_keeps_legacy_categories_unclassified_without_group_hint():
+    for category, fund_type, name in (
+        ("Fixed Maturity Plan", "Debt", "HDFC Fixed Maturity Plan"),
+        ("Solution Oriented - Retirement Fund", "", "ABC Retirement Fund"),
+    ):
+        result = parse_scheme_summary_category(
+            _spreadsheetml(name, category, fund_type),
+            expected_scheme_name=name,
+        )
+        assert result is None
+
+
 def test_parse_official_amfi_summary_rejects_scheme_name_mismatch():
     with pytest.raises(ValueError, match="does not match"):
         parse_scheme_summary_category(
