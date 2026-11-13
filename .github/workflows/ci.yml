@@ -351,3 +351,61 @@ jobs:
               }
           }, indent=2))
           PY
+
+      - name: Live read-only AMFI Fund Performance taxonomy contract check
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+
+          from app.amfi_performance_taxonomy import (
+              PERFORMANCE_PATH,
+              SUBCATEGORIES_PATH,
+              _last_business_date,
+              _post,
+              canonicalize_performance_rows,
+          )
+          from app.fund_taxonomy import canonical_subcategory
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "MF-Terminal-Intelligence-Taxonomy-Contract-Test/1.0",
+              "Accept": "application/json, text/plain, */*",
+              "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
+          })
+          subcategories = _post(session, SUBCATEGORIES_PATH, {"category": 1})
+          selected = next((
+              item for item in subcategories
+              if isinstance(item.get("name"), str)
+              and canonical_subcategory("Equity Scheme", item["name"]) == "Flexi Cap Fund"
+          ), None)
+          if selected is None:
+              raise SystemExit("AMFI Equity subcategory endpoint did not expose the allow-listed Flexi Cap Fund category")
+
+          report_date = _last_business_date()
+          rows = _post(session, PERFORMANCE_PATH, {
+              "maturityType": 1,
+              "category": 1,
+              "subCategory": int(selected["id"]),
+              "mfid": 0,
+              "reportDate": report_date,
+          })
+          mappings, rejected = canonicalize_performance_rows(
+              rows,
+              category_group="Equity Scheme",
+              subcategory=selected["name"],
+          )
+          if not mappings:
+              raise SystemExit("AMFI Fund Performance endpoint returned no valid Flexi Cap scheme-code records")
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "report_date": report_date,
+              "category_group": "Equity Scheme",
+              "subcategory": selected["name"],
+              "rows_received": len(rows),
+              "valid_scheme_codes": len(mappings),
+              "rejected_rows": rejected,
+              "database_writes": 0,
+          }, indent=2))
+          session.close()
+          PY
