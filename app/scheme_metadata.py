@@ -1,12 +1,13 @@
 """Refresh the shared AMFI scheme master without writing NAV observations."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Iterable
 
 from sqlalchemy import select
 
-from app.db import Scheme, SessionLocal
+from app.db import NavObservation, Scheme, SessionLocal
+from app.fund_taxonomy import canonical_asset_class, canonical_group, canonical_subcategory
 
 
 def refresh_scheme_metadata(
@@ -101,4 +102,95 @@ def refresh_scheme_metadata(
         "plan_type_populated": plan_populated,
         "option_type_populated": option_populated,
         "amc_populated": amc_populated,
+    }
+
+
+
+def refresh_scheme_taxonomy(
+    mappings: dict[int, dict[str, str]],
+    now: datetime,
+    *,
+    session_factory: Callable = SessionLocal,
+    active_days: int = 14,
+) -> dict[str, int]:
+    """Fill only missing/invalid taxonomy from explicit AMFI performance records.
+
+    Existing valid classifications are never overwritten. Conflicting source
+    assignments are counted and left untouched. NAV and research tables are
+    read-only in this operation.
+    """
+    if not mappings:
+        raise ValueError("AMFI taxonomy refresh contains no validated scheme mappings")
+    normalized: dict[int, dict[str, str]] = {}
+    for raw_code, item in mappings.items():
+        try:
+            code = int(raw_code)
+        except (TypeError, ValueError):
+            continue
+        group = canonical_group(item.get("category_group"))
+        category = canonical_subcategory(group, item.get("category"))
+        asset = canonical_asset_class(group, item.get("asset_class")) if item.get("asset_class") else (
+            {"Equity Scheme": "Equity", "Debt Scheme": "Debt", "Hybrid Scheme": "Hybrid", "Other Schemes": "Other"}.get(group)
+        )
+        if code > 0 and group and category and asset:
+            normalized[code] = {
+                "category_group": group,
+                "category": category,
+                "asset_class": asset,
+            }
+    if not normalized:
+        raise ValueError("AMFI taxonomy mappings contain no current SEBI-allow-listed categories")
+
+    cutoff = now.date() - timedelta(days=active_days)
+    codes = sorted(normalized)
+    scanned = updated = already_valid = conflict = missing_scheme = inactive = 0
+    with session_factory() as db:
+        with db.begin():
+            active_codes = set(
+                db.execute(
+                    select(NavObservation.scheme_code)
+                    .where(NavObservation.nav_date >= cutoff)
+                    .distinct()
+                ).scalars().all()
+            )
+            existing = {
+                row.scheme_code: row
+                for offset in range(0, len(codes), 500)
+                for row in db.execute(
+                    select(Scheme).where(Scheme.scheme_code.in_(codes[offset:offset + 500]))
+                ).scalars()
+            }
+            for code, source in normalized.items():
+                scheme = existing.get(code)
+                if scheme is None:
+                    missing_scheme += 1
+                    continue
+                if code not in active_codes:
+                    inactive += 1
+                    continue
+                scanned += 1
+                current_group = canonical_group(scheme.category_group)
+                current_category = canonical_subcategory(current_group, scheme.category)
+                if current_group and current_group != source["category_group"]:
+                    conflict += 1
+                    continue
+                if current_category and current_category != source["category"]:
+                    conflict += 1
+                    continue
+                if current_group and current_category:
+                    already_valid += 1
+                    continue
+                scheme.category_group = source["category_group"]
+                scheme.category = source["category"]
+                scheme.asset_class = source["asset_class"]
+                updated += 1
+
+    return {
+        "source_mappings": len(normalized),
+        "active_schemes_scanned": scanned,
+        "category_rows_updated": updated,
+        "already_valid": already_valid,
+        "source_conflicts": conflict,
+        "scheme_codes_not_in_master": missing_scheme,
+        "not_active_in_nav_window": inactive,
     }
