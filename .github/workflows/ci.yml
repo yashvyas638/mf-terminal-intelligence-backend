@@ -633,6 +633,14 @@ jobs:
               ("UTI Mutual Fund", "UTI - Banking and Financial Services Fund"),
               ("HDFC Mutual Fund", "HDFC Banking & Financial Services Fund"),
               ("SBI Mutual Fund", "SBI Long Term Advantage Fund - Series IV"),
+              ("Axis Mutual Fund", "Axis Children's Fund"),
+              ("HDFC Mutual Fund", "HDFC Retirement Fund - Equity Plan"),
+              ("Aditya Birla Sun Life Mutual Fund", "Aditya Birla Sun Life Fixed Maturity Plan-Series VB (136 Days)"),
+              ("HDFC Mutual Fund", "HDFC FMP 1861D March 2022"),
+              ("HDFC Mutual Fund", "HDFC  Charity Fund for Cancer Cure"),
+              ("ICICI Prudential Mutual Fund", "ICICI Prudential Short Term Fund - Div. Option"),
+              ("Navi Mutual Fund", "NAVI ELSS TAX SAVER NIFTY50 INDEX FUND"),
+              ("Kotak Mahindra Mutual Fund", "Kotak Global Innovation Overseas Equity Active FOF"),
           ]
           amcs_response = session.get(base + "/api/populate-mf", timeout=(8, 30))
           amcs_response.raise_for_status()
