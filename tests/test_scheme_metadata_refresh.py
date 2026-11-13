@@ -89,3 +89,35 @@ def test_scheme_metadata_refresh_rejects_stale_feed_without_writing(monkeypatch)
     )
     with pytest.raises(RuntimeError, match="stale"):
         main._refresh_scheme_metadata_from_amfi()
+
+
+
+def test_amfi_performance_taxonomy_refresh_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", raising=False)
+    monkeypatch.delenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ENABLED", raising=False)
+    monkeypatch.delenv("AMFI_PERFORMANCE_TAXONOMY_CONTRACT_VERIFIED", raising=False)
+    assert main._maybe_refresh_amfi_performance_taxonomy_from_environment() is None
+
+
+def test_amfi_performance_taxonomy_refresh_requires_execution_gate(monkeypatch):
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", "true")
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_CONTRACT_VERIFIED", "true")
+    with pytest.raises(RuntimeError, match="REFRESH_ENABLED"):
+        main._maybe_refresh_amfi_performance_taxonomy_from_environment()
+
+
+def test_amfi_performance_taxonomy_refresh_requires_verified_source_contract(monkeypatch):
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", "true")
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_CONTRACT_VERIFIED", "false")
+    with pytest.raises(RuntimeError, match="CONTRACT_VERIFIED"):
+        main._maybe_refresh_amfi_performance_taxonomy_from_environment()
+
+
+def test_amfi_performance_taxonomy_refresh_runs_only_when_all_gates_are_enabled(monkeypatch):
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", "true")
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("AMFI_PERFORMANCE_TAXONOMY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setattr(main, "_refresh_amfi_performance_taxonomy", lambda: {"status": "refreshed"})
+    assert main._maybe_refresh_amfi_performance_taxonomy_from_environment() == {"status": "refreshed"}
