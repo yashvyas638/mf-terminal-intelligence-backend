@@ -176,6 +176,9 @@ def fetch_amfi_scheme_summary_taxonomy(
             "source_names_ambiguous": 0,
             "requests_made": 0,
             "category_counts": {},
+            "unclassified_category_labels": {},
+            "unclassified_fund_types": {},
+            "source_documents_without_category": 0,
         }
 
     own_session = session is None
