@@ -361,6 +361,7 @@ jobs:
           from app.amfi_performance_taxonomy import (
               PERFORMANCE_PATH,
               SUBCATEGORIES_PATH,
+              _field,
               _last_business_date,
               _post,
               canonicalize_performance_rows,
@@ -374,13 +375,20 @@ jobs:
               "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
           })
           subcategories = _post(session, SUBCATEGORIES_PATH, {"category": 1})
-          selected = next((
-              item for item in subcategories
-              if isinstance(item.get("name"), str)
-              and canonical_subcategory("Equity Scheme", item["name"]) == "Flexi Cap Fund"
-          ), None)
+          selected = None
+          source_labels = []
+          for item in subcategories:
+              name = _field(item, "name", "subCategory", "subCategoryName")
+              subcategory_id = _field(item, "id", "subCategoryId")
+              if isinstance(name, str):
+                  source_labels.append(name)
+                  if selected is None and subcategory_id is not None and canonical_subcategory("Equity Scheme", name):
+                      selected = {"id": subcategory_id, "name": name}
           if selected is None:
-              raise SystemExit("AMFI Equity subcategory endpoint did not expose the allow-listed Flexi Cap Fund category")
+              raise SystemExit(
+                  "AMFI Equity subcategory endpoint exposed no current allow-listed label: "
+                  + json.dumps(source_labels)
+              )
 
           report_date = _last_business_date()
           rows = _post(session, PERFORMANCE_PATH, {
