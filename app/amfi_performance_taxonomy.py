@@ -130,13 +130,21 @@ def _post(session: requests.Session, path: str, body: dict[str, Any]) -> list[di
     ) from None
 
 
-def _last_business_date() -> str:
-    # Use a fully completed business date; the live AMFI service can lag the
-    # NAV portal by a day while its performance calculations are refreshed.
-    report_day = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=2)
+def _recent_business_dates(count: int = 5) -> list[str]:
+    report_day = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     while report_day.weekday() >= 5:
         report_day -= timedelta(days=1)
-    return report_day.strftime("%d-%b-%Y")
+    dates = []
+    while len(dates) < count:
+        dates.append(report_day.strftime("%d-%b-%Y"))
+        report_day -= timedelta(days=1)
+        while report_day.weekday() >= 5:
+            report_day -= timedelta(days=1)
+    return dates
+
+
+def _last_business_date() -> str:
+    return _recent_business_dates(1)[0]
 
 
 def fetch_amfi_performance_taxonomy(
@@ -166,60 +174,100 @@ def fetch_amfi_performance_taxonomy(
         if hasattr(client, "get"):
             landing = client.get(REFERER, timeout=(8, 45))
             landing.raise_for_status()
+
         mappings: dict[int, dict[str, str]] = {}
         rejected = 0
         requests_made = 0
-        report_dates: set[str] = set()
         subcategory_queries = 0
         performance_rows = 0
+        entries: list[tuple[int, str, int, str, str]] = []
+
         for category_id, group in CATEGORY_GROUPS.items():
+            if requests_made >= max_requests:
+                raise RuntimeError("AMFI Fund Performance request safety limit exceeded")
             subcategories = _post(client, SUBCATEGORIES_PATH, {"category": category_id})
             requests_made += 1
-            if not subcategories:
-                continue
-            for subcategory_item in subcategories:
-                subcategory_id = _field(subcategory_item, "id", "subCategoryId")
-                subcategory_name = _field(subcategory_item, "name", "subCategory", "subCategoryName")
+            for item in subcategories:
+                subcategory_id = _field(item, "id", "subCategoryId")
+                subcategory_name = _field(item, "name", "subCategory", "subCategoryName")
                 if subcategory_id is None or not isinstance(subcategory_name, str):
                     raise RuntimeError("AMFI subcategory filter contains an invalid item")
                 canonical = canonical_subcategory(group, subcategory_name)
                 if canonical is None:
                     rejected += 1
                     continue
-                for maturity_type in MATURITY_TYPES:
-                    if requests_made >= max_requests:
-                        raise RuntimeError("AMFI Fund Performance request safety limit exceeded")
+                entries.append((
+                    category_id,
+                    group,
+                    int(subcategory_id),
+                    subcategory_name,
+                    canonical,
+                ))
+
+        if not entries:
+            raise RuntimeError("AMFI Fund Performance source exposed no current SEBI-allow-listed subcategories")
+
+        # AMFI requires reportDate. Probe recent business dates until the service
+        # returns a populated category; reuse that exact date for every peer group.
+        probe = next((entry for entry in entries if entry[0] == 1), entries[0])
+        selected_report_date = None
+        probe_rows: list[dict[str, Any]] = []
+        for report_date in _recent_business_dates(5):
+            if requests_made >= max_requests:
+                raise RuntimeError("AMFI Fund Performance request safety limit exceeded")
+            rows = _post(client, PERFORMANCE_PATH, {
+                "maturityType": 1,
+                "category": probe[0],
+                "subCategory": probe[2],
+                "mfid": 0,
+                "reportDate": report_date,
+            })
+            requests_made += 1
+            subcategory_queries += 1
+            if rows:
+                probe_rows = rows
+                selected_report_date = report_date
+                break
+        if selected_report_date is None:
+            raise RuntimeError("AMFI Fund Performance returned no rows for the five most recent business dates")
+
+        for category_id, group, subcategory_id, subcategory_name, canonical in entries:
+            for maturity_type in MATURITY_TYPES:
+                if requests_made >= max_requests:
+                    raise RuntimeError("AMFI Fund Performance request safety limit exceeded")
+                if (
+                    category_id == probe[0]
+                    and subcategory_id == probe[2]
+                    and maturity_type == 1
+                ):
+                    rows = probe_rows
+                else:
                     rows = _post(client, PERFORMANCE_PATH, {
                         "maturityType": maturity_type,
                         "category": category_id,
-                        "subCategory": int(subcategory_id),
+                        "subCategory": subcategory_id,
                         "mfid": 0,
+                        "reportDate": selected_report_date,
                     })
                     requests_made += 1
                     subcategory_queries += 1
-                    performance_rows += len(rows)
-                    report_dates.update(
-                        str(value)
-                        for row in rows
-                        if (value := _field(row, "Report_Date", "reportDate", "report_date")) not in (None, "")
-                    )
-                    parsed, rejected_rows = canonicalize_performance_rows(
-                        rows,
-                        category_group=group,
-                        subcategory=canonical,
-                    )
-                    rejected += rejected_rows
-                    for code, metadata in parsed.items():
-                        previous = mappings.get(code)
-                        if previous and previous != metadata:
-                            raise ValueError(
-                                f"AMFI Fund Performance source returned conflicting categories for scheme {code}"
-                            )
-                        mappings[code] = metadata
+                performance_rows += len(rows)
+                parsed, rejected_rows = canonicalize_performance_rows(
+                    rows,
+                    category_group=group,
+                    subcategory=canonical,
+                )
+                rejected += rejected_rows
+                for code, metadata in parsed.items():
+                    previous = mappings.get(code)
+                    if previous and previous != metadata:
+                        raise ValueError(
+                            f"AMFI Fund Performance source returned conflicting categories for scheme {code}"
+                        )
+                    mappings[code] = metadata
+
         if not mappings:
-            raise RuntimeError(
-                "AMFI Fund Performance source returned no schemes matching current SEBI categories"
-            )
+            raise RuntimeError("AMFI Fund Performance source returned no scheme-code records matching current SEBI categories")
         canonical_json = json.dumps(
             [{"scheme_code": code, **mappings[code]} for code in sorted(mappings)],
             sort_keys=True,
@@ -234,7 +282,7 @@ def fetch_amfi_performance_taxonomy(
             "rejected_rows": rejected,
             "requests_made": requests_made,
             "subcategory_queries": subcategory_queries,
-            "report_dates": sorted(report_dates),
+            "report_dates": [selected_report_date],
         }
     finally:
         if own_session:
