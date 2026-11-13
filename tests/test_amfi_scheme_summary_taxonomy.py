@@ -114,7 +114,7 @@ def test_parse_official_amfi_summary_resolves_allowlisted_category_without_forma
     result = parse_scheme_summary_category(
         _spreadsheetml(
             "UTI - ESG Theme Fund",
-            "Thematic Fund-\\u2011 ESG Theme",
+            "Thematic Fund-\u2011 ESG Theme",
             "Equity",
         ),
         expected_scheme_name="UTI - ESG Theme Fund",
