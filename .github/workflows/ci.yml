@@ -438,7 +438,7 @@ jobs:
               subcategory=selected["name"],
           )
           if not mappings:
-              raise SystemExit("AMFI Fund Performance endpoint returned no valid Flexi Cap scheme-code records")
+              raise SystemExit("AMFI Fund Performance endpoint returned no valid scheme-code or exact scheme-name identifiers")
           print(json.dumps({
               "source": "https://www.amfiindia.com/gateway/pollingsebi",
               "report_date": report_date,
@@ -446,7 +446,7 @@ jobs:
               "subcategory": selected["name"],
               "source_subcategories_by_category": source_labels_by_category,
               "rows_received": len(rows),
-              "valid_scheme_codes": len(mappings),
+              "valid_scheme_identifiers": len(mappings),
               "rejected_rows": rejected,
               "database_writes": 0,
           }, indent=2))
