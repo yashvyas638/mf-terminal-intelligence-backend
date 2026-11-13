@@ -411,14 +411,17 @@ jobs:
                   + json.dumps(source_labels_by_category)
               )
 
-          report_date = _last_business_date()
           rows = _post(session, PERFORMANCE_PATH, {
               "maturityType": 1,
               "category": 1,
               "subCategory": int(selected["id"]),
               "mfid": 0,
-              "reportDate": report_date,
           })
+          print(json.dumps({
+              "performance_rows_received": len(rows),
+              "first_row_keys": list(rows[0].keys()) if rows else [],
+              "first_row_sample": rows[0] if rows else None,
+          }, indent=2), flush=True)
           mappings, rejected = canonicalize_performance_rows(
               rows,
               category_group="Equity Scheme",
@@ -428,7 +431,11 @@ jobs:
               raise SystemExit("AMFI Fund Performance endpoint returned no valid Flexi Cap scheme-code records")
           print(json.dumps({
               "source": "https://www.amfiindia.com/gateway/pollingsebi",
-              "report_date": report_date,
+              "report_dates": sorted({
+                  str(_field(row, "Report_Date", "reportDate", "report_date"))
+                  for row in rows
+                  if _field(row, "Report_Date", "reportDate", "report_date") not in (None, "")
+              }),
               "category_group": "Equity Scheme",
               "subcategory": selected["name"],
               "source_subcategories_by_category": source_labels_by_category,
