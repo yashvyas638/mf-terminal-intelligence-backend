@@ -522,7 +522,7 @@ async def lifespan(_: FastAPI):
             )
         if performance_taxonomy_requested:
             taxonomy_task = asyncio.create_task(
-                asyncio.to_thread(_refresh_amfi_performance_taxonomy)
+                asyncio.to_thread(_maybe_refresh_amfi_performance_taxonomy_from_environment)
             )
             taxonomy_task.add_done_callback(_log_amfi_performance_taxonomy_task_result)
         if metadata_requested:
@@ -796,6 +796,21 @@ def _refresh_scheme_metadata_from_amfi() -> dict[str, Any]:
         },
     )
     return response
+
+
+def _maybe_refresh_amfi_performance_taxonomy_from_environment() -> dict[str, Any] | None:
+    """Run AMFI's secondary category source only behind explicit one-time gates."""
+    if os.getenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", "").strip().lower() != "true":
+        return None
+    if os.getenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ENABLED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "AMFI performance taxonomy refresh requires AMFI_PERFORMANCE_TAXONOMY_REFRESH_ENABLED=true"
+        )
+    if os.getenv("AMFI_PERFORMANCE_TAXONOMY_CONTRACT_VERIFIED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "AMFI performance taxonomy refresh requires AMFI_PERFORMANCE_TAXONOMY_CONTRACT_VERIFIED=true"
+        )
+    return _refresh_amfi_performance_taxonomy()
 
 
 def _refresh_amfi_performance_taxonomy() -> dict[str, Any]:
