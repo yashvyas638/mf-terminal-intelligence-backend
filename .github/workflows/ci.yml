@@ -363,7 +363,7 @@ jobs:
               PERFORMANCE_PATH,
               SUBCATEGORIES_PATH,
               _field,
-              _last_business_date,
+              _recent_business_dates,
               _post,
               canonicalize_performance_rows,
           )
@@ -411,17 +411,27 @@ jobs:
                   + json.dumps(source_labels_by_category)
               )
 
-          rows = _post(session, PERFORMANCE_PATH, {
-              "maturityType": 1,
-              "category": 1,
-              "subCategory": int(selected["id"]),
-              "mfid": 0,
-          })
+          rows = []
+          report_date = None
+          for candidate_date in _recent_business_dates(5):
+              rows = _post(session, PERFORMANCE_PATH, {
+                  "maturityType": 1,
+                  "category": 1,
+                  "subCategory": int(selected["id"]),
+                  "mfid": 0,
+                  "reportDate": candidate_date,
+              })
+              if rows:
+                  report_date = candidate_date
+                  break
           print(json.dumps({
+              "report_date": report_date,
               "performance_rows_received": len(rows),
               "first_row_keys": list(rows[0].keys()) if rows else [],
               "first_row_sample": rows[0] if rows else None,
           }, indent=2), flush=True)
+          if not rows:
+              raise SystemExit("AMFI Fund Performance returned no records for the five most recent business dates")
           mappings, rejected = canonicalize_performance_rows(
               rows,
               category_group="Equity Scheme",
@@ -431,11 +441,7 @@ jobs:
               raise SystemExit("AMFI Fund Performance endpoint returned no valid Flexi Cap scheme-code records")
           print(json.dumps({
               "source": "https://www.amfiindia.com/gateway/pollingsebi",
-              "report_dates": sorted({
-                  str(_field(row, "Report_Date", "reportDate", "report_date"))
-                  for row in rows
-                  if _field(row, "Report_Date", "reportDate", "report_date") not in (None, "")
-              }),
+              "report_date": report_date,
               "category_group": "Equity Scheme",
               "subcategory": selected["name"],
               "source_subcategories_by_category": source_labels_by_category,
