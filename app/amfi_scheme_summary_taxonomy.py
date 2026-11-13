@@ -9,6 +9,7 @@ import hashlib
 import html
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 from collections import Counter
 from typing import Any
@@ -50,6 +51,32 @@ def _field(row: dict[str, Any], *names: str) -> Any:
         if _key(key) in wanted:
             return value
     return None
+
+
+def _get_with_retries(
+    client: requests.Session,
+    url: str,
+    *,
+    max_attempts: int = 3,
+    **kwargs: Any,
+) -> tuple[requests.Response, int]:
+    """Retry transient AMFI disconnects and gateway throttling without hiding hard failures."""
+    retryable_statuses = {429, 500, 502, 503, 504}
+    last_error: requests.RequestException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = client.get(url, **kwargs)
+            if response.status_code not in retryable_statuses or attempt == max_attempts:
+                return response, attempt
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            last_error = exc
+            if attempt == max_attempts:
+                raise
+        if attempt < max_attempts:
+            time.sleep(0.5 * (2 ** (attempt - 1)))
+    if last_error:
+        raise last_error
+    raise RuntimeError("AMFI request retry loop ended unexpectedly")
 
 
 def _extract_scheme_summary_fields(xml_bytes: bytes) -> dict[str, str]:
@@ -268,14 +295,14 @@ def fetch_amfi_scheme_summary_taxonomy(
     try:
         if requests_made >= max_requests:
             raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
-        landing = client.get(AMFI_BASE + "/otherdata/scheme-details", timeout=(8, 30))
-        requests_made += 1
+        landing, attempts = _get_with_retries(client, AMFI_BASE + "/otherdata/scheme-details", timeout=(8, 30))
+        requests_made += attempts
         landing.raise_for_status()
 
         if requests_made >= max_requests:
             raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
-        amc_response = client.get(AMFI_BASE + "/api/populate-mf", timeout=(8, 30))
-        requests_made += 1
+        amc_response, attempts = _get_with_retries(client, AMFI_BASE + "/api/populate-mf", timeout=(8, 30))
+        requests_made += attempts
         amc_response.raise_for_status()
         amc_rows = _rows(amc_response.json())
 
@@ -318,12 +345,13 @@ def fetch_amfi_scheme_summary_taxonomy(
             mf_id = _field(amc_matches[0], "mfId", "mf_id", "id")
             if requests_made >= max_requests:
                 raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
-            listing_response = client.get(
+            listing_response, attempts = _get_with_retries(
+                client,
                 AMFI_BASE + "/api/populate-scheme",
                 params={"MF_ID": mf_id},
                 timeout=(8, 30),
             )
-            requests_made += 1
+            requests_made += attempts
             listing_response.raise_for_status()
             listing_rows = _rows(listing_response.json())
             listing_by_name: dict[str, list[dict[str, Any]]] = {}
@@ -354,11 +382,12 @@ def fetch_amfi_scheme_summary_taxonomy(
                     summary_classification = None
                     if requests_made >= max_requests:
                         raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
-                    xml_response = client.get(
+                    xml_response, attempts = _get_with_retries(
+                        client,
                         f"{AMFI_SCHEME_SUMMARY_BASE}/SSD_{scheme_id}.xml",
                         timeout=(8, 30),
                     )
-                    requests_made += 1
+                    requests_made += attempts
                     if xml_response.status_code != 404:
                         xml_response.raise_for_status()
                         source_document_found = True
@@ -389,12 +418,13 @@ def fetch_amfi_scheme_summary_taxonomy(
 
                     if requests_made >= max_requests:
                         raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
-                    details_response = client.get(
+                    details_response, attempts = _get_with_retries(
+                        client,
                         AMFI_BASE + "/api/scheme-details",
                         params={"MF_ID": mf_id, "scheme_id": scheme_id},
                         timeout=(8, 30),
                     )
-                    requests_made += 1
+                    requests_made += attempts
                     if details_response.status_code == 404:
                         continue
                     details_response.raise_for_status()
