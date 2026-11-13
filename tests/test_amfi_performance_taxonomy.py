@@ -45,11 +45,20 @@ def test_invalid_scheme_codes_are_rejected():
 
 
 def test_conflicting_rows_for_same_scheme_are_rejected():
+    from app.amfi_performance_taxonomy import fetch_amfi_performance_taxonomy
+
+    class ConflictingSession(_FakeSession):
+        def post(self, url, *, json, timeout):
+            if url.endswith("/api/amfi/getsubcategory"):
+                return super().post(url, json=json, timeout=timeout)
+            return _FakeResponse({
+                "data": [{"Scheme_Code": "119551", "Scheme_Name": "Conflicting category"}]
+            })
+
     with pytest.raises(ValueError, match="conflicting categories"):
-        canonicalize_performance_rows(
-            [{"Scheme_Code": "119551"}, {"Scheme_Code": "119551"}],
-            category_group="Equity Scheme",
-            subcategory="Flexi Cap Fund",
+        fetch_amfi_performance_taxonomy(
+            session=ConflictingSession(),
+            max_requests=20,
         )
 
 
