@@ -374,20 +374,27 @@ jobs:
               "Accept": "application/json, text/plain, */*",
               "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
           })
-          subcategories = _post(session, SUBCATEGORIES_PATH, {"category": 1})
+          source_labels_by_category = {}
           selected = None
-          source_labels = []
-          for item in subcategories:
-              name = _field(item, "name", "subCategory", "subCategoryName")
-              subcategory_id = _field(item, "id", "subCategoryId")
-              if isinstance(name, str):
-                  source_labels.append(name)
-                  if selected is None and subcategory_id is not None and canonical_subcategory("Equity Scheme", name):
-                      selected = {"id": subcategory_id, "name": name}
+          for category_id, group in (
+              (1, "Equity Scheme"),
+              (2, "Debt Scheme"),
+              (3, "Hybrid Scheme"),
+              (5, "Other Schemes"),
+          ):
+              subcategories = _post(session, SUBCATEGORIES_PATH, {"category": category_id})
+              source_labels_by_category[str(category_id)] = []
+              for item in subcategories:
+                  name = _field(item, "name", "subCategory", "subCategoryName")
+                  subcategory_id = _field(item, "id", "subCategoryId")
+                  if isinstance(name, str):
+                      source_labels_by_category[str(category_id)].append(name)
+                      if category_id == 1 and selected is None and subcategory_id is not None and canonical_subcategory(group, name):
+                          selected = {"id": subcategory_id, "name": name}
           if selected is None:
               raise SystemExit(
                   "AMFI Equity subcategory endpoint exposed no current allow-listed label: "
-                  + json.dumps(source_labels)
+                  + json.dumps(source_labels_by_category)
               )
 
           report_date = _last_business_date()
@@ -410,6 +417,7 @@ jobs:
               "report_date": report_date,
               "category_group": "Equity Scheme",
               "subcategory": selected["name"],
+              "source_subcategories_by_category": source_labels_by_category,
               "rows_received": len(rows),
               "valid_scheme_codes": len(mappings),
               "rejected_rows": rejected,
