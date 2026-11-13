@@ -177,3 +177,72 @@ def test_scheme_summary_parser_exposes_unmapped_legacy_category_fields():
         ),
         expected_scheme_name="Legacy Children's Solution Fund",
     ) is None
+
+
+def test_scheme_details_category_fallback_maps_exact_allowlisted_current_categories():
+    from app.fund_taxonomy import classify_amfi_category
+
+    assert classify_amfi_category("Equity Scheme - ELSS") == (
+        "Equity Scheme",
+        "ELSS Tax Saver Fund",
+        "Equity",
+    )
+    assert classify_amfi_category("Debt Scheme - Short Duration Fund") == (
+        "Debt Scheme",
+        "Short Term Fund",
+        "Debt",
+    )
+    assert classify_amfi_category(
+        "Overseas Fund of Funds - Fund of Funds investing overseas"
+    ) == (
+        "Other Schemes",
+        "FoFs (Overseas/Domestic)",
+        "Other",
+    )
+
+
+def test_discontinued_solution_oriented_and_fmp_labels_stay_unclassified():
+    from app.fund_taxonomy import classify_amfi_category
+
+    assert classify_amfi_category("Solution Oriented - Retirement Fund") == (None, None, None)
+    fmp_group, fmp_category, fmp_asset = classify_amfi_category("Income - Fixed Maturity Plan")
+    assert fmp_group == "Debt Scheme"
+    assert fmp_category is None
+    assert fmp_asset == "Debt"
+
+
+def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
+    class DetailsFallbackSession(_FakeSession):
+        def get(self, url, *, params=None, timeout=None):
+            if url.endswith("/api/scheme-details"):
+                assert params == {"MF_ID": 28, "scheme_id": "1134"}
+                return _FakeResponse(payload=[{
+                    "Scheme_Name": "UTI - Banking and Financial Services Fund",
+                    "SchemeCat_Desc": "Equity Scheme - ELSS",
+                    "SchemeType_Desc": "Open Ended",
+                }])
+            return super().get(url, params=params, timeout=timeout)
+
+    session = DetailsFallbackSession(
+        _spreadsheetml(
+            "UTI - Banking and Financial Services Fund",
+            "",
+            "An open ended equity scheme.",
+        )
+    )
+    result = fetch_amfi_scheme_summary_taxonomy(
+        [{
+            "amc": "UTI Mutual Fund",
+            "scheme_name": "UTI - Banking and Financial Services Fund - Direct Plan - Growth",
+        }],
+        session=session,
+    )
+    assert result["mappings"] == {
+        "name:uti - banking and financial services fund": {
+            "category_group": "Equity Scheme",
+            "category": "ELSS Tax Saver Fund",
+            "asset_class": "Equity",
+        }
+    }
+    assert result["source_names_matched"] == 1
+    assert result["requests_made"] == 5
