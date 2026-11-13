@@ -66,12 +66,18 @@ def parse_scheme_summary_category(
     fields: dict[str, str] = {}
 
     # AMFI publishes both SpreadsheetML Row/Cell documents and field-named XML.
-    for row in root.findall(".//{*}Row"):
-        cells = [
-            " ".join(cell.itertext()).strip()
-            for cell in row.findall("{*}Cell/{*}Data")
-        ]
-        cells = [value for value in cells if value]
+    for row in root.iter():
+        if row.tag.split("}")[-1] != "Row":
+            continue
+        cells = []
+        for cell in row:
+            if cell.tag.split("}")[-1] != "Cell":
+                continue
+            for data in cell:
+                if data.tag.split("}")[-1] == "Data":
+                    value = " ".join(data.itertext()).strip()
+                    if value:
+                        cells.append(value)
         if cells and re.fullmatch(r"\\d+(?:\\.0)?", cells[0]):
             cells = cells[1:]
         if len(cells) >= 2:
