@@ -102,6 +102,39 @@ def _scheme_summary_category_fields(fields: dict[str, str]) -> tuple[str | None,
     return raw_category, fund_type
 
 
+def classify_amfi_scheme_details_category(
+    raw_category: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Resolve AMFI's legacy descriptor only when its subcategory is unique."""
+    raw = " ".join(str(raw_category or "").strip().split())
+    normalized = re.sub(r"\\s*-\\s*", " - ", raw)
+    group, category, asset = classify_amfi_category(normalized)
+    if group and category:
+        return group, category, asset
+
+    # Some AMFI Scheme Details records expose a bare category ("ELSS",
+    # "Thematic Fund", "Index Fund") or put the category before a theme
+    # descriptor ("Thematic Fund - ESG Theme"). Accept only a category that
+    # resolves to one and only one current SEBI group.
+    candidates: set[tuple[str, str, str | None]] = set()
+    labels = [raw]
+    if " - " in normalized:
+        labels.append(normalized.split(" - ", 1)[0].strip())
+        labels.append(normalized.split(" - ", 1)[1].strip())
+    for label in labels:
+        for candidate_group in VALID_GROUPS:
+            candidate_category = canonical_subcategory(candidate_group, label)
+            if candidate_category:
+                candidates.add((
+                    candidate_group,
+                    candidate_category,
+                    SCHEME_GROUP_ASSET_CLASS[candidate_group],
+                ))
+    if len(candidates) != 1:
+        return None, None, None
+    return next(iter(candidates))
+
+
 def parse_scheme_summary_category(
     xml_bytes: bytes,
     *,
