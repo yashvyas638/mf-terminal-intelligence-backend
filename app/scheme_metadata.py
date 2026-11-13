@@ -164,6 +164,7 @@ def refresh_scheme_taxonomy(
     cutoff = now.date() - timedelta(days=active_days)
     scanned = updated = already_valid = conflict = missing_scheme = inactive = 0
     unmatched_names = 0
+    ambiguous_names = 0
     with session_factory() as db:
         with db.begin():
             active_codes = set(
@@ -226,6 +227,12 @@ def refresh_scheme_taxonomy(
                 if not matches:
                     unmatched_names += 1
                     continue
+                matched_amcs = {((scheme.amc or "").strip().casefold()) for scheme in matches}
+                if len(matched_amcs) > 1:
+                    # If an exact base name is shared across AMCs, the source
+                    # record is ambiguous because it does not expose AMC ID.
+                    ambiguous_names += 1
+                    continue
                 for scheme in matches:
                     apply_source(scheme, source)
 
@@ -238,4 +245,5 @@ def refresh_scheme_taxonomy(
         "scheme_codes_not_in_master": missing_scheme,
         "not_active_in_nav_window": inactive,
         "source_names_unmatched": unmatched_names,
+        "source_names_ambiguous": ambiguous_names,
     }
