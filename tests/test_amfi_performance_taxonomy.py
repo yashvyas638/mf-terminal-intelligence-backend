@@ -108,6 +108,16 @@ def test_canonicalizes_amfi_performance_base_scheme_name():
     ) == "aditya birla sun life large cap fund"
 
 
+def test_amfi_combined_sectoral_thematic_category_is_preserved_without_guessing():
+    from app.fund_taxonomy import canonical_subcategory
+
+    assert canonical_subcategory("Equity Scheme", "Sectoral / Thematic") == (
+        "Sectoral/Thematic Fund"
+    )
+    assert canonical_subcategory("Equity Scheme", "Sectoral") == "Sectoral Fund"
+    assert canonical_subcategory("Equity Scheme", "Thematic") == "Thematic Fund"
+
+
 def test_unknown_amfi_subcategory_fails_closed():
     mappings, rejected = canonicalize_performance_rows(
         [{"Scheme_Code": "119551"}],
