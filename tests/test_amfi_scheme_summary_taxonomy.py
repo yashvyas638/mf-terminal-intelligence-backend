@@ -273,7 +273,7 @@ def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
                 assert params == {"MF_ID": 28, "scheme_id": "1134"}
                 return _FakeResponse(payload=[{
                     "Scheme_Name": "UTI - Banking and Financial Services Fund",
-                    "SchemeCat_Desc": "ELSS",
+                    "SchemeCat_Desc": "Thematic Fund- ESG Theme",
                     "SchemeType_Desc": "Open Ended",
                 }])
             return super().get(url, params=params, timeout=timeout)
@@ -295,7 +295,7 @@ def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
     assert result["mappings"] == {
         "name:uti - banking and financial services fund": {
             "category_group": "Equity Scheme",
-            "category": "ELSS Tax Saver Fund",
+            "category": "Thematic Fund",
             "asset_class": "Equity",
         }
     }

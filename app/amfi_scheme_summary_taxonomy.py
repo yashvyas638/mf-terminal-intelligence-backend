@@ -438,7 +438,7 @@ def fetch_amfi_scheme_summary_taxonomy(
                         raw_details_category = _field(detail, "SchemeCat_Desc", "Scheme_Category", "category")
                         if not raw_details_category:
                             continue
-                        group, category, asset = classify_amfi_category(str(raw_details_category))
+                        group, category, asset = classify_amfi_scheme_details_category(str(raw_details_category))
                         if group and category:
                             source_categories.add((group, category, asset))
                         else:
