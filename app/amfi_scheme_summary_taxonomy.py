@@ -16,7 +16,7 @@ from typing import Any
 import requests
 
 from app.amfi_performance_taxonomy import canonical_scheme_name
-from app.fund_taxonomy import SCHEME_GROUP_ASSET_CLASS, canonical_subcategory
+from app.fund_taxonomy import SCHEME_GROUP_ASSET_CLASS, canonical_subcategory, classify_amfi_category
 
 AMFI_BASE = "https://www.amfiindia.com"
 AMFI_SCHEME_SUMMARY_BASE = "https://portal.amfiindia.com/spages"
@@ -284,6 +284,35 @@ def fetch_amfi_scheme_summary_taxonomy(
                     scheme_id = _field(source_row, "scheme_id", "schemeId", "id")
                     if not str(scheme_id).isdigit():
                         continue
+
+                    # AMFI Scheme Details provides an official category descriptor
+                    # even for some schemes whose summary XML omits the category.
+                    if requests_made >= max_requests:
+                        raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
+                    details_response = client.get(
+                        AMFI_BASE + "/api/scheme-details",
+                        params={"MF_ID": mf_id, "scheme_id": scheme_id},
+                        timeout=(8, 30),
+                    )
+                    requests_made += 1
+                    if details_response.status_code != 404:
+                        details_response.raise_for_status()
+                        details_rows = _rows(details_response.json())
+                        if details_rows:
+                            source_document_found = True
+                        for detail in details_rows:
+                            details_name = _field(detail, "Scheme_Name", "scheme_name", "schemeName")
+                            if details_name and _exact_name(details_name) != _exact_name(target["base_name"]):
+                                continue
+                            raw_details_category = _field(detail, "SchemeCat_Desc", "Scheme_Category", "category")
+                            if not raw_details_category:
+                                continue
+                            group, category, asset = classify_amfi_category(str(raw_details_category))
+                            if group and category:
+                                source_categories.add((group, category, asset))
+                            else:
+                                unclassified_category_labels[str(raw_details_category)] += 1
+
                     if requests_made >= max_requests:
                         raise RuntimeError("AMFI scheme-summary request safety limit exceeded")
                     xml_response = client.get(
