@@ -825,6 +825,8 @@ def _check_amfi_performance_taxonomy_source() -> dict[str, Any]:
         "amfi_performance_taxonomy_source_check_completed",
         extra={
             "scheme_codes": result.get("scheme_codes"),
+            "scheme_names": result.get("scheme_names"),
+            "scheme_identifiers": result.get("scheme_identifiers"),
             "subcategory_queries": result.get("subcategory_queries"),
             "requests_made": result.get("requests_made"),
             "payload_sha256": result.get("payload_sha256"),
