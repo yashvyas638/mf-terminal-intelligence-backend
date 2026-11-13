@@ -188,3 +188,54 @@ def test_amfi_scheme_summary_source_check_requires_explicit_opt_in(monkeypatch):
     assert main._maybe_check_amfi_scheme_summary_taxonomy_source_from_environment() == {
         "status": "source_verified"
     }
+
+
+def test_amfi_scheme_summary_refresh_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ON_START", raising=False)
+    assert main._maybe_refresh_amfi_scheme_summary_taxonomy_from_environment() is None
+
+
+def test_amfi_scheme_summary_refresh_requires_explicit_safety_gates(monkeypatch):
+    monkeypatch.setenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ON_START", "true")
+    monkeypatch.setenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ENABLED", "false")
+    monkeypatch.setenv("AMFI_SCHEME_SUMMARY_TAXONOMY_CONTRACT_VERIFIED", "true")
+    with pytest.raises(RuntimeError, match="REFRESH_ENABLED"):
+        main._maybe_refresh_amfi_scheme_summary_taxonomy_from_environment()
+
+
+def test_amfi_scheme_summary_refresh_uses_verified_refinement_gate(monkeypatch):
+    monkeypatch.setenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ON_START", "true")
+    monkeypatch.setenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("AMFI_SCHEME_SUMMARY_TAXONOMY_CONTRACT_VERIFIED", "true")
+    monkeypatch.setattr(main, "_active_missing_scheme_summary_targets", lambda now: [
+        {"scheme_code": 123456, "scheme_name": "Example Fund - Direct Plan - Growth", "amc": "Example Mutual Fund"},
+    ])
+    monkeypatch.setattr(main, "fetch_amfi_scheme_summary_taxonomy", lambda targets: {
+        "mappings": {
+            "name:example fund": {
+                "category_group": "Equity Scheme",
+                "category": "Sectoral Fund",
+                "asset_class": "Equity",
+            }
+        },
+        "source_names_matched": 1,
+        "source_names_unmatched": 0,
+        "source_documents_missing": 0,
+        "source_names_ambiguous": 0,
+        "requests_made": 3,
+        "category_counts": {"Equity Scheme / Sectoral Fund": 1},
+        "payload_sha256": "b" * 64,
+    })
+    captured = {}
+
+    def fake_refresh(mappings, now, *, allow_verified_refinements=False):
+        captured["mappings"] = mappings
+        captured["allow_verified_refinements"] = allow_verified_refinements
+        return {"category_rows_updated": 1, "source_conflicts": 0}
+
+    monkeypatch.setattr(main, "refresh_scheme_taxonomy", fake_refresh)
+    result = main._maybe_refresh_amfi_scheme_summary_taxonomy_from_environment()
+    assert result["status"] == "refreshed"
+    assert captured["allow_verified_refinements"] is True
+    assert result["nav_observations_written"] == 0
+    assert result["research_snapshots_written"] == 0
