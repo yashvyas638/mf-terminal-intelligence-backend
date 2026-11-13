@@ -14,6 +14,8 @@ from collections import Counter
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from app.amfi_performance_taxonomy import canonical_scheme_name
 from app.fund_taxonomy import SCHEME_GROUP_ASSET_CLASS, canonical_subcategory, classify_amfi_category
@@ -223,6 +225,23 @@ def parse_scheme_summary_category(
     }
 
 
+def _configure_amfi_retry_policy(session: requests.Session) -> requests.Session:
+    """Retry transient AMFI GET failures without retrying non-idempotent work."""
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        status=3,
+        backoff_factor=0.4,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
+
+
 def fetch_amfi_scheme_summary_taxonomy(
     schemes: list[dict[str, Any]],
     *,
@@ -245,7 +264,7 @@ def fetch_amfi_scheme_summary_taxonomy(
         }
 
     own_session = session is None
-    client = session or requests.Session()
+    client = session or _configure_amfi_retry_policy(requests.Session())
     client.headers.update({
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
