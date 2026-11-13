@@ -609,6 +609,26 @@ jobs:
               "Referer": base + "/otherdata/scheme-details",
               "X-Requested-With": "XMLHttpRequest",
           })
+          def rows(payload):
+              if isinstance(payload, list):
+                  return [row for row in payload if isinstance(row, dict)]
+              if isinstance(payload, dict):
+                  for key in ("data", "Data", "result", "Result", "records", "Records"):
+                      if isinstance(payload.get(key), list):
+                          return [row for row in payload[key] if isinstance(row, dict)]
+                  return [payload]
+              return []
+
+          def field(row, *names):
+              wanted = {re.sub(r"[^a-z0-9]", "", name.casefold()) for name in names}
+              for key, value in row.items():
+                  if re.sub(r"[^a-z0-9]", "", str(key).casefold()) in wanted:
+                      return value
+              return None
+
+          def canonical(value):
+              return " ".join(re.findall(r"[a-z0-9]+", str(value or "").casefold()))
+
           probes = [
               ("UTI Mutual Fund", "UTI - Banking and Financial Services Fund"),
               ("HDFC Mutual Fund", "HDFC Banking & Financial Services Fund"),
@@ -616,34 +636,31 @@ jobs:
           ]
           amcs_response = session.get(base + "/api/populate-mf", timeout=(8, 30))
           amcs_response.raise_for_status()
-          amcs = amcs_response.json()
+          amcs = rows(amcs_response.json())
           results = []
           for amc_name, target_name in probes:
-              amc_rows = amcs if isinstance(amcs, list) else amcs.get("data", [])
               matches = [
-                  row for row in amc_rows
-                  if str(row.get("mfname") or row.get("name") or "").strip().casefold() == amc_name.casefold()
+                  row for row in amcs
+                  if canonical(field(row, "mfName", "mfname", "name")) == canonical(amc_name)
               ]
               if len(matches) != 1:
-                  results.append({"amc": amc_name, "scheme": target_name, "status": "AMC exact match unavailable", "matches": len(matches)})
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "AMC exact match unavailable", "matches": len(matches), "sample_fields": sorted(amcs[0].keys()) if amcs else [], "candidate_names": [field(row, "mfName", "mfname", "name") for row in amcs if canonical(amc_name.split()[0]) in canonical(field(row, "mfName", "mfname", "name"))][:5]})
                   continue
-              mf_id = matches[0].get("mfId") or matches[0].get("mf_id") or matches[0].get("id")
+              mf_id = field(matches[0], "mfId", "mf_id", "id")
               scheme_response = session.get(base + "/api/populate-scheme", params={"MF_ID": mf_id}, timeout=(8, 30))
               scheme_response.raise_for_status()
-              scheme_payload = scheme_response.json()
-              scheme_rows = scheme_payload if isinstance(scheme_payload, list) else scheme_payload.get("data", [])
+              scheme_rows = rows(scheme_response.json())
               scheme_matches = [
                   row for row in scheme_rows
-                  if str(row.get("scheme_name") or row.get("schemeName") or row.get("name") or "").strip().casefold() == target_name.casefold()
+                  if canonical(field(row, "scheme_name", "schemeName", "name")) == canonical(target_name)
               ]
               if len(scheme_matches) != 1:
-                  results.append({"amc": amc_name, "scheme": target_name, "status": "scheme exact match unavailable", "matches": len(scheme_matches)})
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "scheme exact match unavailable", "matches": len(scheme_matches), "scheme_fields": sorted(scheme_rows[0].keys()) if scheme_rows else [], "candidate_names": [field(row, "scheme_name", "schemeName", "name") for row in scheme_rows if canonical(target_name.split()[0]) in canonical(field(row, "scheme_name", "schemeName", "name"))][:5]})
                   continue
-              scheme_id = scheme_matches[0].get("scheme_id") or scheme_matches[0].get("schemeId") or scheme_matches[0].get("id")
+              scheme_id = field(scheme_matches[0], "scheme_id", "schemeId", "id")
               details_response = session.get(base + "/api/scheme-details", params={"MF_ID": mf_id, "scheme_id": scheme_id}, timeout=(8, 30))
               details_response.raise_for_status()
-              details_payload = details_response.json()
-              detail_rows = details_payload if isinstance(details_payload, list) else details_payload.get("data", [])
+              detail_rows = rows(details_response.json())
               detail = detail_rows[0] if detail_rows else {}
               category_fields = {k: v for k, v in detail.items() if "category" in k.casefold() or "type" in k.casefold()}
               xml_response = session.get(f"https://portal.amfiindia.com/spages/SSD_{scheme_id}.xml", timeout=(8, 30))
