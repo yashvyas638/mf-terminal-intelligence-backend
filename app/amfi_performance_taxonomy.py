@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -52,11 +53,11 @@ def canonical_scheme_name(value: str | None) -> str | None:
     name = " ".join(value.strip().split())
     if not name:
         return None
-    name = __import__("re").sub(
-        r"\\s+-\\s+(?:direct|regular)\\s+plan\\b.*$",
+    name = re.sub(
+        r"\s+-\s+(?:direct|regular)\s+plan\b.*$",
         "",
         name,
-        flags=__import__("re").IGNORECASE,
+        flags=re.IGNORECASE,
     ).strip()
     return name.casefold() or None
 
