@@ -523,12 +523,16 @@ async def lifespan(_: FastAPI):
         scheme_summary_taxonomy_source_check_requested = (
             os.getenv("AMFI_SCHEME_SUMMARY_TAXONOMY_SOURCE_CHECK_ON_START", "").strip().lower() == "true"
         )
+        scheme_summary_taxonomy_refresh_requested = (
+            os.getenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ON_START", "").strip().lower() == "true"
+        )
         if sum((
             history_requested,
             metadata_requested,
             performance_taxonomy_requested,
             performance_taxonomy_source_check_requested,
             scheme_summary_taxonomy_source_check_requested,
+            scheme_summary_taxonomy_refresh_requested,
         )) > 1:
             raise RuntimeError(
                 "Run only one of historical NAV backfill, NAV-feed metadata refresh, AMFI performance taxonomy refresh, or a read-only taxonomy source check per deployment"
@@ -543,6 +547,11 @@ async def lifespan(_: FastAPI):
                 asyncio.to_thread(_maybe_check_amfi_scheme_summary_taxonomy_source_from_environment)
             )
             scheme_summary_task.add_done_callback(_log_amfi_scheme_summary_taxonomy_task_result)
+        if scheme_summary_taxonomy_refresh_requested:
+            scheme_summary_refresh_task = asyncio.create_task(
+                asyncio.to_thread(_maybe_refresh_amfi_scheme_summary_taxonomy_from_environment)
+            )
+            scheme_summary_refresh_task.add_done_callback(_log_amfi_scheme_summary_taxonomy_refresh_result)
         if performance_taxonomy_requested:
             taxonomy_task = asyncio.create_task(
                 asyncio.to_thread(_maybe_refresh_amfi_performance_taxonomy_from_environment)
@@ -881,7 +890,11 @@ def _active_missing_scheme_summary_targets(now: datetime) -> list[dict[str, Any]
                 "amc": row.amc,
             }
             for row in active_rows
-            if not row.category_group or not row.category
+            if (
+                not row.category_group
+                or not row.category
+                or row.category == "Sectoral/Thematic Fund"
+            )
         ]
 
 
@@ -908,6 +921,60 @@ def _maybe_check_amfi_scheme_summary_taxonomy_source_from_environment() -> dict[
     if os.getenv("AMFI_SCHEME_SUMMARY_TAXONOMY_SOURCE_CHECK_ON_START", "").strip().lower() != "true":
         return None
     return _check_amfi_scheme_summary_taxonomy_source()
+
+
+def _refresh_amfi_scheme_summary_taxonomy() -> dict[str, Any]:
+    """Apply only exact AMFI Scheme Summary categories to active incomplete/combined rows."""
+    targets = _active_missing_scheme_summary_targets(datetime.now(timezone.utc))
+    source = fetch_amfi_scheme_summary_taxonomy(targets)
+    if not source["mappings"]:
+        raise RuntimeError("AMFI Scheme Summary source returned no exact current SEBI category mappings")
+    result = refresh_scheme_taxonomy(
+        source["mappings"],
+        datetime.now(timezone.utc),
+        allow_verified_refinements=True,
+    )
+    response = {
+        "status": "refreshed",
+        **{key: value for key, value in source.items() if key != "mappings"},
+        **result,
+        "active_target_rows": len(targets),
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "nav_observations_written": 0,
+        "research_snapshots_written": 0,
+    }
+    logger.warning(
+        "amfi_scheme_summary_taxonomy_refresh_completed "
+        + json.dumps(response, sort_keys=True, separators=(",", ":"))
+    )
+    return response
+
+
+def _maybe_refresh_amfi_scheme_summary_taxonomy_from_environment() -> dict[str, Any] | None:
+    if os.getenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ON_START", "").strip().lower() != "true":
+        return None
+    if os.getenv("AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ENABLED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "AMFI Scheme Summary taxonomy refresh requires AMFI_SCHEME_SUMMARY_TAXONOMY_REFRESH_ENABLED=true"
+        )
+    if os.getenv("AMFI_SCHEME_SUMMARY_TAXONOMY_CONTRACT_VERIFIED", "").strip().lower() != "true":
+        raise RuntimeError(
+            "AMFI Scheme Summary taxonomy refresh requires AMFI_SCHEME_SUMMARY_TAXONOMY_CONTRACT_VERIFIED=true"
+        )
+    return _refresh_amfi_scheme_summary_taxonomy()
+
+
+def _log_amfi_scheme_summary_taxonomy_refresh_result(task: asyncio.Task[Any]) -> None:
+    try:
+        result = task.result()
+        logger.warning(
+            "amfi_scheme_summary_taxonomy_refresh_background_task_completed "
+            + json.dumps(result, sort_keys=True, separators=(",", ":"))
+        )
+    except asyncio.CancelledError:
+        logger.warning("amfi_scheme_summary_taxonomy_refresh_background_task_cancelled")
+    except Exception:
+        logger.exception("amfi_scheme_summary_taxonomy_refresh_background_task_failed")
 
 
 def _log_amfi_scheme_summary_taxonomy_task_result(task: asyncio.Task[Any]) -> None:
