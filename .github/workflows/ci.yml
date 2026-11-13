@@ -662,7 +662,7 @@ jobs:
               details_response.raise_for_status()
               detail_rows = rows(details_response.json())
               detail = detail_rows[0] if detail_rows else {}
-              category_fields = {k: v for k, v in detail.items() if "category" in k.casefold() or "type" in k.casefold()}
+              category_fields = {k: v for k, v in detail.items() if "category" in k.casefold() or "cat" in k.casefold() or "type" in k.casefold()}
               xml_response = session.get(f"https://portal.amfiindia.com/spages/SSD_{scheme_id}.xml", timeout=(8, 30))
               xml_status = xml_response.status_code
               xml_fields = {}
@@ -688,6 +688,10 @@ jobs:
                   "scheme_summary_category_or_type_fields": {
                       k: v for k, v in xml_fields.items()
                       if "category" in k.casefold() or "type" in k.casefold()
+                  },
+                  "scheme_summary_name_fields": {
+                      k: v for k, v in xml_fields.items()
+                      if "name" in k.casefold()
                   },
               })
           print(json.dumps({
