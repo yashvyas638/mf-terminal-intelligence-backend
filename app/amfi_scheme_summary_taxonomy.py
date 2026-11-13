@@ -107,7 +107,7 @@ def classify_amfi_scheme_details_category(
 ) -> tuple[str | None, str | None, str | None]:
     """Resolve AMFI's legacy descriptor only when its subcategory is unique."""
     raw = " ".join(str(raw_category or "").strip().split())
-    normalized = re.sub(r"\\s*-\\s*", " - ", raw)
+    normalized = re.sub(r"\s*-\s*", " - ", raw)
     group, category, asset = classify_amfi_category(normalized)
     if group and category:
         return group, category, asset
