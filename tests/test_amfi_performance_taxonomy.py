@@ -79,6 +79,20 @@ def test_amfi_short_debt_hybrid_and_other_labels_map_to_current_sebi_allowlist(g
     assert canonical_subcategory(group, source_label) == canonical
 
 
+def test_canonicalizes_amfi_performance_base_scheme_name():
+    from app.amfi_performance_taxonomy import canonical_scheme_name
+
+    assert canonical_scheme_name("Aditya Birla Sun Life Large Cap Fund") == (
+        "aditya birla sun life large cap fund"
+    )
+    assert canonical_scheme_name(
+        "Aditya Birla Sun Life Large Cap Fund - Direct Plan - Growth"
+    ) == "aditya birla sun life large cap fund"
+    assert canonical_scheme_name(
+        "Aditya Birla Sun Life Large Cap Fund - Regular Plan - IDCW"
+    ) == "aditya birla sun life large cap fund"
+
+
 def test_unknown_amfi_subcategory_fails_closed():
     mappings, rejected = canonicalize_performance_rows(
         [{"Scheme_Code": "119551"}],
