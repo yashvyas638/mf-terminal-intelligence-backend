@@ -45,42 +45,68 @@ def _field(row: dict[str, Any], *names: str) -> Any:
     return None
 
 
+def canonical_scheme_name(value: str | None) -> str | None:
+    """Normalize AMFI's base scheme name, removing only explicit plan suffixes."""
+    if not isinstance(value, str):
+        return None
+    name = " ".join(value.strip().split())
+    if not name:
+        return None
+    name = __import__("re").sub(
+        r"\\s+-\\s+(?:direct|regular)\\s+plan\\b.*$",
+        "",
+        name,
+        flags=__import__("re").IGNORECASE,
+    ).strip()
+    return name.casefold() or None
+
+
 def canonicalize_performance_rows(
     rows: list[dict[str, Any]],
     *,
     category_group: str,
     subcategory: str,
-) -> tuple[dict[int, dict[str, str]], int]:
-    """Validate explicit AMFI scheme-code/category rows against SEBI allowlists."""
+) -> tuple[dict[int | str, dict[str, str]], int]:
+    """Validate explicit AMFI scheme identifiers/names against SEBI allowlists."""
     canonical_category = canonical_subcategory(category_group, subcategory)
     if canonical_category is None:
         return {}, len(rows)
 
-    result: dict[int, dict[str, str]] = {}
+    result: dict[int | str, dict[str, str]] = {}
     rejected = 0
     for row in rows:
         if not isinstance(row, dict):
             rejected += 1
             continue
         raw_code = _field(row, "Scheme_Code", "SchemeCode", "scheme_code")
-        try:
-            code = int(str(raw_code).strip())
-        except (TypeError, ValueError):
-            rejected += 1
-            continue
-        if code <= 0:
-            rejected += 1
-            continue
+        key: int | str
+        if raw_code not in (None, ""):
+            try:
+                code = int(str(raw_code).strip())
+            except (TypeError, ValueError):
+                rejected += 1
+                continue
+            if code <= 0:
+                rejected += 1
+                continue
+            key = code
+        else:
+            raw_name = _field(row, "schemeName", "Scheme_Name", "scheme_name")
+            normalized_name = canonical_scheme_name(raw_name)
+            if not normalized_name:
+                rejected += 1
+                continue
+            key = "name:" + normalized_name
         candidate = {
             "category_group": category_group,
             "category": canonical_category,
         }
-        previous = result.get(code)
+        previous = result.get(key)
         if previous and previous != candidate:
             raise ValueError(
-                f"AMFI performance source assigned conflicting categories to scheme {code}"
+                f"AMFI performance source assigned conflicting categories to scheme {key}"
             )
-        result[code] = candidate
+        result[key] = candidate
     return result, rejected
 
 
