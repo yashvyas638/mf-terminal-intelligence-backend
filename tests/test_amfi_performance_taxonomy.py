@@ -247,4 +247,4 @@ def test_fetches_current_amfi_performance_categories_with_latest_business_date()
         if call[0].endswith("/api/amfi/fundperformance")
     ]
     assert performance_calls
-    assert all(call["reportDate"] == result["report_date"] for call in performance_calls)
+    assert all("reportDate" not in call for call in performance_calls)
