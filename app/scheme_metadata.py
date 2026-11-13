@@ -113,6 +113,7 @@ def refresh_scheme_taxonomy(
     *,
     session_factory: Callable = SessionLocal,
     active_days: int = 14,
+    allow_verified_refinements: bool = False,
 ) -> dict[str, int]:
     """Fill only active missing categories using explicit AMFI code/name matches.
 
@@ -201,7 +202,18 @@ def refresh_scheme_taxonomy(
                     conflict += 1
                     return
                 if current_category and current_category != source["category"]:
-                    conflict += 1
+                    verified_sectoral_refinement = (
+                        allow_verified_refinements
+                        and current_group == source["category_group"]
+                        and current_category == "Sectoral/Thematic Fund"
+                        and source["category"] in {"Sectoral Fund", "Thematic Fund"}
+                    )
+                    if not verified_sectoral_refinement:
+                        conflict += 1
+                        return
+                    scheme.category = source["category"]
+                    scheme.asset_class = source["asset_class"]
+                    updated += 1
                     return
                 if current_group and current_category:
                     already_valid += 1
