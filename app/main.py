@@ -75,6 +75,7 @@ from app.nav_adjustments import (
     detect_nav_discontinuities,
 )
 from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
+from app.amfi_performance_taxonomy import fetch_amfi_performance_taxonomy
 from app.nav_history_backfill import (
     create_history_backfill_plan,
     create_storage_optimized_history_plan,
@@ -82,7 +83,7 @@ from app.nav_history_backfill import (
     run_history_backfill_batch,
     history_backfill_status,
 )
-from app.scheme_metadata import refresh_scheme_metadata
+from app.scheme_metadata import refresh_scheme_metadata, refresh_scheme_taxonomy
 from app.fund_taxonomy import (
     canonical_asset_class,
     canonical_group,
@@ -512,10 +513,18 @@ async def lifespan(_: FastAPI):
         metadata_requested = (
             os.getenv("AMFI_SCHEME_METADATA_REFRESH_ON_START", "").strip().lower() == "true"
         )
-        if history_requested and metadata_requested:
+        performance_taxonomy_requested = (
+            os.getenv("AMFI_PERFORMANCE_TAXONOMY_REFRESH_ON_START", "").strip().lower() == "true"
+        )
+        if sum((history_requested, metadata_requested, performance_taxonomy_requested)) > 1:
             raise RuntimeError(
-                "Run either historical NAV backfill or scheme metadata refresh on a deployment, not both"
+                "Run only one of historical NAV backfill, NAV-feed metadata refresh, or AMFI performance taxonomy refresh per deployment"
             )
+        if performance_taxonomy_requested:
+            taxonomy_task = asyncio.create_task(
+                asyncio.to_thread(_refresh_amfi_performance_taxonomy)
+            )
+            taxonomy_task.add_done_callback(_log_amfi_performance_taxonomy_task_result)
         if metadata_requested:
             metadata_task = asyncio.create_task(
                 asyncio.to_thread(_maybe_refresh_scheme_metadata_from_environment)
@@ -787,6 +796,54 @@ def _refresh_scheme_metadata_from_amfi() -> dict[str, Any]:
         },
     )
     return response
+
+
+def _refresh_amfi_performance_taxonomy() -> dict[str, Any]:
+    """Fill only active missing scheme classifications from AMFI's performance service."""
+    source = fetch_amfi_performance_taxonomy()
+    result = refresh_scheme_taxonomy(
+        source["mappings"],
+        datetime.now(timezone.utc),
+    )
+    response = {
+        "status": "refreshed",
+        **{key: value for key, value in source.items() if key != "mappings"},
+        **result,
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "nav_observations_written": 0,
+        "research_snapshots_written": 0,
+    }
+    logger.warning(
+        "amfi_performance_taxonomy_refresh_completed",
+        extra={
+            "source_mappings": response["source_mappings"],
+            "active_schemes_scanned": response["active_schemes_scanned"],
+            "category_rows_updated": response["category_rows_updated"],
+            "already_valid": response["already_valid"],
+            "source_conflicts": response["source_conflicts"],
+            "rejected_rows": response["rejected_rows"],
+            "payload_sha256": response["payload_sha256"],
+        },
+    )
+    return response
+
+
+def _log_amfi_performance_taxonomy_task_result(task: asyncio.Task[Any]) -> None:
+    try:
+        result = task.result()
+        logger.warning(
+            "amfi_performance_taxonomy_background_task_completed",
+            extra={
+                "status": result.get("status"),
+                "category_rows_updated": result.get("category_rows_updated"),
+                "source_conflicts": result.get("source_conflicts"),
+                "payload_sha256": result.get("payload_sha256"),
+            },
+        )
+    except asyncio.CancelledError:
+        logger.warning("amfi_performance_taxonomy_background_task_cancelled")
+    except Exception:
+        logger.exception("amfi_performance_taxonomy_background_task_failed")
 
 
 def _maybe_refresh_scheme_metadata_from_environment() -> dict[str, Any] | None:
