@@ -452,3 +452,140 @@ jobs:
           }, indent=2))
           session.close()
           PY
+
+      - name: Read-only AMFI taxonomy coverage audit across all categories
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+
+          from app.amfi_performance_taxonomy import (
+              PERFORMANCE_PATH,
+              SUBCATEGORIES_PATH,
+              _field,
+              _recent_business_dates,
+              _post,
+              canonicalize_performance_rows,
+          )
+          from app.fund_taxonomy import canonical_subcategory
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": "https://www.amfiindia.com",
+              "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
+              "X-Requested-With": "XMLHttpRequest",
+              "Sec-Fetch-Site": "same-origin",
+              "Sec-Fetch-Mode": "cors",
+              "Sec-Fetch-Dest": "empty",
+          })
+          session.get("https://www.amfiindia.com/otherdata/fund-performance", timeout=(8, 45)).raise_for_status()
+
+          groups = {
+              1: "Equity Scheme",
+              2: "Debt Scheme",
+              3: "Hybrid Scheme",
+              4: "Legacy Solution Oriented (diagnostic only)",
+              5: "Other Schemes",
+          }
+          categories = []
+          for category_id, group in groups.items():
+              for item in _post(session, SUBCATEGORIES_PATH, {"category": category_id}):
+                  name = _field(item, "name", "subCategory", "subCategoryName")
+                  subcategory_id = _field(item, "id", "subCategoryId")
+                  if isinstance(name, str) and subcategory_id is not None:
+                      canonical = (
+                          canonical_subcategory(group, name)
+                          if category_id != 4
+                          else None
+                      )
+                      categories.append({
+                          "category_id": category_id,
+                          "group": group,
+                          "subcategory_id": int(subcategory_id),
+                          "source_label": name,
+                          "canonical_category": canonical,
+                      })
+
+          report_date = None
+          probe = next((item for item in categories if item["category_id"] == 1 and item["canonical_category"]), None)
+          if probe is None:
+              raise SystemExit("AMFI returned no current allow-listed Equity subcategory for coverage audit")
+          for candidate_date in _recent_business_dates(5):
+              rows = _post(session, PERFORMANCE_PATH, {
+                  "maturityType": 1,
+                  "category": probe["category_id"],
+                  "subCategory": probe["subcategory_id"],
+                  "mfid": 0,
+                  "reportDate": candidate_date,
+              })
+              if rows:
+                  report_date = candidate_date
+                  break
+          if report_date is None:
+              raise SystemExit("AMFI returned no rows for five most recent business dates")
+
+          results = []
+          total_rows = total_identifiers = total_rejected = requests_made = 0
+          for item in categories:
+              for maturity_type in (1, 2):
+                  rows = _post(session, PERFORMANCE_PATH, {
+                      "maturityType": maturity_type,
+                      "category": item["category_id"],
+                      "subCategory": item["subcategory_id"],
+                      "mfid": 0,
+                      "reportDate": report_date,
+                  })
+                  requests_made += 1
+                  total_rows += len(rows)
+                  valid = rejected = 0
+                  names = []
+                  if item["category_id"] != 4 and item["canonical_category"]:
+                      parsed, rejected = canonicalize_performance_rows(
+                          rows,
+                          category_group=item["group"],
+                          subcategory=item["canonical_category"],
+                      )
+                      valid = len(parsed)
+                      names = sorted(
+                          key[5:] for key in parsed
+                          if isinstance(key, str) and key.startswith("name:")
+                      )[:3]
+                  else:
+                      rejected = len(rows)
+                      names = [
+                          str(_field(row, "schemeName", "Scheme_Name", "scheme_name"))
+                          for row in rows[:3]
+                      ]
+                  total_identifiers += valid
+                  total_rejected += rejected
+                  results.append({
+                      "group": item["group"],
+                      "category_id": item["category_id"],
+                      "source_subcategory": item["source_label"],
+                      "canonical_subcategory": item["canonical_category"],
+                      "maturity_type": maturity_type,
+                      "rows": len(rows),
+                      "valid_identifiers": valid,
+                      "rejected_or_diagnostic_only": rejected,
+                      "sample_names": names,
+                  })
+
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "report_date": report_date,
+              "categories_checked": len(categories),
+              "performance_requests": requests_made,
+              "total_rows": total_rows,
+              "total_current_allowlisted_identifiers": total_identifiers,
+              "total_legacy_or_rejected_rows": total_rejected,
+              "results": results,
+              "database_writes": 0,
+              "nav_observations_written": 0,
+              "research_snapshots_written": 0,
+          }, indent=2), flush=True)
+          session.close()
+          PY
