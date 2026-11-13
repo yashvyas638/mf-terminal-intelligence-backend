@@ -181,7 +181,6 @@ def test_scheme_summary_parser_exposes_unmapped_legacy_category_fields():
 
 def test_scheme_details_category_fallback_maps_exact_allowlisted_current_categories():
     from app.fund_taxonomy import classify_amfi_category
-    from app.amfi_scheme_summary_taxonomy import classify_amfi_scheme_details_category
 
     assert classify_amfi_category("Equity Scheme - ELSS") == (
         "Equity Scheme",
