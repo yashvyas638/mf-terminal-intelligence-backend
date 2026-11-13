@@ -205,7 +205,10 @@ def test_discontinued_solution_oriented_and_fmp_labels_stay_unclassified():
     from app.fund_taxonomy import classify_amfi_category
 
     assert classify_amfi_category("Solution Oriented - Retirement Fund") == (None, None, None)
-    assert classify_amfi_category("Income - Fixed Maturity Plan") == (None, None, None)
+    fmp_group, fmp_category, fmp_asset = classify_amfi_category("Income - Fixed Maturity Plan")
+    assert fmp_group == "Debt Scheme"
+    assert fmp_category is None
+    assert fmp_asset == "Debt"
 
 
 def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
