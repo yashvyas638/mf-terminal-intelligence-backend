@@ -143,12 +143,9 @@ def fetch_amfi_performance_taxonomy(
         "Referer": REFERER,
     })
     try:
-        filters = _post(client, FILTERS_PATH, {})
-        if not filters:
-            raise RuntimeError("AMFI Fund Performance filter contract returned no data")
         mappings: dict[int, dict[str, str]] = {}
         rejected = 0
-        requests_made = 1
+        requests_made = 0
         subcategory_queries = 0
         performance_rows = 0
         for category_id, group in CATEGORY_GROUPS.items():
