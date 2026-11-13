@@ -589,3 +589,117 @@ jobs:
           }, indent=2), flush=True)
           session.close()
           PY
+
+      - name: Read-only AMFI scheme-summary category metadata probe
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import requests
+          import xml.etree.ElementTree as ET
+
+          base = "https://www.amfiindia.com"
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": base,
+              "Referer": base + "/otherdata/scheme-details",
+              "X-Requested-With": "XMLHttpRequest",
+          })
+          def rows(payload):
+              if isinstance(payload, list):
+                  return [row for row in payload if isinstance(row, dict)]
+              if isinstance(payload, dict):
+                  for key in ("data", "Data", "result", "Result", "records", "Records"):
+                      if isinstance(payload.get(key), list):
+                          return [row for row in payload[key] if isinstance(row, dict)]
+                  return [payload]
+              return []
+
+          def field(row, *names):
+              wanted = {re.sub(r"[^a-z0-9]", "", name.casefold()) for name in names}
+              for key, value in row.items():
+                  if re.sub(r"[^a-z0-9]", "", str(key).casefold()) in wanted:
+                      return value
+              return None
+
+          def canonical(value):
+              return " ".join(re.findall(r"[a-z0-9]+", str(value or "").casefold()))
+
+          probes = [
+              ("UTI Mutual Fund", "UTI - Banking and Financial Services Fund"),
+              ("HDFC Mutual Fund", "HDFC Banking & Financial Services Fund"),
+              ("SBI Mutual Fund", "SBI Long Term Advantage Fund - Series IV"),
+          ]
+          amcs_response = session.get(base + "/api/populate-mf", timeout=(8, 30))
+          amcs_response.raise_for_status()
+          amcs = rows(amcs_response.json())
+          results = []
+          for amc_name, target_name in probes:
+              matches = [
+                  row for row in amcs
+                  if canonical(field(row, "mfName", "mfname", "name")) == canonical(amc_name)
+              ]
+              if len(matches) != 1:
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "AMC exact match unavailable", "matches": len(matches), "sample_fields": sorted(amcs[0].keys()) if amcs else [], "candidate_names": [field(row, "mfName", "mfname", "name") for row in amcs if canonical(amc_name.split()[0]) in canonical(field(row, "mfName", "mfname", "name"))][:5]})
+                  continue
+              mf_id = field(matches[0], "mfId", "mf_id", "id")
+              scheme_response = session.get(base + "/api/populate-scheme", params={"MF_ID": mf_id}, timeout=(8, 30))
+              scheme_response.raise_for_status()
+              scheme_rows = rows(scheme_response.json())
+              scheme_matches = [
+                  row for row in scheme_rows
+                  if canonical(field(row, "scheme_name", "schemeName", "name")) == canonical(target_name)
+              ]
+              if len(scheme_matches) != 1:
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "scheme exact match unavailable", "matches": len(scheme_matches), "scheme_fields": sorted(scheme_rows[0].keys()) if scheme_rows else [], "candidate_names": [field(row, "scheme_name", "schemeName", "name") for row in scheme_rows if canonical(target_name.split()[0]) in canonical(field(row, "scheme_name", "schemeName", "name"))][:5]})
+                  continue
+              scheme_id = field(scheme_matches[0], "scheme_id", "schemeId", "id")
+              details_response = session.get(base + "/api/scheme-details", params={"MF_ID": mf_id, "scheme_id": scheme_id}, timeout=(8, 30))
+              details_response.raise_for_status()
+              detail_rows = rows(details_response.json())
+              detail = detail_rows[0] if detail_rows else {}
+              category_fields = {k: v for k, v in detail.items() if "category" in k.casefold() or "cat" in k.casefold() or "type" in k.casefold()}
+              xml_response = session.get(f"https://portal.amfiindia.com/spages/SSD_{scheme_id}.xml", timeout=(8, 30))
+              xml_status = xml_response.status_code
+              xml_fields = {}
+              if xml_response.ok and len(xml_response.content) <= 3_000_000 and not re.search(br"<!\\s*(DOCTYPE|ENTITY)", xml_response.content, re.I):
+                  root = ET.fromstring(xml_response.content)
+                  for row in root.findall(".//{*}Row"):
+                      cells = [" ".join(cell.itertext()).strip() for cell in row.findall("{*}Cell/{*}Data")]
+                      cells = [value for value in cells if value]
+                      if len(cells) >= 2:
+                          xml_fields[cells[0]] = " ".join(cells[1:])
+                  if root.tag.split("}")[-1] == "SchemeSummaryDocument":
+                      for node in root.iter():
+                          if len(node) == 0 and node.text and node.text.strip():
+                              xml_fields[node.tag.split("}")[-1]] = node.text.strip()
+              results.append({
+                  "amc": amc_name,
+                  "scheme": target_name,
+                  "mf_id": mf_id,
+                  "scheme_id": scheme_id,
+                  "details_keys": sorted(detail.keys()),
+                  "details_category_or_type_fields": category_fields,
+                  "scheme_summary_http_status": xml_status,
+                  "scheme_summary_category_or_type_fields": {
+                      k: v for k, v in xml_fields.items()
+                      if "category" in k.casefold() or "type" in k.casefold()
+                  },
+                  "scheme_summary_name_fields": {
+                      k: v for k, v in xml_fields.items()
+                      if "name" in k.casefold()
+                  },
+              })
+          print(json.dumps({
+              "source": "AMFI official Scheme Details / Scheme Summary",
+              "results": results,
+              "database_writes": 0,
+              "nav_observations_written": 0,
+              "research_snapshots_written": 0,
+          }, indent=2), flush=True)
+          session.close()
+          PY

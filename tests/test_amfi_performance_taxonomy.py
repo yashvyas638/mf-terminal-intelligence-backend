@@ -399,3 +399,187 @@ def test_taxonomy_refresh_maps_exact_amfi_base_name_to_all_active_plan_variants(
         assert result["source_names_unmatched"] == 0
     finally:
         engine.dispose()
+
+
+def test_taxonomy_refresh_supports_official_life_cycle_group_without_asset_class():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    try:
+        with factory.begin() as db:
+            snapshot = IngestionSnapshot(
+                source_url="https://portal.amfiindia.com/spages/NAVAll.txt",
+                retrieved_at=now,
+                payload_sha256="d" * 64,
+                records_valid=1,
+                unique_scheme_codes=1,
+                min_nav_date=date.today(),
+                max_nav_date=date.today(),
+                invalid_rows=0,
+                duplicate_rows_skipped=0,
+                quality_status="PASS",
+                report_json="{}",
+            )
+            db.add(snapshot)
+            db.flush()
+            db.add(Scheme(
+                scheme_code=119563,
+                scheme_name="UTI Life Cycle Fund with Maturity of 10 Years - Direct Plan - Growth",
+                first_seen_at=now,
+                last_seen_at=now,
+                plan_type="Direct Plan",
+                option_type="Growth",
+            ))
+            db.flush()
+            db.add(NavObservation(
+                scheme_code=119563,
+                nav_date=date.today(),
+                nav_value="10.0",
+                source_snapshot_id=snapshot.id,
+            ))
+
+        result = refresh_scheme_taxonomy(
+            {
+                "name:uti life cycle fund with maturity of 10 years": {
+                    "category_group": "Life Cycle Funds",
+                    "category": "Life Cycle Fund with Maturity of 10 Years",
+                    "asset_class": None,
+                },
+            },
+            now,
+            session_factory=factory,
+        )
+        with factory() as db:
+            scheme = db.get(Scheme, 119563)
+            assert scheme.category_group == "Life Cycle Funds"
+            assert scheme.category == "Life Cycle Fund with Maturity of 10 Years"
+            assert scheme.asset_class is None
+        assert result["category_rows_updated"] == 1
+    finally:
+        engine.dispose()
+
+
+def test_taxonomy_refresh_refines_only_combined_sectoral_thematic_with_official_source():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    try:
+        with factory.begin() as db:
+            snapshot = IngestionSnapshot(
+                source_url="https://portal.amfiindia.com/spages/NAVAll.txt",
+                retrieved_at=now,
+                payload_sha256="e" * 64,
+                records_valid=1,
+                unique_scheme_codes=1,
+                min_nav_date=date.today(),
+                max_nav_date=date.today(),
+                invalid_rows=0,
+                duplicate_rows_skipped=0,
+                quality_status="PASS",
+                report_json="{}",
+            )
+            db.add(snapshot)
+            db.flush()
+            db.add(Scheme(
+                scheme_code=119564,
+                scheme_name="HDFC Banking & Financial Services Fund - Direct Plan - Growth",
+                first_seen_at=now,
+                last_seen_at=now,
+                category_group="Equity Scheme",
+                category="Sectoral/Thematic Fund",
+                asset_class="Equity",
+                plan_type="Direct Plan",
+                option_type="Growth",
+            ))
+            db.flush()
+            db.add(NavObservation(
+                scheme_code=119564,
+                nav_date=date.today(),
+                nav_value="10.0",
+                source_snapshot_id=snapshot.id,
+            ))
+
+        result = refresh_scheme_taxonomy(
+            {
+                "name:hdfc banking & financial services fund": {
+                    "category_group": "Equity Scheme",
+                    "category": "Sectoral Fund",
+                    "asset_class": "Equity",
+                },
+            },
+            now,
+            session_factory=factory,
+            allow_verified_refinements=True,
+        )
+        with factory() as db:
+            scheme = db.get(Scheme, 119564)
+            assert scheme.category_group == "Equity Scheme"
+            assert scheme.category == "Sectoral Fund"
+        assert result["category_rows_updated"] == 1
+        assert result["source_conflicts"] == 0
+    finally:
+        engine.dispose()
+
+
+def test_taxonomy_refresh_does_not_allow_unverified_category_replacement():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    try:
+        with factory.begin() as db:
+            snapshot = IngestionSnapshot(
+                source_url="https://portal.amfiindia.com/spages/NAVAll.txt",
+                retrieved_at=now,
+                payload_sha256="f" * 64,
+                records_valid=1,
+                unique_scheme_codes=1,
+                min_nav_date=date.today(),
+                max_nav_date=date.today(),
+                invalid_rows=0,
+                duplicate_rows_skipped=0,
+                quality_status="PASS",
+                report_json="{}",
+            )
+            db.add(snapshot)
+            db.flush()
+            db.add(Scheme(
+                scheme_code=119565,
+                scheme_name="HDFC Flexi Cap Fund - Direct Plan - Growth",
+                first_seen_at=now,
+                last_seen_at=now,
+                category_group="Equity Scheme",
+                category="Flexi Cap Fund",
+                asset_class="Equity",
+                plan_type="Direct Plan",
+                option_type="Growth",
+            ))
+            db.flush()
+            db.add(NavObservation(
+                scheme_code=119565,
+                nav_date=date.today(),
+                nav_value="10.0",
+                source_snapshot_id=snapshot.id,
+            ))
+
+        result = refresh_scheme_taxonomy(
+            {
+                "name:hdfc flexi cap fund": {
+                    "category_group": "Equity Scheme",
+                    "category": "Sectoral Fund",
+                    "asset_class": "Equity",
+                },
+            },
+            now,
+            session_factory=factory,
+            allow_verified_refinements=True,
+        )
+        with factory() as db:
+            scheme = db.get(Scheme, 119565)
+            assert scheme.category == "Flexi Cap Fund"
+        assert result["category_rows_updated"] == 0
+        assert result["source_conflicts"] == 1
+    finally:
+        engine.dispose()
