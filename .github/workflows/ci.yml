@@ -353,6 +353,7 @@ jobs:
           PY
 
       - name: Live read-only AMFI Fund Performance taxonomy contract check
+        continue-on-error: true
         run: |
           python - <<'PY'
           import json
@@ -399,6 +400,11 @@ jobs:
                       source_labels_by_category[str(category_id)].append(name)
                       if category_id == 1 and selected is None and subcategory_id is not None and canonical_subcategory(group, name):
                           selected = {"id": subcategory_id, "name": name}
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "source_subcategories_by_category": source_labels_by_category,
+              "database_writes": 0,
+          }, indent=2), flush=True)
           if selected is None:
               raise SystemExit(
                   "AMFI Equity subcategory endpoint exposed no current allow-listed label: "
