@@ -59,7 +59,7 @@ def parse_scheme_summary_category(
     """Parse the explicit SEBI category field from one AMFI Scheme Summary XML."""
     if not xml_bytes or len(xml_bytes) > MAX_XML_BYTES:
         raise ValueError("AMFI Scheme Summary XML is empty or exceeds the size limit")
-    if re.search(br"<!\\s*(DOCTYPE|ENTITY)", xml_bytes, re.IGNORECASE):
+    if re.search(br"<!\s*(DOCTYPE|ENTITY)", xml_bytes, re.IGNORECASE):
         raise ValueError("AMFI Scheme Summary XML contains a forbidden declaration")
 
     root = ET.fromstring(xml_bytes)
@@ -78,7 +78,7 @@ def parse_scheme_summary_category(
                     value = " ".join(data.itertext()).strip()
                     if value:
                         cells.append(value)
-        if cells and re.fullmatch(r"\\d+(?:\\.0)?", cells[0]):
+        if cells and re.fullmatch(r"\d+(?:\.0)?", cells[0]):
             cells = cells[1:]
         if len(cells) >= 2:
             fields[_key(cells[0])] = " ".join(cells[1:])
