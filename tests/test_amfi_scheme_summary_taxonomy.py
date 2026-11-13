@@ -201,6 +201,61 @@ def test_scheme_details_category_fallback_maps_exact_allowlisted_current_categor
     )
 
 
+def test_scheme_details_fallback_resolves_bare_categories_only_when_unique():
+    from app.amfi_scheme_summary_taxonomy import classify_amfi_scheme_details_category
+
+    assert classify_amfi_scheme_details_category("ELSS") == (
+        "Equity Scheme",
+        "ELSS Tax Saver Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Thematic Fund- ESG Theme") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Sectoral/Thematic Funds") == (
+        "Equity Scheme",
+        "Sectoral/Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Short Duration Fund") == (
+        "Debt Scheme",
+        "Short Term Fund",
+        "Debt",
+    )
+    assert classify_amfi_scheme_details_category("Index Fund") == (
+        "Other Schemes",
+        "Index Funds / ETFs",
+        "Other",
+    )
+    assert classify_amfi_scheme_details_category("Index Funds - Equity Funds") == (
+        "Other Schemes",
+        "Index Funds / ETFs",
+        "Other",
+    )
+    assert classify_amfi_scheme_details_category("Equity - Thematic") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Equity Scheme Sectoral/Thematic Fund") == (
+        "Equity Scheme",
+        "Sectoral/Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Equity Schemes – Thematic Fund") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
+    assert classify_amfi_scheme_details_category("Equity: Thematic Funds") == (
+        "Equity Scheme",
+        "Thematic Fund",
+        "Equity",
+    )
+
+
 def test_discontinued_solution_oriented_and_fmp_labels_stay_unclassified():
     from app.fund_taxonomy import classify_amfi_category
 
@@ -218,7 +273,7 @@ def test_fetch_uses_scheme_details_only_when_summary_has_no_mappable_category():
                 assert params == {"MF_ID": 28, "scheme_id": "1134"}
                 return _FakeResponse(payload=[{
                     "Scheme_Name": "UTI - Banking and Financial Services Fund",
-                    "SchemeCat_Desc": "Equity Scheme - ELSS",
+                    "SchemeCat_Desc": "ELSS",
                     "SchemeType_Desc": "Open Ended",
                 }])
             return super().get(url, params=params, timeout=timeout)
