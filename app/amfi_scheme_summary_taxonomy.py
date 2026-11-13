@@ -107,7 +107,7 @@ def classify_amfi_scheme_details_category(
 ) -> tuple[str | None, str | None, str | None]:
     """Resolve AMFI's legacy descriptor only when its subcategory is unique."""
     raw = " ".join(str(raw_category or "").strip().split())
-    normalized = re.sub(r"\s*-\s*", " - ", raw)
+    normalized = re.sub(r"\\s*[-\\u2013\\u2014]\\s*", " - ", raw)
     group, category, asset = classify_amfi_category(normalized)
     if group and category:
         return group, category, asset
@@ -121,6 +121,36 @@ def classify_amfi_scheme_details_category(
     if " - " in normalized:
         labels.append(normalized.split(" - ", 1)[0].strip())
         labels.append(normalized.split(" - ", 1)[1].strip())
+
+    # Older AMFI exports sometimes omit the separator between group and
+    # category ("Equity Scheme Sectoral/Thematic Fund") or use a colon.
+    group_prefixes = (
+        ("equity schemes", "Equity Scheme"),
+        ("equity scheme", "Equity Scheme"),
+        ("equity", "Equity Scheme"),
+        ("debt schemes", "Debt Scheme"),
+        ("debt scheme", "Debt Scheme"),
+        ("debt", "Debt Scheme"),
+        ("hybrid schemes", "Hybrid Scheme"),
+        ("hybrid scheme", "Hybrid Scheme"),
+        ("other schemes", "Other Schemes"),
+        ("index funds", "Other Schemes"),
+        ("overseas fund of funds", "Other Schemes"),
+    )
+    normalized_key = _key(normalized)
+    for prefix, candidate_group in group_prefixes:
+        prefix_key = _key(prefix)
+        if normalized_key.startswith(prefix_key):
+            suffix = normalized[len(prefix):].strip(" :-")
+            if suffix:
+                candidate_category = canonical_subcategory(candidate_group, suffix)
+                if candidate_category:
+                    candidates.add((
+                        candidate_group,
+                        candidate_category,
+                        SCHEME_GROUP_ASSET_CLASS[candidate_group],
+                    ))
+
     for label in labels:
         for candidate_group in VALID_GROUPS:
             candidate_category = canonical_subcategory(candidate_group, label)
