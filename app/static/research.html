@@ -32,6 +32,7 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
 <link rel="stylesheet" href="/static/product-redesign.css?v=1">
 <link rel="stylesheet" href="/static/terminal-ui-v3.css?v=3">
 <link rel="stylesheet" href="/static/terminal-ui-v4.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v5.css?v=1">
 </head>
 <body>
 <header><div class="brand">MF TERMINAL<small>FUND RESEARCH WORKSPACE</small></div><nav class="research-nav" aria-label="Workspace"><a href="/">Overview</a><a href="/research" aria-current="page">Research</a></nav><form id="researchAuthForm" class="toolbar"><input id="authEmail" type="email" autocomplete="username" placeholder="Email" aria-label="Account email" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password (8+ characters)" aria-label="Account password" minlength="8" required><button id="signIn" type="submit">Sign in</button><button id="signUp" type="button">Create account</button><button id="resetPassword" type="button">Forgot password?</button><button id="signOut" type="button" hidden>Sign out</button><a href="/">← Overview</a></form><div id="researchRecoveryPanel" class="toolbar hidden"><input id="newPassword" type="password" autocomplete="new-password" minlength="8" placeholder="New password (8+ characters)" aria-label="New password"><button id="saveNewPassword" type="button">Update password</button></div></header>
@@ -55,7 +56,7 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
   </div>
   <p class="footnote">Returns are NAV-only, not dividend-adjusted total returns. A missing rank change means prior-month comparison data is unavailable; it is not treated as zero.</p>
 </section>
-<div class="tabs"><button class="active" data-tab="screener">Fund Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
+<div class="tabs"><button class="active" data-tab="screener">Fund Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="compare">Compare Funds</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
 <section id="screener" class="panel">
 <div class="screener-primary-filters">
   <input id="q" type="search" placeholder="Search fund name, AMC, scheme code or ISIN">
@@ -76,11 +77,18 @@ button{cursor:pointer}button.primary{background:#17212d;color:white;border-color
     <label>Minimum observations<select id="minObservations"><option value="0">Any history</option><option value="100">100+ observations</option><option value="250">250+ observations</option><option value="500">500+ observations</option></select></label>
   </div>
 </details>
+<div id="compareSelectionBar" class="compare-selection hidden" aria-live="polite"><div><strong id="compareSelectionTitle">0 funds selected</strong><div id="compareSelectionNames" class="footnote">Select 2–10 funds to compare.</div></div><div class="toolbar"><button type="button" id="clearCompareSelection">Clear selection</button><button type="button" class="primary" id="openCompareSelection">Compare selected</button></div></div>
 <div class="footnote" id="screenerFreshness" style="margin-top:10px">Global ranking is prepared from stored NAV history. Loading the first verified research snapshot…</div>
 <div class="tablewrap"><table id="fundTable"><thead><tr>
 <th>Global rank</th><th>Category rank</th><th>Fund / Scheme</th><th>Latest NAV</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Positive months</th><th>Positive 1Y windows</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="17" class="muted">Sign in to load the global fund ranking.</td></tr></tbody></table></div>
 <div class="pagination"><span class="muted" id="pageInfo">—</span><button id="prev">Previous</button><button id="next">Next</button></div>
 <p class="footnote">Ranks are calculated across all matching stored snapshots before pagination, not just the visible page. NAV-only metrics are not distribution-adjusted total returns. Benchmark TRI and classification coverage depend on verified source integrations. Research support only—not a buy/sell recommendation.</p>
+</section>
+<section id="compare" class="panel hidden">
+<div class="detailhead"><div><div class="eyebrow">Side-by-side research</div><h2>Compare mutual funds</h2><p class="sub">Compare 2–10 schemes using their own actual stored AMFI NAV observations. Coverage dates may differ.</p></div><button type="button" id="loadSelectedCompare">Use screener selection</button></div>
+<div class="compare-controls"><label for="compareCodesResearch">AMFI scheme codes <span>Comma-separated · 2 to 10 unique codes</span></label><textarea id="compareCodesResearch" rows="2" placeholder="e.g. 120503, 119551"></textarea><div class="toolbar"><label class="compare-days-label" for="compareDaysResearch">History window</label><select id="compareDaysResearch"><option value="365">1 year</option><option value="1095">3 years</option><option value="1825" selected>5 years</option><option value="3650">10 years</option></select><button type="button" class="primary" id="runFundComparison">Compare funds</button></div></div>
+<div id="compareResearchResult" aria-live="polite"><div class="compare-empty">Choose funds from the screener or enter scheme codes above to begin.</div></div>
+<p class="footnote">Methodology: each scheme is measured from its own stored AMFI NAV observations. This comparison does not include benchmark TRI, distributions or category-peer adjustments. Different coverage dates can affect comparability.</p>
 </section>
 <section id="profile" class="panel hidden">
 <div class="toolbar"><input id="profileCode" inputmode="numeric" placeholder="Enter AMFI scheme code"><select id="profileDays"><option value="365">1 year</option><option value="1095">3 years</option><option value="1825">5 years</option><option value="3650" selected>10 years</option></select><button class="primary" id="loadProfile">Load research</button></div>

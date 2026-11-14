@@ -1,4 +1,4 @@
-const $=id=>document.getElementById(id);let session=null,page=0,limit=50,items=[],facetsLoaded=false;
+const $=id=>document.getElementById(id);let session=null,page=0,limit=50,items=[],facetsLoaded=false;const compareSelection=new Map();
 const SUPABASE_URL="https://zgfdvhzhvccsfmpoaqah.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY="sb_publishable_qShRk3J_yqTiyTzVcwYNYw_4ppeaFf8";
 
@@ -9,12 +9,12 @@ function pct(v){return v==null?"—":(Number(v)*100).toFixed(2)+"%"}
 function num(v){return v==null?"—":Number(v).toFixed(2)}
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function note(msg,error=false){$("notice").textContent=msg;$("notice").classList.toggle("error",error)}
-function activate(tab){document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["screener","profile","watchlist","overlap"].forEach(id=>$(id).classList.toggle("hidden",id!==tab));if(tab==="watchlist")loadWatchlist().catch(e=>note(e.message,true))}
+function activate(tab){document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));["screener","profile","compare","watchlist","overlap"].forEach(id=>$(id).classList.toggle("hidden",id!==tab));if(tab==="watchlist")loadWatchlist().catch(e=>note(e.message,true));if(tab==="compare")syncCompareInput()}
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>activate(b.dataset.tab));
 let loadedAuthUserId=null,authBusy=false,passwordRecoveryMode=false;
 function authValues(){const email=$("authEmail").value.trim(),password=$("authPassword").value;const at=email.indexOf("@");if(!email||email.includes(" ")||at<1||email.lastIndexOf(".")<=at+1)throw new Error("Enter a valid email address.");if(!password||password.length<8)throw new Error("Password must contain at least 8 characters.");return {email,password}}
 function setAuthBusy(busy,mode=""){authBusy=busy;["signIn","signUp","resetPassword"].forEach(id=>$(id).disabled=busy);$("signIn").textContent=busy&&mode==="signin"?"Signing in…":"Sign in";$("signUp").textContent=busy&&mode==="signup"?"Creating…":"Create account";$("resetPassword").textContent=busy&&mode==="reset"?"Sending…":"Forgot password?"}
-async function updateAuthState(nextSession){session=nextSession;const signedIn=!!session?.access_token,userId=signedIn?session.user.id:null;$("authEmail").hidden=signedIn;$("authPassword").hidden=signedIn;$("signIn").hidden=signedIn;$("signUp").hidden=signedIn;$("resetPassword").hidden=signedIn;$("signOut").hidden=!signedIn||passwordRecoveryMode;$("researchRecoveryPanel").classList.toggle("hidden",!passwordRecoveryMode);$("authStatus").textContent=signedIn?"Signed in as "+(session.user.email||"your account")+".":"Sign in to access the research workspace.";if(signedIn&&!passwordRecoveryMode&&loadedAuthUserId!==userId){loadedAuthUserId=userId;try{await Promise.all([loadFacets(),loadWatchlist()]);note("Preparing verified fund rankings from stored NAV history…");await loadScreen();await loadCategoryLeaderboards();note("Signed in. Global and category-wise fund rankings loaded.")}catch(e){note(e.message,true)}}else if(!signedIn){loadedAuthUserId=null;items=[];$("fundRows").innerHTML='<tr><td colspan="17" class="muted">Sign in to load fund research.</td></tr>';$("watchlistRows").innerHTML='<tr><td colspan="7" class="muted">Sign in to load your saved funds.</td></tr>'}}
+async function updateAuthState(nextSession){session=nextSession;const signedIn=!!session?.access_token,userId=signedIn?session.user.id:null;$("authEmail").hidden=signedIn;$("authPassword").hidden=signedIn;$("signIn").hidden=signedIn;$("signUp").hidden=signedIn;$("resetPassword").hidden=signedIn;$("signOut").hidden=!signedIn||passwordRecoveryMode;$("researchRecoveryPanel").classList.toggle("hidden",!passwordRecoveryMode);$("authStatus").textContent=signedIn?"Signed in as "+(session.user.email||"your account")+".":"Sign in to access the research workspace.";if(signedIn&&!passwordRecoveryMode&&loadedAuthUserId!==userId){loadedAuthUserId=userId;try{await Promise.all([loadFacets(),loadWatchlist()]);note("Preparing verified fund rankings from stored NAV history…");await loadScreen();await loadCategoryLeaderboards();note("Signed in. Global and category-wise fund rankings loaded.")}catch(e){note(e.message,true)}}else if(!signedIn){loadedAuthUserId=null;items=[];compareSelection.clear();updateCompareSelectionUI();$("fundRows").innerHTML='<tr><td colspan="17" class="muted">Sign in to load fund research.</td></tr>';$("watchlistRows").innerHTML='<tr><td colspan="7" class="muted">Sign in to load your saved funds.</td></tr>'}}
 $("researchAuthForm").addEventListener("submit",async event=>{event.preventDefault();if(authBusy)return;try{const {email,password}=authValues();setAuthBusy(true,"signin");note("Verifying your account…");const {data,error}=await authClient.auth.signInWithPassword({email,password});if(error)throw error;await updateAuthState(data.session)}catch(e){note(e.message||"Sign-in failed. Please try again.",true)}finally{setAuthBusy(false)}});
 $("signUp").onclick=async()=>{if(authBusy)return;try{const {email,password}=authValues();setAuthBusy(true,"signup");note("Creating your account…");const {data,error}=await authClient.auth.signUp({email,password,options:{emailRedirectTo:new URL("/",window.location.origin).toString()}});if(error)throw error;if(data.session){await updateAuthState(data.session);note("Account created and signed in.")}else note("Account request received. Check your inbox and spam folder for the confirmation link, then return to sign in.")}catch(e){note(e.message||"Account creation failed. Please try again.",true)}finally{setAuthBusy(false)}};
 $("resetPassword").onclick=async()=>{if(authBusy)return;try{const email=$("authEmail").value.trim(),at=email.indexOf("@");if(!email||email.includes(" ")||at<1||email.lastIndexOf(".")<=at+1)throw new Error("Enter a valid account email first.");setAuthBusy(true,"reset");const {error}=await authClient.auth.resetPasswordForEmail(email,{redirectTo:new URL("/research",window.location.origin).toString()});if(error)throw error;note("If an account exists for that email, a password-reset link will be sent. Check your inbox and spam folder.")}catch(e){note(e.message||"Could not start password reset.",true)}finally{setAuthBusy(false)}};
@@ -68,11 +68,55 @@ function renderRows(){
     : "";
   $("fundRows").innerHTML=items.map(x=>{
     const quality=qualityLabel(x),risk=riskLabel(x);
-    return '<tr data-code="'+x.scheme_code+'"><td><span class="rankbadge">#'+x.rank+'</span></td><td class="categoryrank">'+(x.category_rank==null?"—":"#"+x.category_rank)+'</td><td><div class="fund">'+esc(x.scheme_name)+'</div><div class="subfund">Code '+x.scheme_code+' · '+esc(x.category_group||"Group unavailable")+(x.category?' · '+esc(x.category):"")+' · '+esc(x.plan_type||"Plan unavailable")+' · '+esc(x.option_type||"Option unavailable")+quality+risk+'</div></td><td>₹'+(x.latest_nav?num(x.latest_nav):"—")+'<div class="subfund">'+esc(x.nav_date||"No NAV")+'</div></td><td class="'+(x.return_1m>=0?"positive":"negative")+'">'+pct(x.return_1m)+'</td><td class="'+(x.return_3m>=0?"positive":"negative")+'">'+pct(x.return_3m)+'</td><td class="'+(x.return_6m>=0?"positive":"negative")+'">'+pct(x.return_6m)+'</td><td class="'+(x.return_1y>=0?"positive":"negative")+'">'+pct(x.return_1y)+'</td><td class="'+(x.return_3y>=0?"positive":"negative")+'">'+pct(x.return_3y)+'</td><td class="'+(x.return_5y>=0?"positive":"negative")+'">'+pct(x.return_5y)+'</td><td>'+pct(x.cagr)+'</td><td>'+pct(x.volatility)+'</td><td>'+num(x.sharpe_ratio)+'</td><td class="negative">'+pct(x.max_drawdown)+'</td><td>'+pct(x.positive_month_rate)+'</td><td>'+pct(x.rolling_1y_positive_rate)+'</td><td><button type="button" class="view-fund" data-watch-code="'+x.scheme_code+'">+ Watch</button></td></tr>';
+    return '<tr data-code="'+x.scheme_code+'"><td><span class="rankbadge">#'+x.rank+'</span></td><td class="categoryrank">'+(x.category_rank==null?"—":"#"+x.category_rank)+'</td><td><div class="fund">'+esc(x.scheme_name)+'</div><div class="subfund">Code '+x.scheme_code+' · '+esc(x.category_group||"Group unavailable")+(x.category?' · '+esc(x.category):"")+' · '+esc(x.plan_type||"Plan unavailable")+' · '+esc(x.option_type||"Option unavailable")+quality+risk+'</div></td><td>₹'+(x.latest_nav?num(x.latest_nav):"—")+'<div class="subfund">'+esc(x.nav_date||"No NAV")+'</div></td><td class="'+(x.return_1m>=0?"positive":"negative")+'">'+pct(x.return_1m)+'</td><td class="'+(x.return_3m>=0?"positive":"negative")+'">'+pct(x.return_3m)+'</td><td class="'+(x.return_6m>=0?"positive":"negative")+'">'+pct(x.return_6m)+'</td><td class="'+(x.return_1y>=0?"positive":"negative")+'">'+pct(x.return_1y)+'</td><td class="'+(x.return_3y>=0?"positive":"negative")+'">'+pct(x.return_3y)+'</td><td class="'+(x.return_5y>=0?"positive":"negative")+'">'+pct(x.return_5y)+'</td><td>'+pct(x.cagr)+'</td><td>'+pct(x.volatility)+'</td><td>'+num(x.sharpe_ratio)+'</td><td class="negative">'+pct(x.max_drawdown)+'</td><td>'+pct(x.positive_month_rate)+'</td><td>'+pct(x.rolling_1y_positive_rate)+'</td><td><div class="row-actions"><button type="button" class="view-fund" data-watch-code="'+x.scheme_code+'">+ Watch</button><button type="button" class="compare-fund-btn '+(compareSelection.has(String(x.scheme_code))?"selected":"")+'" data-compare-code="'+x.scheme_code+'" aria-pressed="'+String(compareSelection.has(String(x.scheme_code)))+'">'+(compareSelection.has(String(x.scheme_code))?"Selected":"Compare")+'</button></div></td></tr>';
   }).join("")||'<tr><td colspan="17" class="muted">No funds match the selected filters or no verified NAV research snapshot is available.</td></tr>';
   document.querySelectorAll("#fundRows tr[data-code]").forEach(tr=>tr.onclick=()=>{activate("profile");$("profileCode").value=tr.dataset.code;loadProfile().catch(e=>note(e.message,true))});
   document.querySelectorAll("[data-watch-code]").forEach(btn=>btn.onclick=async event=>{event.stopPropagation();try{await addToWatchlist(Number(btn.dataset.watchCode))}catch(e){note(e.message,true)}});
+  document.querySelectorAll("[data-compare-code]").forEach(btn=>btn.onclick=event=>{event.stopPropagation();toggleCompareFund(btn.dataset.compareCode,items.find(x=>String(x.scheme_code)===btn.dataset.compareCode)?.scheme_name||("Scheme "+btn.dataset.compareCode))});
+  updateCompareSelectionUI();
 }
+
+function toggleCompareFund(code,name){
+  const key=String(code);
+  if(compareSelection.has(key))compareSelection.delete(key);
+  else {if(compareSelection.size>=10){note("You can compare up to 10 funds at a time.",true);return}compareSelection.set(key,name)}
+  updateCompareSelectionUI();renderRows();
+}
+function updateCompareSelectionUI(){
+  const bar=$("compareSelectionBar");if(!bar)return;
+  const count=compareSelection.size;
+  bar.classList.toggle("hidden",count===0);
+  $("compareSelectionTitle").textContent=count+" fund"+(count===1?"":"s")+" selected";
+  $("compareSelectionNames").textContent=[...compareSelection.values()].join(" · ")||"Select 2–10 funds to compare.";
+  $("openCompareSelection").disabled=count<2;
+}
+function syncCompareInput(){
+  if($("compareCodesResearch")&&compareSelection.size>=2)$("compareCodesResearch").value=[...compareSelection.keys()].join(", ");
+}
+$("clearCompareSelection").onclick=()=>{compareSelection.clear();updateCompareSelectionUI();renderRows();};
+$("openCompareSelection").onclick=()=>{syncCompareInput();activate("compare");};
+$("loadSelectedCompare").onclick=()=>{if(compareSelection.size<2){note("Select at least two funds in the screener first.",true);return}syncCompareInput();};
+function renderComparisonResult(data){
+  const results=data.results||[];
+  const columns=[["Total NAV return","total_return","pct"],["CAGR","cagr","pct"],["Annualised volatility","annualized_volatility","pct"],["Maximum drawdown","max_drawdown","pct"],["Sharpe ratio","sharpe_ratio","num"],["Sortino ratio","sortino_ratio","num"]];
+  const cells=results.map(item=>{
+    const m=item.metrics||{},ok=m.status==="OK";
+    return '<article class="compare-result-card"><div class="compare-card-head"><div><strong>'+esc(item.scheme_name)+'</strong><small>AMFI '+esc(item.scheme_code)+'</small></div><span class="tag">'+(ok?"Metrics available":"Insufficient history")+'</span></div><div class="compare-card-nav"><strong>'+(item.latest_nav==null?"—":"₹"+num(item.latest_nav))+'</strong><small>NAV as of '+esc(item.latest_nav_date||"unavailable")+' · '+esc(item.observations)+' observations</small></div><div class="compare-metrics">'+columns.map(([label,key,format])=>'<div><span>'+label+'</span><strong>'+(ok?(format==="pct"?pct(m[key]):num(m[key])):"—")+'</strong></div>').join("")+'</div></article>';
+  }).join("");
+  $("compareResearchResult").innerHTML='<div class="compare-result-grid">'+cells+'</div><div class="compare-methodology">'+esc(data.methodology||"Each fund is calculated from stored NAV observations.")+' · '+esc(data.days_requested)+' days · Risk-free assumption '+pct(data.risk_free_rate_assumption)+'</div>';
+}
+async function runFundComparison(){
+  const codes=$("compareCodesResearch").value.split(",").map(value=>value.trim()).filter(Boolean);
+  if(codes.length<2||codes.length>10||codes.some(value=>!/^\d+$/.test(value)))throw new Error("Enter 2–10 valid numeric AMFI scheme codes separated by commas.");
+  const numeric=codes.map(Number);
+  if(new Set(numeric).size!==numeric.length)throw new Error("Remove duplicate scheme codes before comparing.");
+  const button=$("runFundComparison");button.disabled=true;button.textContent="Comparing…";
+  $("compareResearchResult").innerHTML='<div class="compare-empty">Calculating each fund from stored NAV history…</div>';
+  try{const data=await api("/v1/analytics/compare",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scheme_codes:numeric,days:Number($("compareDaysResearch").value)})});renderComparisonResult(data);note("Fund comparison completed from stored AMFI NAV observations.")}
+  finally{button.disabled=false;button.textContent="Compare funds"}
+}
+$("runFundComparison").onclick=()=>runFundComparison().catch(error=>{$("compareResearchResult").innerHTML='<div class="notice error">'+esc(error.message)+'</div>';note(error.message,true)});
+
 $("runScreen").onclick=()=>{page=0;loadScreen().catch(e=>note(e.message,true))};$("prev").onclick=()=>{if(page>0){page--;loadScreen().catch(e=>note(e.message,true))}};$("next").onclick=()=>{page++;loadScreen().catch(e=>note(e.message,true))};
 $("loadProfile").onclick=()=>loadProfile().catch(e=>note(e.message,true));
 

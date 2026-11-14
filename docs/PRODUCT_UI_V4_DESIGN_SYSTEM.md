@@ -42,3 +42,13 @@ MF Terminal is a research and portfolio decision-support workspace. The interfac
 ## Change policy
 
 Before changing a workflow, inspect the existing DOM IDs, API contract, and controller. Prefer additive CSS and small controller changes. Any future API/data-model change requires its own migration, authorization review, tests, and data-quality validation. UI-only releases must not trigger NAV refreshes, taxonomy refreshes, or production data writes.
+
+
+## Research comparison workflow (v5)
+
+- Users can select 2–10 schemes from the screener and carry that selection into the Compare Funds workspace.
+- Comparison is calculated by the existing authenticated `POST /v1/analytics/compare` endpoint using stored AMFI NAV observations.
+- The UI shows NAV date and observation count for each scheme, plus total NAV return, CAGR, annualised volatility, maximum drawdown, Sharpe and Sortino when the backend reports sufficient history.
+- Insufficient metrics remain unavailable; they are never converted to zero.
+- Coverage dates may differ between schemes. The interface discloses that this is a NAV-only comparison and excludes benchmark TRI, distributions and category-peer adjustments.
+- Selections are transient browser state and are cleared on sign-out. No comparison state is persisted to another user's account.
