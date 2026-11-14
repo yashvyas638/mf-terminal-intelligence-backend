@@ -16,6 +16,13 @@ from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
 
+@pytest.fixture(autouse=True)
+def explicit_operator_test_environment(monkeypatch):
+    # Legacy API-key portfolio fixtures are permitted only in an explicit test environment.
+    # Individual production-startup tests override this value when needed.
+    monkeypatch.setenv("ENVIRONMENT", "test")
+
+
 class _RoleResult:
     def __init__(self, role):
         self.role = role
