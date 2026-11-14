@@ -149,7 +149,7 @@ let authWorkspaceRequest=0;
 function resetPrivatePortfolioWorkspace(){
  portfolioViewRequest++;loadedAuthUserId=null;
  pendingImportCsv="";pendingImportToken="";pendingImportPortfolioId="";
- $("confirmImport").disabled=true;$("portfolioId").value="";
+ $("confirmImport").disabled=true;$("addTransaction").disabled=false;$("generatePortfolioReport").disabled=false;$("generatePortfolioReport").textContent="Generate PDF report";$("transactionForm").reset();$("statementFile").value="";$("stressScenarioName").value="";$("portfolioId").value="";
  $("portfolioSelect").innerHTML='<option value="">Loading your private portfolios…</option>';
  $("importResult").textContent="Loading this account's private portfolio workspace…";
  $("rebalanceResult").textContent="Loading this account's private portfolio workspace…";
