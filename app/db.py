@@ -369,6 +369,21 @@ class SchemeBenchmarkAssignment(Base):
     )
 
 
+class ApiRateLimitBucket(Base):
+    """Shared fixed-window counters; enforcement is database-backed across app instances."""
+
+    __tablename__ = "api_rate_limit_buckets"
+    bucket_sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_start: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("length(bucket_sha256) = 64", name="ck_api_rate_limit_bucket_hash_length"),
+        CheckConstraint("request_count > 0", name="ck_api_rate_limit_request_count_positive"),
+        Index("ix_api_rate_limit_window_start", "window_start"),
+    )
+
+
 class PortfolioGoal(Base):
     """Private goal inputs and user-supplied projection assumptions."""
 

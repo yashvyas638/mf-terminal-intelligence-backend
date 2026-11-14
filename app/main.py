@@ -105,6 +105,68 @@ NAV_REFRESH_LOCK_KEY = 0x4D46544E41565246
 RESEARCH_SNAPSHOT_LOCK_KEY = 0x4D46545245534541
 
 
+API_USER_RATE_LIMIT_PER_MINUTE = int(os.getenv("API_USER_RATE_LIMIT_PER_MINUTE", "600"))
+API_OPERATOR_RATE_LIMIT_PER_MINUTE = int(os.getenv("API_OPERATOR_RATE_LIMIT_PER_MINUTE", "300"))
+if not 1 <= API_USER_RATE_LIMIT_PER_MINUTE <= 10000:
+    raise RuntimeError("API_USER_RATE_LIMIT_PER_MINUTE must be between 1 and 10000")
+if not 1 <= API_OPERATOR_RATE_LIMIT_PER_MINUTE <= 10000:
+    raise RuntimeError("API_OPERATOR_RATE_LIMIT_PER_MINUTE must be between 1 and 10000")
+
+
+def _consume_api_rate_limit(identity: str, limit: int, now: int | None = None) -> tuple[bool, int, int]:
+    """Atomically consume a shared Postgres/SQLite fixed-window quota."""
+    current_time = int(time.time()) if now is None else int(now)
+    window_start = current_time // 60
+    bucket_sha256 = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    with SessionLocal() as db:
+        request_count = db.execute(
+            text(
+                "INSERT INTO api_rate_limit_buckets "
+                "(bucket_sha256, window_start, request_count, updated_at) "
+                "VALUES (:bucket_sha256, :window_start, 1, :updated_at) "
+                "ON CONFLICT (bucket_sha256, window_start) DO UPDATE SET "
+                "request_count = api_rate_limit_buckets.request_count + 1, "
+                "updated_at = EXCLUDED.updated_at "
+                "RETURNING request_count"
+            ),
+            {
+                "bucket_sha256": bucket_sha256,
+                "window_start": window_start,
+                "updated_at": datetime.now(timezone.utc),
+            },
+        ).scalar_one()
+        # Opportunistic bounded retention cleanup; correctness never depends on this
+        # process-local schedule because counters themselves live in PostgreSQL.
+        if window_start % 15 == 0 and current_time % 60 < 5:
+            db.execute(
+                text("DELETE FROM api_rate_limit_buckets WHERE window_start < :cutoff"),
+                {"cutoff": window_start - 1440},
+            )
+        db.commit()
+    retry_after = max(1, 60 - current_time % 60)
+    return request_count <= limit, retry_after, request_count
+
+
+async def _rate_limit_response(identity: str, limit: int) -> JSONResponse | None:
+    if os.getenv("ENVIRONMENT", "").strip().lower() == "test":
+        return None
+    try:
+        allowed, retry_after, _ = await asyncio.to_thread(_consume_api_rate_limit, identity, limit)
+    except Exception:
+        logger.exception("api_rate_limit_storage_unavailable")
+        return JSONResponse(
+            {"detail": "Request protection is temporarily unavailable. Please retry."},
+            status_code=503,
+        )
+    if not allowed:
+        return JSONResponse(
+            {"detail": "Too many requests. Please wait before trying again."},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+    return None
+
+
 def _maybe_plan_historical_backfill_from_environment() -> dict[str, Any] | None:
     """Create idempotent history checkpoints only when an operator opts in via deploy env."""
     plan_enabled = os.getenv("AMFI_HISTORY_PLAN_ON_START", "").strip().lower() == "true"
@@ -600,15 +662,25 @@ _authenticated_user_id: ContextVar[str | None] = ContextVar("authenticated_user_
 
 @app.middleware("http")
 async def supabase_user_authentication(request, call_next):
-    """Validate browser sessions with Supabase Auth; never trust decoded JWT claims alone."""
+    """Validate sessions and apply database-backed quotas shared across app instances."""
     path = request.url.path
-    if not path.startswith("/v1/") or path == "/v1/nav/refresh":
+    if not path.startswith("/v1/"):
         return await call_next(request)
 
     # Retain the server-side operator key for existing trusted automation and tests.
     expected = os.getenv("API_KEY", "")
     supplied = request.headers.get("X-API-Key", "")
-    if expected and len(expected) >= 32 and supplied and secrets.compare_digest(supplied, expected):
+    operator_key_valid = bool(
+        expected and len(expected) >= 32 and supplied and secrets.compare_digest(supplied, expected)
+    )
+    if operator_key_valid:
+        limited = await _rate_limit_response("operator", API_OPERATOR_RATE_LIMIT_PER_MINUTE)
+        if limited is not None:
+            return limited
+        return await call_next(request)
+
+    # This route is intentionally operator-key-only and does not require a user session.
+    if path == "/v1/nav/refresh":
         return await call_next(request)
 
     authorization = request.headers.get("Authorization", "")
@@ -650,6 +722,9 @@ async def supabase_user_authentication(request, call_next):
     context_token = _authenticated_user_id.set(user_id)
     try:
         request.state.user_id = user_id
+        limited = await _rate_limit_response(f"user:{user_id}", API_USER_RATE_LIMIT_PER_MINUTE)
+        if limited is not None:
+            return limited
         return await call_next(request)
     finally:
         _authenticated_user_id.reset(context_token)
