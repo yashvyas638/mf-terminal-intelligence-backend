@@ -4001,7 +4001,7 @@ def create_portfolio(
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
     owner_user_id = _authenticated_user_id.get()
-    if not owner_user_id and os.getenv("ENVIRONMENT", "").lower() == "production":
+    if not owner_user_id and os.getenv("ENVIRONMENT", "").strip().lower() != "test":
         owner_user_id = require_authenticated_user()
     with SessionLocal() as db:
         portfolio = Portfolio(name=payload.name.strip(), currency=payload.currency, owner_user_id=owner_user_id or "legacy-operator", created_at=datetime.now(timezone.utc))

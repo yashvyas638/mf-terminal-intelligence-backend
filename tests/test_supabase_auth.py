@@ -74,6 +74,11 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
         headers=operator_headers,
     ).status_code == 401
     assert client.get("/v1/portfolios", headers=operator_headers).status_code == 401
+    assert client.post(
+        "/v1/portfolios",
+        headers=operator_headers,
+        json={"name": "Operator must not create a private portfolio", "currency": "INR"},
+    ).status_code == 401
 
     transaction_payload = {
         "scheme_code": scheme_code,
