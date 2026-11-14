@@ -2569,7 +2569,7 @@ def add_fund_to_watchlist(payload: WatchlistCreate) -> dict[str, Any]:
         db.add(item)
         try:
             db.commit()
-        except IntegrityError:
+        except IntegrityError as integrity_error:
             db.rollback()
             raise HTTPException(409, "This fund is already in your watchlist") from None
         return {
@@ -4105,7 +4105,7 @@ def add_portfolio_transaction(
                 ).scalar_one_or_none()
                 if prior is not None:
                     if prior.request_sha256 != request_sha256:
-                        raise HTTPException(409, "Idempotency-Key was already used with a different transaction payload")
+                        raise HTTPException(409, "Idempotency-Key was already used with a different transaction payload") from integrity_error
                     return json.loads(prior.response_json)
             raise
         return response_body
