@@ -46,7 +46,7 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
     }
 
     const apiResolvers = [];
-    let resolvePdf;
+    let resolvePdf, rejectAction;
     let createElementCalls = 0;
     const context = {
       portfolioViewRequest: 8,
@@ -62,7 +62,7 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
       },
       api: () => new Promise(resolve => apiResolvers.push(resolve)),
       fetch: () => new Promise(resolve => { resolvePdf = resolve; }),
-      startFailingAction: () => new Promise((resolve, reject) => { contextReject = reject; }),
+      startFailingAction: () => new Promise((resolve, reject) => { rejectAction = reject; }),
       recordError: error => { context.errorMessage = error.message; },
       headers: () => ({}),
       base: "https://example.test",
@@ -105,10 +105,9 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
         throw new Error("A PDF belonging to the prior account was downloaded after the account switch.");
       }
 
-      let contextReject;
       const staleError = vm.runInContext("handlePortfolioAction(startFailingAction, recordError)", context);
       context.authWorkspaceRequest = 5;
-      contextReject(new Error("prior-account request failed"));
+      rejectAction(new Error("prior-account request failed"));
       await staleError;
       if (context.errorMessage) throw new Error("A prior-account action error was shown in the current workspace.");
     })().catch(error => {
