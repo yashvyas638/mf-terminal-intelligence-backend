@@ -78,6 +78,9 @@ async function loadPortfolio(){
  const id=portfolioId();
  lastPortfolioRisk=null;lastPortfolioRiskPortfolioId=null;
  $("portfolioValuationDate").textContent="Loading valuation…";$("portfolioValuationStatus").textContent="Fetching current holdings and checking NAV freshness…";
+ ["portfolioCurrentValue","portfolioCostBasis","portfolioRealized","portfolioUnrealized","portfolioTotalGain","portfolioXirr"].forEach(key=>$(key).textContent="—");
+ $("holdingCount").textContent="Loading…";$("holdingRows").innerHTML='<tr><td colspan="8" class="muted">Loading holdings…</td></tr>';$("transactionCount").textContent="Loading…";$("transactionRows").innerHTML='<tr><td colspan="9" class="muted">Loading transaction history…</td></tr>';
+ $("allocationCoverage").textContent="Loading…";$("allocationBreakdown").innerHTML='<div class="muted">Loading priced holdings…</div>';$("lookthroughSecurities").textContent="Loading verified underlying exposures…";
  $("portfolioRiskStatus").textContent="Not calculated";$("portfolioRiskResult").textContent="Risk will be calculated for this portfolio after valuation loads.";
  $("portfolioStressResult").textContent="Calculate risk for this portfolio before applying a stress scenario.";
  $("portfolioReportHistory").innerHTML='<div class="muted">Loading saved reports…</div>';
