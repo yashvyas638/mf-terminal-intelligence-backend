@@ -80,3 +80,11 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - The core research profile remains the required source for metrics; a temporary NAV-history endpoint failure no longer prevents the profile, rolling-return tables, benchmark panel and evidence pack from rendering.
 - NAV-history unavailability is surfaced explicitly beside the chart; an empty series is not represented as a zero-return chart.
 - Profile loads show an explicit loading state and an inline error if the core research request fails.
+
+
+## Portfolio stress scenario builder (v8)
+- After fresh, comparable portfolio risk is loaded, users can assign independent shock percentages to each held scheme.
+- The global shock field acts as a convenient default and rebuilds per-scheme inputs; individual assumptions remain editable.
+- Each scheme shock is validated within -100% to +100% and passed to the existing stress endpoint.
+- Per-scheme scenario inputs are disabled when risk data is missing, stale, non-comparable or belongs to a different portfolio.
+- Scenario values are labelled as user-defined sensitivities, not forecasts or investment recommendations.
