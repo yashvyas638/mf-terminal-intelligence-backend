@@ -59,3 +59,12 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Each category leaderboard result with a real scheme code provides a Research profile action.
 - The action opens the existing Fund Research Profile and loads the exact AMFI scheme code.
 - No guessed category mapping, inferred code, or new API request contract is introduced.
+
+
+## Portfolio Lab bulk interaction and data-safety contract (v7)
+- Portfolio workspace includes in-page anchors for valuation, risk/stress, FIFO lots, reports, scheme allocation, look-through, holdings and transactions.
+- Changing/loading portfolios invalidates previously calculated risk state. Stress scenarios can only reuse risk holdings calculated for the currently selected portfolio.
+- Risk calculations are accepted as reusable stress inputs only when the API reports metrics status `OK`; unavailable/incomplete risk results clear the previous reusable snapshot.
+- Portfolio valuation is rendered first; transactions, risk, report history and verified look-through then load independently. A failure in one sub-workflow no longer prevents the other sections from loading.
+- Loading states replace stale prior-portfolio content while a new valuation is being fetched. Existing endpoints and calculations remain unchanged.
+- Shared responsive styles in `terminal-ui-v7.css` improve portfolio section navigation, touch targets, tables and mobile layouts on Overview and Research.
