@@ -66,6 +66,53 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
     assert created.status_code == 201
     portfolio_id = created.json()["id"]
 
+    transaction_payload = {
+        "scheme_code": scheme_code,
+        "transaction_type": "BUY",
+        "transaction_date": date.today().isoformat(),
+        "units": "1",
+        "nav": "10",
+        "amount": "10",
+        "charges": "0",
+    }
+    own_transaction = client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        headers=user_a_headers,
+        json=transaction_payload,
+    )
+    assert own_transaction.status_code == 201
+    transaction_id = own_transaction.json()["id"]
+
+    # Cross-account write, import preview, stress and ledger actions must be denied.
+    assert client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions",
+        headers=user_b_headers,
+        json=transaction_payload,
+    ).status_code == 404
+    csv_text = (
+        "date,scheme_code,type,units,nav,amount\\n"
+        + f"{date.today().isoformat()},{scheme_code},BUY,1,10,10"
+    )
+    assert client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions/import/preview",
+        headers=user_b_headers,
+        json={"csv_text": csv_text},
+    ).status_code == 404
+    assert client.post(
+        f"/v1/portfolios/{portfolio_id}/stress",
+        headers=user_b_headers,
+        json={"scenario_name": "cross-account attempt", "shocks": [{"scheme_code": scheme_code, "shock_pct": "-10"}]},
+    ).status_code == 404
+    assert client.post(
+        f"/v1/portfolios/{portfolio_id}/transactions/{transaction_id}/void",
+        headers=user_b_headers,
+        json={"reason": "cross-account void attempt"},
+    ).status_code == 404
+    assert client.get(
+        f"/v1/portfolios/{portfolio_id}/transactions/{transaction_id}/audit",
+        headers=user_b_headers,
+    ).status_code == 404
+
     # A different authenticated user cannot generate a report for this portfolio.
     denied_report_create = client.post(
         f"/v1/portfolios/{portfolio_id}/reports",
