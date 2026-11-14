@@ -255,3 +255,63 @@ def test_invalid_supabase_session_is_rejected(monkeypatch):
         headers={"Authorization": "Bearer invalid-token"},
     )
     assert response.status_code == 401
+
+
+def test_supabase_session_revocation_is_checked_on_every_request(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    active = {"value": True}
+    user_id = str(uuid4())
+
+    def verify_user(url, headers, timeout):
+        if not active["value"]:
+            return SimpleNamespace(status_code=401, json=lambda: {})
+        return SimpleNamespace(status_code=200, json=lambda: {"id": user_id})
+
+    monkeypatch.setattr(main.requests, "get", verify_user)
+    client = TestClient(main.app)
+    headers = {"Authorization": "Bearer revocable-session-token"}
+
+    first = client.get("/v1/portfolios", headers=headers)
+    assert first.status_code == 200
+    assert first.json()["count"] == 0
+
+    # Simulate server-side session revocation between two otherwise identical requests.
+    active["value"] = False
+    revoked = client.get("/v1/portfolios", headers=headers)
+    assert revoked.status_code == 401
+    assert "expired" in revoked.json()["detail"].lower()
+
+
+def test_supabase_auth_verification_outage_fails_closed(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+
+    def unavailable(*args, **kwargs):
+        raise main.requests.Timeout("synthetic auth provider timeout")
+
+    monkeypatch.setattr(main.requests, "get", unavailable)
+    response = TestClient(main.app).get(
+        "/v1/portfolios",
+        headers={"Authorization": "Bearer valid-looking-but-unverified-token"},
+    )
+    assert response.status_code == 503
+    assert "temporarily unavailable" in response.json()["detail"].lower()
+
+
+def test_supabase_auth_response_without_user_id_is_rejected(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    monkeypatch.setattr(
+        main.requests,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(status_code=200, json=lambda: {"id": ""}),
+    )
+    response = TestClient(main.app).get(
+        "/v1/portfolios",
+        headers={"Authorization": "Bearer malformed-auth-response-token"},
+    )
+    assert response.status_code == 401
+    assert "verify your account" in response.json()["detail"].lower()
