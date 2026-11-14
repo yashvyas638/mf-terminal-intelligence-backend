@@ -1,11 +1,11 @@
 """Deny direct Supabase client access to private user tables.
 
-Revision ID: 0027_private_table_client_denials
+Revision ID: 0027_private_access
 Revises: 0026_api_rate_limit_buckets
 """
 from alembic import op
 
-revision = "0027_private_table_client_denials"
+revision = "0027_private_access"
 down_revision = "0026_api_rate_limit_buckets"
 branch_labels = None
 depends_on = None
