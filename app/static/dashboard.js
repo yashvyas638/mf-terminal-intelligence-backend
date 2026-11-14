@@ -56,9 +56,9 @@ async function loadPortfolioRisk(){
  const id=portfolioId();lastPortfolioRisk=null;lastPortfolioRiskPortfolioId=null;
  $("portfolioRiskStatus").textContent="Calculating…";$("portfolioRiskResult").textContent="Loading stored NAV observations for this portfolio…";
  const d=await api("/v1/portfolios/"+id+"/risk?days="+$("portfolioRiskDays").value);
- if(!d.metrics||d.metrics.status!=="OK"){
+ if(!d.metrics||d.metrics.status!=="OK"||d.status==="STALE_NAV"){
   $("portfolioRiskStatus").textContent=d.status||"Unavailable";
-  $("portfolioRiskResult").textContent=d.note||("Risk metrics unavailable: "+(d.status||"insufficient data"));
+  $("portfolioRiskResult").textContent=d.note||("Risk metrics unavailable or stale: "+(d.status||"insufficient data"));
   return d;
  }
  lastPortfolioRisk=d;lastPortfolioRiskPortfolioId=id;
