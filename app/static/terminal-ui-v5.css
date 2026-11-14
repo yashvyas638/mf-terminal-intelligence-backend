@@ -1,0 +1,43 @@
+/* Research comparison workspace v5 */
+.compare-selection{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin:13px 0;padding:13px 15px;border:1px solid #cfe0f5;border-radius:13px;background:linear-gradient(110deg,#f1f6ff,#fff)}
+.compare-selection strong{font-size:12px;color:#1e477e}
+.compare-selection .footnote{margin:4px 0 0;max-width:760px;overflow-wrap:anywhere}
+.row-actions{display:flex;gap:6px;align-items:center}
+.row-actions button{white-space:nowrap}
+.compare-fund-btn{border:1px solid #d8e2ef!important;background:#fff!important;color:#51647c!important;padding:7px 9px!important;font-size:10px!important;min-height:31px!important}
+.compare-fund-btn.selected{border-color:#a9c7ee!important;background:#edf4ff!important;color:#1c559c!important}
+.compare-controls{margin-top:17px;padding:16px;border:1px solid var(--mt-line);border-radius:13px;background:#f8fafd}
+.compare-controls>label{display:block;font-size:11px;font-weight:800;color:#334a68;margin-bottom:8px}
+.compare-controls>label span{font-weight:500;color:#8290a3;margin-left:6px}
+.compare-controls textarea{display:block;width:100%;resize:vertical;min-height:66px;padding:11px 12px;border:1px solid var(--mt-line-strong);border-radius:10px;background:#fff;color:var(--mt-ink);font:inherit}
+.compare-controls .toolbar{align-items:center;margin-top:10px}
+.compare-days-label{font-size:11px;font-weight:700;color:#60728a}
+.compare-controls select{min-width:120px}
+.compare-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:15px}
+.compare-result-card{min-width:0;padding:16px;border:1px solid var(--mt-line);border-radius:14px;background:#fff;box-shadow:var(--mt-shadow-sm)}
+.compare-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.compare-card-head strong{display:block;color:var(--mt-ink);font-size:12px;line-height:1.5}
+.compare-card-head small{display:block;margin-top:3px;color:var(--mt-muted);font-size:10px}
+.compare-card-head .tag{flex:0 0 auto}
+.compare-card-nav{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:15px 0 12px;padding-bottom:11px;border-bottom:1px solid var(--mt-line)}
+.compare-card-nav strong{font-size:19px;letter-spacing:-.04em;color:var(--mt-ink);font-variant-numeric:tabular-nums}
+.compare-card-nav small{font-size:10px;color:var(--mt-muted);text-align:right}
+.compare-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.compare-metrics>div{min-width:0;padding:9px;background:#f7f9fc;border-radius:9px}
+.compare-metrics span{display:block;font-size:9px;line-height:1.35;color:#74839a}
+.compare-metrics strong{display:block;margin-top:5px;font-size:13px;color:#253b58;font-variant-numeric:tabular-nums}
+.compare-methodology{margin-top:13px;padding:11px 13px;border:1px solid var(--mt-line);border-radius:10px;background:#fbfcfe;color:var(--mt-muted);font-size:10px;line-height:1.6}
+.compare-empty{margin-top:14px;padding:23px;border:1px dashed var(--mt-line-strong);border-radius:12px;background:#fbfcfe;text-align:center;color:var(--mt-muted);font-size:12px}
+#compare .detailhead h2{margin:4px 0}
+#compare .detailhead .sub{max-width:700px;line-height:1.6}
+#compare .footnote{line-height:1.6}
+@media(max-width:720px){
+ .compare-result-grid{grid-template-columns:1fr}
+ .compare-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .compare-card-nav{align-items:flex-start;flex-direction:column}
+ .compare-card-nav small{text-align:left}
+ .row-actions{flex-direction:column;align-items:stretch}
+ .compare-selection{align-items:stretch}
+ .compare-selection>.toolbar{width:100%}
+ .compare-selection>.toolbar button{flex:1}
+}
