@@ -37,7 +37,9 @@ def test_portfolio_detail_responses_are_bound_to_the_authenticated_account():
       if (!elements.has(id)) {
         elements.set(id, {
           id, value: "77", innerHTML: "PRIVATE-USER-A", textContent: "PRIVATE-USER-A",
-          disabled: false,
+          disabled: id === "addTransaction" || id === "generatePortfolioReport",
+          resetCalled: false,
+          reset() { this.resetCalled = true; },
         });
       }
       return elements.get(id);
@@ -89,6 +91,8 @@ def test_portfolio_detail_responses_are_bound_to_the_authenticated_account():
       }
       if (context.portfolioViewRequest !== 9) throw new Error("Account reset did not invalidate pending portfolio-view requests.");
       if (context.lastPortfolioRisk !== null) throw new Error("Account reset retained prior-user risk data.");
+      if (!$("transactionForm").resetCalled || $("statementFile").value !== "" || $("stressScenarioName").value !== "") throw new Error("Account reset retained prior-account form inputs.");
+      if ($("addTransaction").disabled || $("generatePortfolioReport").disabled) throw new Error("Account reset left a private action button disabled.");
     })().catch(error => {
       console.error(error);
       process.exitCode = 1;
