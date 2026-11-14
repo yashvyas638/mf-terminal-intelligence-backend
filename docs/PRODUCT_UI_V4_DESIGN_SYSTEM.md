@@ -88,3 +88,12 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Each scheme shock is validated within -100% to +100% and passed to the existing stress endpoint.
 - Per-scheme scenario inputs are disabled when risk data is missing, stale, non-comparable or belongs to a different portfolio.
 - Scenario values are labelled as user-defined sensitivities, not forecasts or investment recommendations.
+
+
+## v8 — PowerUp-inspired premium visual system
+
+- Added `app/static/terminal-ui-v8.css`, loaded by both Overview and Research.
+- Unifies the Overview shell and Research masthead with a restrained navy/blue fintech visual language, stronger hierarchy, premium market-pulse cards, consistent controls, and responsive layouts.
+- Refines category leader cards, sticky research tabs, profile metric grids, comparison cards, portfolio shell and mobile navigation.
+- Presentation-only: no API, database, authentication, NAV ingestion, ranking, metric or portfolio calculation changes.
+- Validation: dashboard and research JavaScript syntax checks pass; duplicate static HTML IDs absent; dashboard's only unresolved static JS reference is the existing dynamically inserted `ccCreateFirst` empty-state action; CSS braces balanced.
