@@ -133,7 +133,7 @@ function rankMovement(value){
   return '<span class="rankmove">— 0</span>';
 }
 function renderLeaderboardCard(group,data){
-  const renderFunds=rows=>(rows||[]).map((x,i)=>'<div class="leaderfund"><strong><span class="categoryrank">#'+(x.category_rank||i+1)+'</span> '+esc(x.scheme_name)+'</strong><small>'+esc(x.option_type||"")+'</small><div><span class="leaderreturn">'+pct(x.monthly_return)+'</span>'+rankMovement(x.rank_change)+'</div></div>').join("");
+  const renderFunds=rows=>(rows||[]).map((x,i)=>'<div class="leaderfund"><strong><span class="categoryrank">#'+(x.category_rank||i+1)+'</span> '+esc(x.scheme_name)+'</strong><small>'+esc(x.option_type||"")+'</small><div><span class="leaderreturn">'+pct(x.monthly_return)+'</span>'+rankMovement(x.rank_change)+'</div><div class="leaderfund-actions">'+(x.scheme_code?'<button type="button" data-leader-code="'+x.scheme_code+'">Research profile</button>':"")+'</div></div>').join("");
   const categories=data?.categories||[];
   if(categories.length){
     return categories.map(category=>{
@@ -154,6 +154,10 @@ async function loadCategoryLeaderboards(){
     catch(error){return {group,error}}
   }));
   $("leaderboardCards").innerHTML=results.map(x=>renderLeaderboardCard(x.group,x.data)).join("");
+  document.querySelectorAll("[data-leader-code]").forEach(button=>button.onclick=()=>{
+    activate("profile");$("profileCode").value=button.dataset.leaderCode;
+    loadProfile().catch(error=>note(error.message,true));
+  });
   const first=results.find(x=>x.data)?.data;
   const errors=results.filter(x=>x.error);
   const subcategoryCount=results.reduce((total,item)=>total+(item.data?.category_count||0),0);

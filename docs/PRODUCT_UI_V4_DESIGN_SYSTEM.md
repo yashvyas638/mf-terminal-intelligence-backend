@@ -52,3 +52,10 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Insufficient metrics remain unavailable; they are never converted to zero.
 - Coverage dates may differ between schemes. The interface discloses that this is a NAV-only comparison and excludes benchmark TRI, distributions and category-peer adjustments.
 - Selections are transient browser state and are cleared on sign-out. No comparison state is persisted to another user's account.
+
+
+## Category leader drilldown (v6)
+
+- Each category leaderboard result with a real scheme code provides a Research profile action.
+- The action opens the existing Fund Research Profile and loads the exact AMFI scheme code.
+- No guessed category mapping, inferred code, or new API request contract is introduced.
