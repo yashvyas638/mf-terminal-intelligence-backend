@@ -34,7 +34,6 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.db import (
     BenchmarkIndex,
-    ApiRateLimitBucket,
     BenchmarkObservation,
     BenchmarkObservationRevision,
     FundHolding,
