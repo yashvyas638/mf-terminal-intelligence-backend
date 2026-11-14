@@ -66,6 +66,14 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
     assert created.status_code == 201
     portfolio_id = created.json()["id"]
 
+    # A valid shared operator key must not become a wildcard owner when ENVIRONMENT is unset.
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    operator_headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    assert client.get(
+        f"/v1/portfolios/{portfolio_id}/valuation",
+        headers=operator_headers,
+    ).status_code == 401
+
     transaction_payload = {
         "scheme_code": scheme_code,
         "transaction_type": "BUY",
