@@ -321,3 +321,47 @@ def test_supabase_auth_response_without_user_id_is_rejected(monkeypatch):
     )
     assert response.status_code == 401
     assert "verify your account" in response.json()["detail"].lower()
+
+
+
+def test_private_api_route_matrix_rejects_requests_without_a_personal_session(monkeypatch):
+    """Every private API namespace must pass the shared Supabase session gate."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+
+    client = TestClient(main.app)
+    protected_requests = [
+        ("GET", "/v1/portfolios"),
+        ("POST", "/v1/portfolios"),
+        ("GET", "/v1/portfolios/1/valuation"),
+        ("GET", "/v1/portfolios/1/transactions"),
+        ("POST", "/v1/portfolios/1/transactions"),
+        ("POST", "/v1/portfolios/1/transactions/import/preview"),
+        ("POST", "/v1/portfolios/1/transactions/1/void"),
+        ("GET", "/v1/portfolios/1/transactions/1/audit"),
+        ("GET", "/v1/portfolios/1/tax-lots"),
+        ("GET", "/v1/portfolios/1/risk"),
+        ("POST", "/v1/portfolios/1/stress"),
+        ("POST", "/v1/portfolios/1/rebalance/preview"),
+        ("GET", "/v1/portfolios/1/reports"),
+        ("POST", "/v1/portfolios/1/reports"),
+        ("GET", "/v1/reports/1"),
+        ("GET", "/v1/reports/1/pdf"),
+        ("GET", "/v1/watchlist"),
+        ("POST", "/v1/watchlist"),
+        ("DELETE", "/v1/watchlist/123"),
+        ("GET", "/v1/goals"),
+        ("POST", "/v1/goals"),
+        ("PUT", "/v1/goals/1"),
+        ("DELETE", "/v1/goals/1"),
+        ("GET", "/v1/goals/1/projection"),
+    ]
+
+    for method, path in protected_requests:
+        response = client.request(method, path)
+        assert response.status_code == 401, (
+            f"{method} {path} bypassed the personal-session gate: "
+            f"{response.status_code} {response.text}"
+        )
