@@ -81,6 +81,7 @@ def test_research_account_switch_discards_late_a_b_a_responses():
     const authClient = {
       auth: {
         getSession: () => new Promise(() => {}),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
       },
     };
     const context = {
