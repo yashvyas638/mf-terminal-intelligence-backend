@@ -73,6 +73,7 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
         f"/v1/portfolios/{portfolio_id}/valuation",
         headers=operator_headers,
     ).status_code == 401
+    assert client.get("/v1/portfolios", headers=operator_headers).status_code == 401
 
     transaction_payload = {
         "scheme_code": scheme_code,
