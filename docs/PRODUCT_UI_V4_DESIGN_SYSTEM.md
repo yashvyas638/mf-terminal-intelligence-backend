@@ -68,3 +68,9 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Portfolio valuation is rendered first; transactions, risk, report history and verified look-through then load independently. A failure in one sub-workflow no longer prevents the other sections from loading.
 - Loading states replace stale prior-portfolio content while a new valuation is being fetched. Existing endpoints and calculations remain unchanged.
 - Shared responsive styles in `terminal-ui-v7.css` improve portfolio section navigation, touch targets, tables and mobile layouts on Overview and Research.
+
+
+## Research taxonomy density (v7)
+- Keep the top-level asset/scheme group shortcuts visible and easy to scan.
+- Place the longer sub-category list behind a native disclosure control with an explicit count, preserving all facet-backed options without flooding the initial viewport.
+- Quick filters retain button semantics and `aria-pressed` state; selecting a sub-category updates the existing screener query only.
