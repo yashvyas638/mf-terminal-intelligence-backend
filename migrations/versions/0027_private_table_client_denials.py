@@ -11,14 +11,11 @@ branch_labels = None
 depends_on = None
 
 PRIVATE_TABLES = (
-    "portfolios",
-    "portfolio_transactions",
-    "portfolio_transaction_audit",
-    "portfolio_import_batches",
     "portfolio_transaction_idempotency",
     "portfolio_goals",
     "portfolio_report_snapshots",
     "fund_watchlist_items",
+    "api_rate_limit_buckets",
 )
 
 
