@@ -4016,13 +4016,13 @@ def list_portfolios(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
-    user_id = _authenticated_user_id.get()
-    if not user_id and os.getenv("ENVIRONMENT", "").lower() == "production":
-        user_id = require_authenticated_user()
+    user_id = require_authenticated_user()
     with SessionLocal() as db:
-        portfolio_query = select(Portfolio).order_by(Portfolio.created_at.desc())
-        if user_id:
-            portfolio_query = portfolio_query.where(Portfolio.owner_user_id == user_id)
+        portfolio_query = (
+            select(Portfolio)
+            .where(Portfolio.owner_user_id == user_id)
+            .order_by(Portfolio.created_at.desc())
+        )
         rows = db.execute(portfolio_query).scalars().all()
         return {"count": len(rows), "items": [{"id": p.id, "name": p.name, "currency": p.currency, "created_at": p.created_at.isoformat()} for p in rows]}
 
