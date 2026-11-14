@@ -4300,10 +4300,12 @@ def transaction_audit_history(
     """Return the immutable audit history for one portfolio transaction."""
     require_api_key(x_api_key)
     with SessionLocal() as db:
+        # Authorize the portfolio before looking up transaction IDs. Otherwise a caller
+        # could distinguish existing from nonexistent IDs in another user's portfolio.
+        _require_portfolio_owner(db, portfolio_id)
         transaction = db.get(PortfolioTransaction, transaction_id)
         if transaction is None or transaction.portfolio_id != portfolio_id:
             raise HTTPException(404, "Portfolio transaction not found")
-        _require_portfolio_owner(db, portfolio_id)
         events = db.execute(
             select(PortfolioTransactionAudit)
             .where(PortfolioTransactionAudit.transaction_id == transaction_id)

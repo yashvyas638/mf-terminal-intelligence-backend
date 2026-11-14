@@ -2094,3 +2094,22 @@ def test_refresh_wrapper_preserves_cross_instance_in_progress_status(monkeypatch
         "status": "in_progress",
         "reason": "another_instance_refreshing",
     }
+
+
+def test_transaction_audit_checks_portfolio_ownership_before_transaction_lookup(monkeypatch):
+    """A private portfolio's transaction IDs must not be enumerable by another user."""
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+
+    def reject_owner(_db, _portfolio_id):
+        raise main.HTTPException(status_code=401, detail="personal session required")
+
+    monkeypatch.setattr(main, "_require_portfolio_owner", reject_owner)
+    client = TestClient(app)
+    response = client.get(
+        "/v1/portfolios/987654321/transactions/987654321/audit",
+        headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "personal session required"
