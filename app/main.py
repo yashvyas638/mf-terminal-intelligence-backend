@@ -2569,7 +2569,7 @@ def add_fund_to_watchlist(payload: WatchlistCreate) -> dict[str, Any]:
         db.add(item)
         try:
             db.commit()
-        except IntegrityError as integrity_error:
+        except IntegrityError:
             db.rollback()
             raise HTTPException(409, "This fund is already in your watchlist") from None
         return {
@@ -4094,7 +4094,7 @@ def add_portfolio_transaction(
         )
         try:
             db.commit()
-        except IntegrityError:
+        except IntegrityError as integrity_error:
             db.rollback()
             if idempotency_key is not None:
                 prior = db.execute(
