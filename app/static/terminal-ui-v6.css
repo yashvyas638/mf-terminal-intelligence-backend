@@ -1,0 +1,6 @@
+/* Category leader drilldown v6 */
+.leaderfund{position:relative}
+.leaderfund-actions{display:flex;justify-content:flex-end;margin-top:6px}
+.leaderfund-actions button{min-height:27px!important;padding:5px 8px!important;border:1px solid #dbe6f3!important;border-radius:7px!important;background:#f8fbff!important;color:#315d96!important;font-size:9px!important;font-weight:750!important}
+.leaderfund-actions button:hover{border-color:#b7cde8!important;background:#edf4ff!important}
+.leaderfund strong{overflow-wrap:anywhere}

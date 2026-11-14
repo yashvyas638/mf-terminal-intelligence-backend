@@ -2,12 +2,21 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-AMFI_NAV_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
+from app.fund_taxonomy import classify_amfi_category as _classify_amfi_category
+
+# Use AMFI's portal host directly. The www host has historically redirected and
+# can return a non-feed response to automated clients.
+AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
+
+
+class ConflictingDuplicateNavError(ValueError):
+    """Raised when one feed assigns different NAVs to the same scheme/date."""
 
 
 @dataclass(frozen=True)
@@ -18,6 +27,14 @@ class NavRecord:
     scheme_name: str
     nav: Decimal
     nav_date: date
+    plan_type: str | None = None
+    option_type: str | None = None
+    amc: str | None = None
+    structure: str | None = None
+    category_group: str | None = None
+    category: str | None = None
+    asset_class: str | None = None
+    metadata_present: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -28,36 +45,96 @@ class NavRecord:
 
 def _clean(value: str | None) -> str | None:
     value = (value or "").strip()
-    return value or None
+    # AMFI uses a literal hyphen when an ISIN is unavailable.
+    return None if not value or value == "-" else value
 
 
 def parse_amfi_nav_text(payload: str) -> tuple[list[NavRecord], dict[str, Any]]:
+    if not isinstance(payload, str) or not payload.strip():
+        raise ValueError("AMFI response is empty")
+    if len(payload) > 30_000_000:
+        raise ValueError("AMFI response exceeds the 30 MB safety limit")
+    prefix = payload.lstrip("\ufeff \t\r\n")[:512].lower()
+    if "<html" in prefix or prefix.startswith("<!doctype"):
+        raise ValueError("AMFI endpoint returned HTML instead of the NAV text feed")
     records: list[NavRecord] = []
     issues: list[dict[str, Any]] = []
-    seen: set[tuple[int, date]] = set()
+    seen: dict[tuple[int, date], Decimal] = {}
     lines = payload.lstrip("\ufeff").splitlines()
     data_lines = 0
+    current_amc: str | None = None
+    current_structure: str | None = None
+    current_category_group: str | None = None
+    current_category: str | None = None
+    current_asset_class: str | None = None
+    metadata_present = False
     for line_number, raw_line in enumerate(lines, start=1):
         line = raw_line.strip()
-        if not line or line.startswith(("Scheme Code", "Open Ended Schemes", "Close Ended Schemes", "Interval Fund")):
+        if not line:
+            continue
+        if line.casefold().startswith("scheme code;"):
+            continue
+        section_text = line.rstrip(";").strip()
+        section = re.match(r"^(Open|Close|Interval)\s+Ended\s+Schemes?\s*\((.*?)\)\s*$", section_text, re.IGNORECASE)
+        if section:
+            current_structure = {"open": "Open Ended", "close": "Close Ended", "interval": "Interval"}[section.group(1).casefold()]
+            current_category_group, current_category, current_asset_class = _classify_amfi_category(section.group(2))
+            metadata_present = True
+            continue
+        if ";" not in line:
+            if re.search(r"\b(schemes|funds|etfs)\b", line, re.IGNORECASE):
+                group, sub, asset = _classify_amfi_category(line)
+                if group:
+                    current_category_group, current_category, current_asset_class = group, sub, asset
+                    metadata_present = True
+                else:
+                    current_category_group, current_category, current_asset_class = None, None, None
+                    metadata_present = True
+                # An unrecognized section heading must never become an AMC name.
+                continue
+            # AMFI AMC headers are plain text, usually ending in "Mutual Fund".
+            if not line.startswith(("(", "<")) and len(line) <= 200:
+                current_amc = line
             continue
         parts = [part.strip() for part in line.split(";")]
         if len(parts) < 6:
+            if parts[0] and parts[0][0].isdigit():
+                data_lines += 1
+                issues.append({"line": line_number, "type": "invalid_nav_row", "detail": "expected at least six semicolon-delimited fields"})
             continue
         data_lines += 1
         try:
             code = int(parts[0])
-            name = parts[3]
-            nav = Decimal(parts[4].replace(",", ""))
-            nav_date = datetime.strptime(parts[5], "%d-%b-%Y").date()
+            if len(parts) >= 8:
+                plan, option = parts[4], parts[5]
+                name = " - ".join(part for part in (parts[3], plan, option) if part)
+                nav_value, date_value = parts[6], parts[7]
+            else:
+                name = parts[3]
+                nav_value, date_value = parts[4], parts[5]
+            nav = Decimal(nav_value.replace(",", ""))
+            nav_date = datetime.strptime(date_value, "%d-%b-%Y").date()
             if code <= 0 or not name or not nav.is_finite() or nav <= 0:
                 raise ValueError("scheme code, name, and NAV must be valid and NAV must be positive")
+            if nav_date > date.today():
+                raise ValueError("NAV date cannot be in the future")
             key = (code, nav_date)
             if key in seen:
+                if seen[key] != nav:
+                    raise ConflictingDuplicateNavError(f"conflicting duplicate NAV for scheme {code} on {nav_date.isoformat()}")
                 issues.append({"line": line_number, "type": "duplicate_scheme_date", "scheme_code": code, "date": nav_date.isoformat()})
                 continue
-            seen.add(key)
-            records.append(NavRecord(code, _clean(parts[1]), _clean(parts[2]), name, nav, nav_date))
+            seen[key] = nav
+            plan_type = _clean(parts[4]) if len(parts) >= 8 else None
+            option_type = _clean(parts[5]) if len(parts) >= 8 else None
+            records.append(NavRecord(
+                code, _clean(parts[1]), _clean(parts[2]), name, nav, nav_date,
+                plan_type, option_type, current_amc, current_structure,
+                current_category_group, current_category, current_asset_class,
+                metadata_present,
+            ))
+        except ConflictingDuplicateNavError:
+            raise
         except (ValueError, InvalidOperation, IndexError) as exc:
             issues.append({"line": line_number, "type": "invalid_nav_row", "detail": str(exc)[:180]})
     if not records:

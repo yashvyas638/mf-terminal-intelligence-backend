@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MF Terminal · Fund Research</title>
+<style>
+:root{color-scheme:light;--bg:#f4f6fa;--panel:#fff;--line:#e5eaf0;--muted:#687585;--text:#17212d;--blue:#2563bd;--green:#18794e;--red:#b42318;--amber:#9a5b13}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:#fff;border-bottom:1px solid var(--line);padding:18px max(18px,calc((100vw - 1440px)/2));display:flex;align-items:center;justify-content:space-between;gap:18px;position:sticky;top:0;z-index:5}
+.brand{font-weight:800;letter-spacing:.3px}.brand small{display:block;font-size:10px;color:var(--muted);letter-spacing:1.8px;margin-top:3px}
+a{color:var(--blue);text-decoration:none}.wrap{max-width:1440px;margin:auto;padding:24px 20px 60px}
+h1{font-size:27px;margin:5px 0}.sub,.muted{color:var(--muted)}.eyebrow{font-size:11px;font-weight:750;letter-spacing:1.6px;color:var(--blue);text-transform:uppercase}
+button,input,select{font:inherit;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:#fff;color:var(--text)}
+button{cursor:pointer}button.primary{background:#17212d;color:white;border-color:#17212d}
+.toolbar{display:flex;gap:9px;flex-wrap:wrap}.toolbar input[type=search]{flex:1;min-width:220px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:16px;min-width:0}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tabs button.active{background:#e8f1ff;border-color:#b9d2f5;color:#174d91}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{border:1px solid var(--line);border-radius:12px;padding:14px}.stat label{color:var(--muted);font-size:12px}.stat strong{display:block;font-size:23px;margin:8px 0 3px;font-variant-numeric:tabular-nums}.stat small{color:var(--muted)}
+.tablewrap{overflow:auto;margin-top:14px}table{border-collapse:separate;border-spacing:0;width:100%;min-width:1080px}th,td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}th{font-size:11px;color:var(--muted);position:sticky;top:0;background:#fff;cursor:pointer}td{font-size:12px}th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:#fff;min-width:290px;max-width:340px;white-space:normal}tbody tr:hover td{background:#f7faff}tbody tr:hover td:first-child{background:#f7faff}.fund{font-weight:700;color:#1d2939}.subfund{font-size:11px;color:var(--muted);margin-top:4px}.positive{color:var(--green)}.negative{color:var(--red)}.neutral{color:var(--muted)}
+.notice{background:#fff8e8;border:1px solid #f0d8a8;color:#785117;padding:12px 14px;border-radius:11px;line-height:1.5;font-size:12px;margin-top:14px}
+.detailhead{display:flex;justify-content:space-between;gap:15px;align-items:flex-start}.detailhead h2{margin:3px 0 8px;font-size:21px}.tag{display:inline-block;background:#eef4fb;color:#385d8a;border-radius:30px;padding:5px 9px;font-size:11px;margin:2px}
+.chart{width:100%;height:230px;border:1px solid var(--line);border-radius:12px;padding:8px}.chart svg{width:100%;height:100%}.twocol{display:grid;grid-template-columns:1.2fr 1fr;gap:14px}.metriclist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metricrow{padding:12px;border:1px solid var(--line);border-radius:10px}.metricrow span{display:block;color:var(--muted);font-size:11px}.metricrow strong{display:block;margin-top:6px;font-size:18px}
+.hidden{display:none!important}.error{color:var(--red)}.footnote{font-size:11px;line-height:1.6;color:var(--muted)}.view-fund{background:#e8f1ff;border-color:#b9d2f5;color:#174d91;font-weight:700;white-space:nowrap;padding:7px 10px}.view-fund:hover{background:#d8e8ff}#fundRows tr{cursor:default}#fundRows tr td:last-child{min-width:120px}.pagination{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:14px}
+.leaderhead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}.leaderhead h2{font-size:18px;margin:3px 0}.leadercontrols{display:flex;gap:8px;flex-wrap:wrap}.leadergrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin-top:14px}.leadercard{border:1px solid var(--line);border-radius:13px;padding:13px;background:linear-gradient(155deg,#fff,#f8faff);min-width:0}.leadercard h3{font-size:13px;margin:0 0 3px}.leadercard .groupmeta{font-size:10px;color:var(--muted);margin-bottom:10px}.leaderfund{padding:9px 0;border-top:1px solid var(--line)}.leaderfund:first-of-type{border-top:0}.leaderfund strong{display:block;font-size:11px;line-height:1.4}.leaderfund small{display:block;color:var(--muted);font-size:10px;margin-top:3px}.leaderreturn{font-weight:800;color:var(--green);font-variant-numeric:tabular-nums}.rankmove{font-size:10px;color:var(--muted);margin-left:5px}.rankmove.up{color:var(--green)}.rankmove.down{color:var(--red)}.leader-empty{color:var(--muted);font-size:11px;line-height:1.5}.rankbadge{display:inline-flex;align-items:center;justify-content:center;border-radius:7px;background:#edf3fb;color:#315b90;padding:4px 7px;font-weight:750;font-size:11px}.categoryrank{font-weight:750;color:#315b90}.tablewrap table{min-width:1450px}
+@media(max-width:1100px){.leadergrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.leadergrid{grid-template-columns:repeat(2,minmax(0,1fr))}.leaderhead{align-items:flex-start}}
+@media(max-width:420px){.leadergrid{grid-template-columns:1fr}}
+
+@media(max-width:850px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.twocol{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
+@media(max-width:560px){.wrap{padding:18px 12px 42px}h1{font-size:23px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat strong{font-size:19px}.panel{padding:13px}.toolbar input[type=search]{min-width:100%}}
+</style>
+<link rel="stylesheet" href="/static/product-redesign.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v3.css?v=3">
+<link rel="stylesheet" href="/static/terminal-ui-v4.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v5.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v6.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v7.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v8.css?v=1">
+<link rel="stylesheet" href="/static/terminal-ui-v9.css?v=1">
+</head>
+<body>
+<header><div class="brand">MF TERMINAL<small>FUND RESEARCH WORKSPACE</small></div><nav class="research-nav" aria-label="Workspace"><a href="/">Overview</a><a href="/research" aria-current="page">Research</a></nav><form id="researchAuthForm" class="toolbar"><input id="authEmail" type="email" autocomplete="username" placeholder="Email" aria-label="Account email" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password (8+ characters)" aria-label="Account password" minlength="8" required><button id="signIn" type="submit">Sign in</button><button id="signUp" type="button">Create account</button><button id="resetPassword" type="button">Forgot password?</button><button id="signOut" type="button" hidden>Sign out</button><a href="/">← Overview</a></form><div id="researchRecoveryPanel" class="toolbar hidden"><input id="newPassword" type="password" autocomplete="new-password" minlength="8" placeholder="New password (8+ characters)" aria-label="New password"><button id="saveNewPassword" type="button">Update password</button></div></header>
+<main class="wrap">
+<div class="eyebrow">Research / India mutual funds</div><h1>Fund Explorer & Research</h1><p class="sub">Screen the stored scheme universe, inspect NAV-derived performance and study rolling-return behaviour.</p>
+<div class="notice" id="authStatus">Sign in with your own account to access research and your private portfolios.</div><div class="notice" id="notice">Sign in to load stored research data. Metrics are calculated from accepted AMFI NAV observations; unavailable reference data is shown as unavailable, never estimated.</div>
+
+<section id="categoryLeaderboard" class="panel">
+  <div class="leaderhead">
+    <div><div class="eyebrow">Market pulse · category intelligence</div><h2>Monthly category leaders</h2><div class="footnote">Completed calendar-month returns · Direct Growth default · Rank movement versus previous month</div></div>
+    <div class="leadercontrols">
+      <select id="leaderboardMonth" aria-label="Completed month"></select>
+      <select id="leaderboardPlan" aria-label="Plan"><option value="Direct">Direct</option><option value="Regular">Regular</option></select>
+      <select id="leaderboardOption" aria-label="Option"><option value="Growth">Growth</option><option value="IDCW">IDCW</option></select>
+      <button class="primary" id="refreshLeaderboards" type="button">Refresh leaders</button>
+    </div>
+  </div>
+  <div id="leaderboardFreshness" class="footnote" style="margin-top:9px">Monthly ranking loads from verified calendar-month NAV observations.</div>
+  <div id="leaderboardCards" class="leadergrid">
+    <div class="leadercard"><div class="leader-empty">Sign in to view category leaders.</div></div>
+  </div>
+  <p class="footnote">Returns are NAV-only, not dividend-adjusted total returns. A missing rank change means prior-month comparison data is unavailable; it is not treated as zero.</p>
+</section>
+<div class="tabs"><button class="active" data-tab="screener">Fund Screener</button><button data-tab="profile">Fund Research Profile</button><button data-tab="compare">Compare Funds</button><button data-tab="watchlist">My Watchlist</button><button data-tab="overlap">Holdings Overlap</button></div>
+<section id="screener" class="panel">
+<div class="screener-primary-filters">
+  <input id="q" type="search" placeholder="Search fund name, AMC, scheme code or ISIN">
+  <select id="category" aria-label="Scheme group"><option value="">All scheme groups</option></select>
+  <select id="subCategory" aria-label="Scheme sub-category"><option value="">All categories</option></select>
+  <select id="sortBy" aria-label="Rank funds by"><option value="return_1m">Rank by trailing 1M return</option><option value="return_3m">Rank by trailing 3M return</option><option value="return_6m">Rank by trailing 6M return</option><option value="return_1y">Rank by 1Y return</option><option value="cagr">Rank by CAGR</option><option value="return_3y">Rank by 3Y return</option><option value="return_5y">Rank by 5Y return</option><option value="sharpe_ratio">Rank by Sharpe</option><option value="sortino_ratio">Rank by Sortino</option><option value="volatility">Rank by volatility</option><option value="max_drawdown">Rank by max drawdown</option><option value="positive_month_rate">Rank by positive months</option><option value="rolling_1y_positive_rate">Rank by positive 1Y windows</option></select>
+  <button class="primary" id="runScreen">Find top funds</button>
+</div>
+<div id="categoryQuickFilters" class="category-quick-filters" aria-label="Quick category filters"><span class="quick-label">Explore categories</span><span class="muted">Sign in to load categories</span></div>
+<details class="advanced-filters">
+  <summary>More filters <span>Plan, option, asset class &amp; data coverage</span></summary>
+  <div class="advanced-filter-grid">
+    <label>Asset class<select id="assetClass"><option value="">All asset classes</option></select></label>
+    <label>Plan<select id="plan"><option value="">All plans</option></select></label>
+    <label>Option<select id="option"><option value="">All options</option></select></label>
+    <label>History window<select id="days"><option value="30">1 month history</option><option value="365">1 year history</option><option value="1095" selected>3 years history</option><option value="1825">5 years history</option></select></label>
+    <label>Sort order<select id="sortOrder"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label>
+    <label>Minimum observations<select id="minObservations"><option value="0">Any history</option><option value="100">100+ observations</option><option value="250">250+ observations</option><option value="500">500+ observations</option></select></label>
+  </div>
+</details>
+<div id="compareSelectionBar" class="compare-selection hidden" aria-live="polite"><div><strong id="compareSelectionTitle">0 funds selected</strong><div id="compareSelectionNames" class="footnote">Select 2–10 funds to compare.</div></div><div class="toolbar"><button type="button" id="clearCompareSelection">Clear selection</button><button type="button" class="primary" id="openCompareSelection">Compare selected</button></div></div>
+<div class="footnote" id="screenerFreshness" style="margin-top:10px">Global ranking is prepared from stored NAV history. Loading the first verified research snapshot…</div>
+<div class="tablewrap"><table id="fundTable"><thead><tr>
+<th>Global rank</th><th>Category rank</th><th>Fund / Scheme</th><th>Latest NAV</th><th>1M</th><th>3M</th><th>6M</th><th>1Y</th><th>3Y</th><th>5Y</th><th>CAGR</th><th>Volatility</th><th>Sharpe</th><th>Max DD</th><th>Positive months</th><th>Positive 1Y windows</th><th>Action</th></tr></thead><tbody id="fundRows"><tr><td colspan="17" class="muted">Sign in to load the global fund ranking.</td></tr></tbody></table></div>
+<div class="pagination"><span class="muted" id="pageInfo">—</span><button id="prev">Previous</button><button id="next">Next</button></div>
+<p class="footnote">Ranks are calculated across all matching stored snapshots before pagination, not just the visible page. NAV-only metrics are not distribution-adjusted total returns. Benchmark TRI and classification coverage depend on verified source integrations. Research support only—not a buy/sell recommendation.</p>
+</section>
+<section id="compare" class="panel hidden">
+<div class="detailhead"><div><div class="eyebrow">Side-by-side research</div><h2>Compare mutual funds</h2><p class="sub">Compare 2–10 schemes using their own actual stored AMFI NAV observations. Coverage dates may differ.</p></div><button type="button" id="loadSelectedCompare">Use screener selection</button></div>
+<div class="compare-controls"><label for="compareCodesResearch">AMFI scheme codes <span>Comma-separated · 2 to 10 unique codes</span></label><textarea id="compareCodesResearch" rows="2" placeholder="e.g. 120503, 119551"></textarea><div class="toolbar"><label class="compare-days-label" for="compareDaysResearch">History window</label><select id="compareDaysResearch"><option value="365">1 year</option><option value="1095">3 years</option><option value="1825" selected>5 years</option><option value="3650">10 years</option></select><button type="button" class="primary" id="runFundComparison">Compare funds</button></div></div>
+<div id="compareResearchResult" aria-live="polite"><div class="compare-empty">Choose funds from the screener or enter scheme codes above to begin.</div></div>
+<p class="footnote">Methodology: each scheme is measured from its own stored AMFI NAV observations. This comparison does not include benchmark TRI, distributions or category-peer adjustments. Different coverage dates can affect comparability.</p>
+</section>
+<section id="profile" class="panel hidden">
+<div class="toolbar"><input id="profileCode" inputmode="numeric" placeholder="Enter AMFI scheme code"><select id="profileDays"><option value="365">1 year</option><option value="1095">3 years</option><option value="1825">5 years</option><option value="3650" selected>10 years</option></select><button class="primary" id="loadProfile">Load research</button></div>
+<div id="profileBody" class="muted" style="margin-top:16px">Choose a fund from the screener or enter a scheme code.</div>
+</section>
+<section id="watchlist" class="panel hidden">
+<div class="detailhead"><div><h2>My Fund Watchlist</h2><p class="sub">Funds saved to your account only. The same scheme can be watched independently by different users.</p></div><button id="refreshWatchlist">Refresh</button></div>
+<div class="tablewrap"><table style="min-width:850px"><thead><tr><th>Fund / Scheme</th><th>Plan</th><th>Option</th><th>Latest NAV</th><th>NAV date</th><th>Added</th><th>Action</th></tr></thead><tbody id="watchlistRows"><tr><td colspan="7" class="muted">Sign in to load your saved funds.</td></tr></tbody></table></div>
+<p class="footnote">Watchlist is a research shortlist, not a buy/sell recommendation. NAV freshness depends on the latest accepted AMFI ingestion.</p>
+</section>
+<section id="overlap" class="panel hidden">
+<div class="detailhead"><div><h2>Holdings Overlap Intelligence</h2><p class="sub">Compare the latest source-dated scheme disclosures using common ISINs. No fuzzy name matching.</p></div></div>
+<div class="toolbar">
+<input id="overlapSchemeA" type="number" min="1" placeholder="First AMFI scheme code">
+<input id="overlapSchemeB" type="number" min="1" placeholder="Second AMFI scheme code">
+<button class="primary" id="runOverlap">Compare holdings</button>
+</div>
+<div id="overlapBody" class="muted" style="margin-top:16px">Enter two scheme codes. Holdings data appears after verified AMC/AMFI portfolio CSV disclosures have been imported.</div>
+</section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="/static/research.js"></script>
+<script src="/static/fund-detail.js"></script>
+</body></html>

@@ -1,0 +1,713 @@
+name: CI
+on:
+  push:
+    branches: [main, audit/production-foundation, feature/auth-onboarding-and-session-fixes, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified, fix/0009-production-trigger-reconciliation, fix/nav-corporate-action-quality]
+  pull_request:
+    branches: [main, audit/production-foundation]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  test-sqlite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Apply SQLite baseline through existing production revision
+        run: alembic upgrade 0003_nav_correction_history
+        env:
+          DATABASE_URL: sqlite:///./ci_migrations.db
+      - name: Apply remaining SQLite migrations
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: sqlite:///./ci_migrations.db
+      - name: Lint
+        run: ruff check --select F,B .
+      - name: Validate dashboard and research JavaScript
+        run: |
+          node --check app/static/dashboard.js
+          node --check app/static/research.js
+          node --check app/static/fund-detail.js
+      - name: Validate authentication and portfolio DOM contracts
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          contracts = {
+              "app/static/dashboard.html": {
+                  "authForm", "authEmail", "authPassword", "signIn", "signUp",
+                  "resetPassword", "signOut", "passwordRecoveryPanel", "saveNewPassword",
+                  "newPassword", "portfolioCommandCentre", "commandCentreStatus", "ccMarketValue", "ccCostBasis", "ccUnrealized", "ccPortfolioCount", "ccPortfolioCards", "portfolioOverview", "portfolioCurrentValue",
+                  "portfolioCostBasis", "portfolioRealized", "portfolioUnrealized",
+                  "portfolioTotalGain", "portfolioXirr", "portfolioValuationDate",
+                  "portfolioValuationStatus", "holdingCount", "holdingRows",
+                  "portfolioRiskStatus", "portfolioRiskDays", "loadPortfolioRisk",
+                  "portfolioRiskResult", "stressScenarioName", "stressShockPct",
+                  "runPortfolioStress", "portfolioStressResult", "loadTaxLots", "taxLotsResult", "generatePortfolioReport", "portfolioReportResult", "refreshPortfolioReports", "portfolioReportCount", "portfolioReportHistory",
+                  "transactionForm", "transactionRows", "transactionCount",
+                  "transactionMessage", "addTransaction", "refreshTransactions",
+                  "goalsWorkspace", "goalForm", "goalName", "goalTarget", "goalDate", "goalPortfolio", "lookthroughAgeDays", "loadLookthrough", "lookthroughCoverage", "lookthroughSecurities",
+                  "goalCurrent", "goalMonthly", "goalInflation", "goalReturnLow",
+                  "goalReturnBase", "goalReturnHigh", "createGoal", "goalCount",
+                  "goalList", "goalProjection", "filterAmc", "filterCategory", "filterAsset", "filterPlan", "filterOption", "clearFilters", "fundPrev", "fundNext", "fundPageLabel", "fundResultCount",
+              },
+              "app/static/research.html": {
+                  "researchAuthForm", "authEmail", "authPassword", "signIn", "signUp",
+                  "resetPassword", "signOut", "researchRecoveryPanel", "newPassword",
+                  "saveNewPassword", "authStatus", "notice", "fundRows", "watchlist", "watchlistRows", "refreshWatchlist", "category", "assetClass", "sortBy", "sortOrder", "minObservations", "screenerFreshness", "overlap", "overlapSchemeA", "overlapSchemeB", "runOverlap", "overlapBody",
+              },
+          }
+          for filename, required in contracts.items():
+              source = Path(filename).read_text(encoding="utf-8")
+              present = set(re.findall(r'id="([^"]+)"', source))
+              missing = sorted(required - present)
+              if missing:
+                  raise SystemExit(f"{filename} is missing required DOM ids: {missing}")
+          from html.parser import HTMLParser
+
+          class StructureCheck(HTMLParser):
+              VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+              def __init__(self):
+                  super().__init__()
+                  self.stack = []
+                  self.ancestors = {}
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  node_id = attrs.get("id")
+                  if node_id:
+                      self.ancestors[node_id] = list(self.stack)
+                  if tag not in self.VOID:
+                      self.stack.append((tag, attrs))
+              def handle_endtag(self, tag):
+                  for index in range(len(self.stack) - 1, -1, -1):
+                      if self.stack[index][0] == tag:
+                          del self.stack[index:]
+                          break
+
+          parser = StructureCheck()
+          parser.feed(Path("app/static/dashboard.html").read_text(encoding="utf-8"))
+          portfolio_ancestors = parser.ancestors.get("portfolioOverview", [])
+          if any(attrs.get("class", "").find("filebox") >= 0 for _, attrs in portfolio_ancestors):
+              raise SystemExit("Portfolio overview must not be nested inside an import/rebalance filebox.")
+          if any(attrs.get("class", "").find("formgrid") >= 0 for _, attrs in portfolio_ancestors):
+              raise SystemExit("Portfolio overview must be outside the portfolio setup form grid.")
+          print("Dashboard and Research Terminal DOM contracts and layout passed.")
+          PY
+      - name: Test SQLite
+        run: python -m pytest -q
+        env:
+          DATABASE_URL: sqlite:///./ci_migrations.db
+
+  test-postgresql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mf_terminal_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mf_terminal_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mf_terminal_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Create Supabase client-role test fixtures
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine
+          engine = create_engine(os.environ["DATABASE_URL"])
+          with engine.begin() as connection:
+              connection.exec_driver_sql("""
+              DO $roles$
+              BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+                  CREATE ROLE anon NOLOGIN;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+                  CREATE ROLE authenticated NOLOGIN;
+                END IF;
+              END
+              $roles$;
+              CREATE SCHEMA IF NOT EXISTS auth;
+              CREATE OR REPLACE FUNCTION auth.uid()
+              RETURNS uuid
+              LANGUAGE sql
+              STABLE
+              AS $uid$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $uid$;
+              GRANT USAGE ON SCHEMA auth TO authenticated;
+              GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
+              """)
+          PY
+      - name: Apply PostgreSQL baseline through existing production revision
+        run: alembic upgrade 0003_nav_correction_history
+      - name: Apply remaining PostgreSQL migrations
+        run: alembic upgrade head
+      - name: Test PostgreSQL
+        run: python -m pytest -q
+
+  validate-amfi-history-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+      - run: pip install -r requirements.lock
+      - name: Live read-only AMFI historical response contract check for all scheme types
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          from datetime import date, datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          import requests
+
+          from app.nav_backfill import HistoryWindow
+          from app.nav_history import parse_amfi_history_text
+          from app.nav_history_source import build_amfi_history_url
+          from app.nav_ingest import AMFI_NAV_URL, parse_amfi_nav_text
+
+          def get_with_retries(url, **kwargs):
+              transient_statuses = {429, 500, 502, 503, 504}
+              for attempt in range(1, 4):
+                  try:
+                      response = requests.get(url, **kwargs)
+                      if response.status_code in transient_statuses and attempt < 3:
+                          response.close()
+                          time.sleep(min(2 ** (attempt - 1), 8))
+                          continue
+                      return response
+                  except (requests.Timeout, requests.ConnectionError):
+                      if attempt >= 3:
+                          raise
+                      time.sleep(min(2 ** (attempt - 1), 8))
+              raise requests.RequestException("AMFI request exhausted retry budget")
+
+          end_date = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
+          start_date = end_date - timedelta(days=6)
+          window = HistoryWindow(start_date, end_date)
+          summaries = []
+
+          for scheme_type in (1, 2, 3):
+              url = build_amfi_history_url(window, scheme_type)
+              response = get_with_retries(
+                  url,
+                  timeout=(5, 60),
+                  headers={
+                      "User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0",
+                      "Accept": "text/plain, application/octet-stream;q=0.9, */*;q=0.5",
+                  },
+              )
+              response.raise_for_status()
+              if len(response.content) > 30_000_000:
+                  raise SystemExit(f"AMFI type {scheme_type} response exceeded 30 MB safety limit")
+              payload = response.content.decode("utf-8-sig", errors="strict")
+              if not payload.strip() or "<html" in payload[:512].lower():
+                  raise SystemExit(f"AMFI type {scheme_type} returned empty or HTML content")
+
+              records, report = parse_amfi_history_text(payload)
+              if report.get("header_verified") is not True:
+                  raise SystemExit(f"AMFI type {scheme_type} header was not verified")
+              if report["records_valid"] < (1000 if scheme_type == 1 else 1):
+                  raise SystemExit(
+                      f"AMFI type {scheme_type} returned only {report['records_valid']} valid rows"
+                  )
+              if any(row.nav_date < start_date or row.nav_date > end_date for row in records):
+                  raise SystemExit(f"AMFI type {scheme_type} returned dates outside requested range")
+
+              summaries.append({
+                  "scheme_type": scheme_type,
+                  "source": url,
+                  "http_status": response.status_code,
+                  "requested_start_date": start_date.isoformat(),
+                  "requested_end_date": end_date.isoformat(),
+                  "bytes_received": len(response.content),
+                  "records_valid": report["records_valid"],
+                  "unique_scheme_codes": report["unique_scheme_codes"],
+                  "min_nav_date": report["min_nav_date"],
+                  "max_nav_date": report["max_nav_date"],
+                  "schema_variant": report["schema_variant"],
+                  "invalid_rows": report["invalid_rows"],
+                  "invalid_issue_counts": report["invalid_issue_counts"],
+                  "payload_sha256": report["payload_sha256"],
+              })
+
+          print(json.dumps({"scheme_type_checks": summaries, "database_writes": 0}, indent=2))
+          historical_window = HistoryWindow(date(2021, 11, 12), date(2021, 11, 18))
+          historical_url = build_amfi_history_url(historical_window, 1)
+          historical_response = get_with_retries(
+              historical_url,
+              timeout=(5, 60),
+              headers={"User-Agent": "MF-Terminal-Intelligence-History-Contract-Test/1.0"},
+          )
+          historical_response.raise_for_status()
+          historical_payload = historical_response.content.decode("utf-8-sig", errors="strict")
+          historical_records, historical_report = parse_amfi_history_text(historical_payload)
+          if historical_report["records_valid"] < 1:
+              raise SystemExit("First planned historical checkpoint returned no valid NAV rows")
+          if any(
+              row.nav_date < historical_window.start_date
+              or row.nav_date > historical_window.end_date
+              for row in historical_records
+          ):
+              raise SystemExit("First planned historical checkpoint contains out-of-range dates")
+
+          print(json.dumps({
+              "scheme_type_checks": summaries,
+              "first_planned_checkpoint": {
+                  "scheme_type": 1,
+                  "source": historical_url,
+                  "start_date": historical_window.start_date.isoformat(),
+                  "end_date": historical_window.end_date.isoformat(),
+                  "records_valid": historical_report["records_valid"],
+                  "unique_scheme_codes": historical_report["unique_scheme_codes"],
+                  "schema_variant": historical_report["schema_variant"],
+                  "invalid_rows": historical_report["invalid_rows"],
+                  "max_scheme_name_length": max(len(row.scheme_name) for row in historical_records),
+                  "max_isin_length": max(
+                      max(len(row.isin_growth or ""), len(row.isin_dividend_reinvestment or ""))
+                      for row in historical_records
+                  ),
+                  "max_plan_type_length": max(len(row.plan_type or "") for row in historical_records),
+                  "max_option_type_length": max(len(row.option_type or "") for row in historical_records),
+                  "oversized_plan_types": sorted({
+                      row.plan_type for row in historical_records
+                      if row.plan_type and len(row.plan_type) > 20
+                  }),
+                  "oversized_option_types": sorted({
+                      row.option_type for row in historical_records
+                      if row.option_type and len(row.option_type) > 20
+                  }),
+                  "max_nav_value": str(max(row.nav for row in historical_records)),
+                  "payload_sha256": historical_report["payload_sha256"]
+              },
+              "database_writes": 0,
+          }, indent=2))
+          nav_response = get_with_retries(
+              AMFI_NAV_URL,
+              timeout=(5, 60),
+              headers={
+                  "User-Agent": "MF-Terminal-Intelligence-Scheme-Metadata-Contract-Test/1.0",
+                  "Accept": "text/plain, */*;q=0.8",
+              },
+          )
+          nav_response.raise_for_status()
+          if len(nav_response.content) > 30_000_000:
+              raise SystemExit("AMFI NAVAll metadata response exceeded 30 MB safety limit")
+          nav_payload = nav_response.content.decode("utf-8-sig", errors="strict")
+          nav_records, nav_report = parse_amfi_nav_text(nav_payload)
+          metadata_records = [
+              row for row in nav_records
+              if row.metadata_present or row.plan_type or row.option_type
+          ]
+          category_rows = [row for row in nav_records if row.category_group]
+          if len(nav_records) < 1000 or not metadata_records or not category_rows:
+              raise SystemExit(
+                  "AMFI NAVAll feed did not provide enough valid scheme/category metadata"
+              )
+
+          print(json.dumps({
+              "navall_metadata_check": {
+                  "source": AMFI_NAV_URL,
+                  "http_status": nav_response.status_code,
+                  "bytes_received": len(nav_response.content),
+                  "records_valid": nav_report["records_valid"],
+                  "unique_scheme_codes": nav_report["unique_scheme_codes"],
+                  "metadata_records": len(metadata_records),
+                  "category_group_records": len(category_rows),
+                  "subcategory_records": sum(bool(row.category) for row in nav_records),
+                  "plan_type_records": sum(bool(row.plan_type) for row in nav_records),
+                  "option_type_records": sum(bool(row.option_type) for row in nav_records),
+                  "amc_records": sum(bool(row.amc) for row in nav_records),
+                  "invalid_rows": nav_report["invalid_rows"],
+                  "max_nav_date": nav_report["max_nav_date"],
+                  "payload_sha256": nav_report["payload_sha256"],
+                  "database_writes": 0,
+              }
+          }, indent=2))
+          PY
+
+      - name: Live read-only AMFI Fund Performance taxonomy contract check
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+
+          from app.amfi_performance_taxonomy import (
+              PERFORMANCE_PATH,
+              SUBCATEGORIES_PATH,
+              _field,
+              _recent_business_dates,
+              _post,
+              canonicalize_performance_rows,
+          )
+          from app.fund_taxonomy import canonical_subcategory
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": "https://www.amfiindia.com",
+              "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
+              "X-Requested-With": "XMLHttpRequest",
+              "Sec-Fetch-Site": "same-origin",
+              "Sec-Fetch-Mode": "cors",
+              "Sec-Fetch-Dest": "empty",
+          })
+          landing = session.get("https://www.amfiindia.com/otherdata/fund-performance", timeout=(8, 45))
+          landing.raise_for_status()
+          source_labels_by_category = {}
+          selected = None
+          for category_id, group in (
+              (1, "Equity Scheme"),
+              (2, "Debt Scheme"),
+              (3, "Hybrid Scheme"),
+              (5, "Other Schemes"),
+          ):
+              subcategories = _post(session, SUBCATEGORIES_PATH, {"category": category_id})
+              source_labels_by_category[str(category_id)] = []
+              for item in subcategories:
+                  name = _field(item, "name", "subCategory", "subCategoryName")
+                  subcategory_id = _field(item, "id", "subCategoryId")
+                  if isinstance(name, str):
+                      source_labels_by_category[str(category_id)].append(name)
+                      if category_id == 1 and selected is None and subcategory_id is not None and canonical_subcategory(group, name):
+                          selected = {"id": subcategory_id, "name": name}
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "source_subcategories_by_category": source_labels_by_category,
+              "database_writes": 0,
+          }, indent=2), flush=True)
+          if selected is None:
+              raise SystemExit(
+                  "AMFI Equity subcategory endpoint exposed no current allow-listed label: "
+                  + json.dumps(source_labels_by_category)
+              )
+
+          rows = []
+          report_date = None
+          for candidate_date in _recent_business_dates(5):
+              rows = _post(session, PERFORMANCE_PATH, {
+                  "maturityType": 1,
+                  "category": 1,
+                  "subCategory": int(selected["id"]),
+                  "mfid": 0,
+                  "reportDate": candidate_date,
+              })
+              if rows:
+                  report_date = candidate_date
+                  break
+          print(json.dumps({
+              "report_date": report_date,
+              "performance_rows_received": len(rows),
+              "first_row_keys": list(rows[0].keys()) if rows else [],
+              "first_row_sample": rows[0] if rows else None,
+          }, indent=2), flush=True)
+          if not rows:
+              raise SystemExit("AMFI Fund Performance returned no records for the five most recent business dates")
+          mappings, rejected = canonicalize_performance_rows(
+              rows,
+              category_group="Equity Scheme",
+              subcategory=selected["name"],
+          )
+          if not mappings:
+              raise SystemExit("AMFI Fund Performance endpoint returned no valid scheme-code or exact scheme-name identifiers")
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "report_date": report_date,
+              "category_group": "Equity Scheme",
+              "subcategory": selected["name"],
+              "source_subcategories_by_category": source_labels_by_category,
+              "rows_received": len(rows),
+              "valid_scheme_identifiers": len(mappings),
+              "rejected_rows": rejected,
+              "database_writes": 0,
+          }, indent=2))
+          session.close()
+          PY
+
+      - name: Read-only AMFI taxonomy coverage audit across all categories
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+
+          from app.amfi_performance_taxonomy import (
+              PERFORMANCE_PATH,
+              SUBCATEGORIES_PATH,
+              _field,
+              _recent_business_dates,
+              _post,
+              canonicalize_performance_rows,
+          )
+          from app.fund_taxonomy import canonical_subcategory
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": "https://www.amfiindia.com",
+              "Referer": "https://www.amfiindia.com/otherdata/fund-performance",
+              "X-Requested-With": "XMLHttpRequest",
+              "Sec-Fetch-Site": "same-origin",
+              "Sec-Fetch-Mode": "cors",
+              "Sec-Fetch-Dest": "empty",
+          })
+          session.get("https://www.amfiindia.com/otherdata/fund-performance", timeout=(8, 45)).raise_for_status()
+
+          groups = {
+              1: "Equity Scheme",
+              2: "Debt Scheme",
+              3: "Hybrid Scheme",
+              4: "Legacy Solution Oriented (diagnostic only)",
+              5: "Other Schemes",
+          }
+          categories = []
+          for category_id, group in groups.items():
+              for item in _post(session, SUBCATEGORIES_PATH, {"category": category_id}):
+                  name = _field(item, "name", "subCategory", "subCategoryName")
+                  subcategory_id = _field(item, "id", "subCategoryId")
+                  if isinstance(name, str) and subcategory_id is not None:
+                      canonical = (
+                          canonical_subcategory(group, name)
+                          if category_id != 4
+                          else None
+                      )
+                      categories.append({
+                          "category_id": category_id,
+                          "group": group,
+                          "subcategory_id": int(subcategory_id),
+                          "source_label": name,
+                          "canonical_category": canonical,
+                      })
+
+          report_date = None
+          probe = next((item for item in categories if item["category_id"] == 1 and item["canonical_category"]), None)
+          if probe is None:
+              raise SystemExit("AMFI returned no current allow-listed Equity subcategory for coverage audit")
+          for candidate_date in _recent_business_dates(5):
+              rows = _post(session, PERFORMANCE_PATH, {
+                  "maturityType": 1,
+                  "category": probe["category_id"],
+                  "subCategory": probe["subcategory_id"],
+                  "mfid": 0,
+                  "reportDate": candidate_date,
+              })
+              if rows:
+                  report_date = candidate_date
+                  break
+          if report_date is None:
+              raise SystemExit("AMFI returned no rows for five most recent business dates")
+
+          results = []
+          total_rows = total_identifiers = total_rejected = requests_made = 0
+          for item in categories:
+              for maturity_type in (1, 2):
+                  rows = _post(session, PERFORMANCE_PATH, {
+                      "maturityType": maturity_type,
+                      "category": item["category_id"],
+                      "subCategory": item["subcategory_id"],
+                      "mfid": 0,
+                      "reportDate": report_date,
+                  })
+                  requests_made += 1
+                  total_rows += len(rows)
+                  valid = rejected = 0
+                  names = []
+                  if item["category_id"] != 4 and item["canonical_category"]:
+                      parsed, rejected = canonicalize_performance_rows(
+                          rows,
+                          category_group=item["group"],
+                          subcategory=item["canonical_category"],
+                      )
+                      valid = len(parsed)
+                      names = sorted(
+                          key[5:] for key in parsed
+                          if isinstance(key, str) and key.startswith("name:")
+                      )[:3]
+                  else:
+                      rejected = len(rows)
+                      names = [
+                          str(_field(row, "schemeName", "Scheme_Name", "scheme_name"))
+                          for row in rows[:3]
+                      ]
+                  total_identifiers += valid
+                  total_rejected += rejected
+                  results.append({
+                      "group": item["group"],
+                      "category_id": item["category_id"],
+                      "source_subcategory": item["source_label"],
+                      "canonical_subcategory": item["canonical_category"],
+                      "maturity_type": maturity_type,
+                      "rows": len(rows),
+                      "valid_identifiers": valid,
+                      "rejected_or_diagnostic_only": rejected,
+                      "sample_names": names,
+                  })
+
+          print(json.dumps({
+              "source": "https://www.amfiindia.com/gateway/pollingsebi",
+              "report_date": report_date,
+              "categories_checked": len(categories),
+              "performance_requests": requests_made,
+              "total_rows": total_rows,
+              "total_current_allowlisted_identifiers": total_identifiers,
+              "total_legacy_or_rejected_rows": total_rejected,
+              "results": results,
+              "database_writes": 0,
+              "nav_observations_written": 0,
+              "research_snapshots_written": 0,
+          }, indent=2), flush=True)
+          session.close()
+          PY
+
+      - name: Read-only AMFI scheme-summary category metadata probe
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import requests
+          import xml.etree.ElementTree as ET
+
+          base = "https://www.amfiindia.com"
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/plain, */*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Origin": base,
+              "Referer": base + "/otherdata/scheme-details",
+              "X-Requested-With": "XMLHttpRequest",
+          })
+          def rows(payload):
+              if isinstance(payload, list):
+                  return [row for row in payload if isinstance(row, dict)]
+              if isinstance(payload, dict):
+                  for key in ("data", "Data", "result", "Result", "records", "Records"):
+                      if isinstance(payload.get(key), list):
+                          return [row for row in payload[key] if isinstance(row, dict)]
+                  return [payload]
+              return []
+
+          def field(row, *names):
+              wanted = {re.sub(r"[^a-z0-9]", "", name.casefold()) for name in names}
+              for key, value in row.items():
+                  if re.sub(r"[^a-z0-9]", "", str(key).casefold()) in wanted:
+                      return value
+              return None
+
+          def canonical(value):
+              return " ".join(re.findall(r"[a-z0-9]+", str(value or "").casefold()))
+
+          probes = [
+              ("UTI Mutual Fund", "UTI - Banking and Financial Services Fund"),
+              ("HDFC Mutual Fund", "HDFC Banking & Financial Services Fund"),
+              ("SBI Mutual Fund", "SBI Long Term Advantage Fund - Series IV"),
+              ("Axis Mutual Fund", "Axis Children's Fund"),
+              ("HDFC Mutual Fund", "HDFC Retirement Fund - Equity Plan"),
+              ("Aditya Birla Sun Life Mutual Fund", "Aditya Birla Sun Life Fixed Maturity Plan-Series VB (136 Days)"),
+              ("HDFC Mutual Fund", "HDFC FMP 1861D March 2022"),
+              ("HDFC Mutual Fund", "HDFC  Charity Fund for Cancer Cure"),
+              ("ICICI Prudential Mutual Fund", "ICICI Prudential Short Term Fund - Div. Option"),
+              ("Navi Mutual Fund", "NAVI ELSS TAX SAVER NIFTY50 INDEX FUND"),
+              ("Kotak Mahindra Mutual Fund", "Kotak Global Innovation Overseas Equity Active FOF"),
+          ]
+          amcs_response = session.get(base + "/api/populate-mf", timeout=(8, 30))
+          amcs_response.raise_for_status()
+          amcs = rows(amcs_response.json())
+          results = []
+          for amc_name, target_name in probes:
+              matches = [
+                  row for row in amcs
+                  if canonical(field(row, "mfName", "mfname", "name")) == canonical(amc_name)
+              ]
+              if len(matches) != 1:
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "AMC exact match unavailable", "matches": len(matches), "sample_fields": sorted(amcs[0].keys()) if amcs else [], "candidate_names": [field(row, "mfName", "mfname", "name") for row in amcs if canonical(amc_name.split()[0]) in canonical(field(row, "mfName", "mfname", "name"))][:5]})
+                  continue
+              mf_id = field(matches[0], "mfId", "mf_id", "id")
+              scheme_response = session.get(base + "/api/populate-scheme", params={"MF_ID": mf_id}, timeout=(8, 30))
+              scheme_response.raise_for_status()
+              scheme_rows = rows(scheme_response.json())
+              scheme_matches = [
+                  row for row in scheme_rows
+                  if canonical(field(row, "scheme_name", "schemeName", "name")) == canonical(target_name)
+              ]
+              if len(scheme_matches) != 1:
+                  results.append({"amc": amc_name, "scheme": target_name, "status": "scheme exact match unavailable", "matches": len(scheme_matches), "scheme_fields": sorted(scheme_rows[0].keys()) if scheme_rows else [], "candidate_names": [field(row, "scheme_name", "schemeName", "name") for row in scheme_rows if canonical(target_name.split()[0]) in canonical(field(row, "scheme_name", "schemeName", "name"))][:5]})
+                  continue
+              scheme_id = field(scheme_matches[0], "scheme_id", "schemeId", "id")
+              details_response = session.get(base + "/api/scheme-details", params={"MF_ID": mf_id, "scheme_id": scheme_id}, timeout=(8, 30))
+              details_response.raise_for_status()
+              detail_rows = rows(details_response.json())
+              detail = detail_rows[0] if detail_rows else {}
+              category_fields = {k: v for k, v in detail.items() if "category" in k.casefold() or "cat" in k.casefold() or "type" in k.casefold()}
+              xml_response = session.get(f"https://portal.amfiindia.com/spages/SSD_{scheme_id}.xml", timeout=(8, 30))
+              xml_status = xml_response.status_code
+              xml_fields = {}
+              if xml_response.ok and len(xml_response.content) <= 3_000_000 and not re.search(br"<!\\s*(DOCTYPE|ENTITY)", xml_response.content, re.I):
+                  root = ET.fromstring(xml_response.content)
+                  for row in root.findall(".//{*}Row"):
+                      cells = [" ".join(cell.itertext()).strip() for cell in row.findall("{*}Cell/{*}Data")]
+                      cells = [value for value in cells if value]
+                      if len(cells) >= 2:
+                          xml_fields[cells[0]] = " ".join(cells[1:])
+                  if root.tag.split("}")[-1] == "SchemeSummaryDocument":
+                      for node in root.iter():
+                          if len(node) == 0 and node.text and node.text.strip():
+                              xml_fields[node.tag.split("}")[-1]] = node.text.strip()
+              results.append({
+                  "amc": amc_name,
+                  "scheme": target_name,
+                  "mf_id": mf_id,
+                  "scheme_id": scheme_id,
+                  "details_keys": sorted(detail.keys()),
+                  "details_category_or_type_fields": category_fields,
+                  "scheme_summary_http_status": xml_status,
+                  "scheme_summary_category_or_type_fields": {
+                      k: v for k, v in xml_fields.items()
+                      if "category" in k.casefold() or "type" in k.casefold()
+                  },
+                  "scheme_summary_name_fields": {
+                      k: v for k, v in xml_fields.items()
+                      if "name" in k.casefold()
+                  },
+              })
+          print(json.dumps({
+              "source": "AMFI official Scheme Details / Scheme Summary",
+              "results": results,
+              "database_writes": 0,
+              "nav_observations_written": 0,
+              "research_snapshots_written": 0,
+          }, indent=2), flush=True)
+          session.close()
+          PY

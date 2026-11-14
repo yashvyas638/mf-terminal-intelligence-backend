@@ -1,0 +1,74 @@
+name: Daily AMFI NAV refresh
+on:
+  schedule:
+    - cron: "15 17 * * 1-6"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: amfi-nav-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate configuration
+        env:
+          API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+          API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
+        run: |
+          test -n "$API_URL"
+          test -n "$API_KEY"
+          case "$API_URL" in */) echo "API_URL must not end with a slash" >&2; exit 1 ;; esac
+      - name: Refresh NAV and validate ingestion response
+        env:
+          API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+          API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 3 --retry-delay 20 --retry-all-errors \
+            --max-time 120 -X POST "$API_URL/v1/nav/refresh" \
+            -H "X-API-Key: $API_KEY" |
+          python -c '
+          import json, sys
+          result = json.load(sys.stdin)
+          snapshot = result.get("snapshot") or {}
+          assert result.get("status") == "ingested", "API did not confirm ingestion"
+          assert snapshot.get("quality_status") in {"PASS", "PASS_WITH_WARNINGS"}, "snapshot quality gate did not pass"
+          assert snapshot.get("records_valid", 0) >= 1000, "valid record count below configured floor"
+          print(json.dumps({
+              "status": result["status"],
+              "snapshot_id": snapshot.get("snapshot_id"),
+              "records_valid": snapshot.get("records_valid"),
+              "quality_status": snapshot.get("quality_status"),
+              "max_nav_date": snapshot.get("max_nav_date"),
+              "payload_sha256": snapshot.get("payload_sha256"),
+          }, indent=2))
+          '
+
+      - name: Rebuild global fund research ranking snapshots
+        env:
+          API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+          API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-delay 30 --retry-all-errors \
+            --max-time 900 -X POST "$API_URL/v1/analytics/screener/refresh" \
+            -H "X-API-Key: $API_KEY" |
+          python -c '
+          import json, sys
+          result = json.load(sys.stdin)
+          assert result.get("status") == "refreshed", "research snapshot refresh was not confirmed"
+          assert result.get("schemes_processed", 0) >= 1, "no schemes were processed"
+          assert result.get("snapshot_rows_written", 0) == result["schemes_processed"] * 4, "unexpected snapshot coverage"
+          print(json.dumps({
+              "status": result["status"],
+              "schemes_processed": result["schemes_processed"],
+              "snapshot_rows_written": result["snapshot_rows_written"],
+              "windows_days": result["windows_days"],
+              "nav_as_of_date_min": result["nav_as_of_date_min"],
+              "nav_as_of_date_max": result["nav_as_of_date_max"],
+              "refreshed_at": result["refreshed_at"],
+          }, indent=2))
+          '
