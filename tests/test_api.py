@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioImportBatch, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, engine, init_db
+from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioImportBatch, ApiRateLimitBucket, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, engine, init_db
 from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
@@ -224,6 +224,49 @@ def test_concurrent_identical_statement_import_commits_once(monkeypatch):
             select(PortfolioTransactionAudit).where(PortfolioTransactionAudit.transaction_id == transactions[0].id)
         ).scalars().all()
     assert len(transactions) == len(batches) == len(events) == 1
+
+
+def test_database_backed_api_rate_limit_isolated_and_returns_retry_after(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    init_db()
+    now = 1_800_000_030
+    first = main._consume_api_rate_limit("user:rate-limit-test-one", 2, now=now)
+    second = main._consume_api_rate_limit("user:rate-limit-test-one", 2, now=now + 1)
+    blocked = main._consume_api_rate_limit("user:rate-limit-test-one", 2, now=now + 2)
+    other_user = main._consume_api_rate_limit("user:rate-limit-test-two", 2, now=now + 2)
+    assert first == (True, 30, 1)
+    assert second == (True, 29, 2)
+    assert blocked == (False, 28, 3)
+    assert other_user == (True, 28, 1)
+    with SessionLocal() as db:
+        buckets = db.query(ApiRateLimitBucket).all()
+    assert len(buckets) == 2
+    assert all("rate-limit-test" not in bucket.bucket_sha256 for bucket in buckets)
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="cross-worker atomicity is validated on PostgreSQL")
+def test_shared_api_rate_limit_counter_is_atomic_across_concurrent_requests(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    init_db()
+    now = 1_800_000_030
+    barrier = Barrier(8)
+
+    def consume(_):
+        barrier.wait(timeout=10)
+        return main._consume_api_rate_limit("user:concurrent-rate-limit", 5, now=now)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(consume, range(8)))
+    assert sum(1 for allowed, _, _ in results if allowed) == 5
+    assert sorted(count for _, _, count in results) == list(range(1, 9))
+    with SessionLocal() as db:
+        buckets = db.query(ApiRateLimitBucket).filter(
+            ApiRateLimitBucket.bucket_sha256 == hashlib.sha256(
+                b"user:concurrent-rate-limit"
+            ).hexdigest()
+        ).all()
+    assert len(buckets) == 1
+    assert buckets[0].request_count == 8
 
 
 def test_database_pool_settings_are_bounded_and_fail_fast(monkeypatch):
