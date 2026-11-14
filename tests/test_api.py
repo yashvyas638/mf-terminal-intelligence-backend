@@ -84,8 +84,8 @@ def test_concurrent_same_idempotency_key_creates_one_transaction_and_one_audit_e
         "X-API-Key": "test-api-key-that-is-at-least-32-characters-long",
         "Idempotency-Key": "concurrent-request-001",
     }
-    with TestClient(app) as client:
-        portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Idempotency"}).json()
+    client = TestClient(app)
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Idempotency"}).json()
     url = f"/v1/portfolios/{portfolio['id']}/transactions"
     payload = {
         "scheme_code": scheme_code, "transaction_type": "BUY",
@@ -95,8 +95,11 @@ def test_concurrent_same_idempotency_key_creates_one_transaction_and_one_audit_e
 
     def submit():
         barrier.wait(timeout=10)
-        with TestClient(app) as client:
+        client = TestClient(app)
+        try:
             return client.post(url, headers=headers, json=payload)
+        finally:
+            client.close()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         responses = list(executor.map(lambda _: submit(), range(2)))
@@ -133,26 +136,29 @@ def test_concurrent_sell_requests_cannot_oversell_portfolio_units(monkeypatch):
             ))
             db.commit()
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
-    with TestClient(app) as client:
-        portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Ledger"}).json()
-        url = f"/v1/portfolios/{portfolio['id']}/transactions"
-        opening_buy = client.post(
-            url, headers=headers,
-            json={"scheme_code": scheme_code, "transaction_type": "BUY", "transaction_date": "2026-01-01",
-                  "units": "5", "nav": "100", "amount": "500"},
-        )
+    client = TestClient(app)
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Ledger"}).json()
+    url = f"/v1/portfolios/{portfolio['id']}/transactions"
+    opening_buy = client.post(
+        url, headers=headers,
+        json={"scheme_code": scheme_code, "transaction_type": "BUY", "transaction_date": "2026-01-01",
+              "units": "5", "nav": "100", "amount": "500"},
+    )
     assert opening_buy.status_code == 201
     barrier = Barrier(2)
 
     def sell(key):
         barrier.wait(timeout=10)
-        with TestClient(app) as client:
+        client = TestClient(app)
+        try:
             return client.post(
                 url,
                 headers={**headers, "Idempotency-Key": key},
                 json={"scheme_code": scheme_code, "transaction_type": "SELL", "transaction_date": "2026-01-02",
                       "units": "4", "nav": "100", "amount": "400"},
             )
+        finally:
+            client.close()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         responses = list(executor.map(sell, ["concurrent-sell-a", "concurrent-sell-b"]))
@@ -184,13 +190,13 @@ def test_concurrent_identical_statement_import_commits_once(monkeypatch):
             ))
             db.commit()
     headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
-    with TestClient(app) as client:
-        portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Import"}).json()
-        csv_text = f"date,scheme_code,type,units,nav,amount\\n2026-01-01,{scheme_code},BUY,2,100,200\\n"
-        preview = client.post(
-            f"/v1/portfolios/{portfolio['id']}/transactions/import/preview",
-            headers=headers, json={"csv_text": csv_text},
-        )
+    client = TestClient(app)
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Import"}).json()
+    csv_text = f"date,scheme_code,type,units,nav,amount\n2026-01-01,{scheme_code},BUY,2,100,200\n"
+    preview = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/import/preview",
+        headers=headers, json={"csv_text": csv_text},
+    )
     assert preview.status_code == 200
     import_url = f"/v1/portfolios/{portfolio['id']}/transactions/import"
     payload = {"csv_text": csv_text, "confirmation_token": preview.json()["confirmation_token"]}
@@ -198,8 +204,11 @@ def test_concurrent_identical_statement_import_commits_once(monkeypatch):
 
     def submit():
         barrier.wait(timeout=10)
-        with TestClient(app) as client:
+        client = TestClient(app)
+        try:
             return client.post(import_url, headers=headers, json=payload)
+        finally:
+            client.close()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         responses = list(executor.map(lambda _: submit(), range(2)))
@@ -231,18 +240,6 @@ def test_database_pool_settings_are_bounded_and_fail_fast(monkeypatch):
     with pytest.raises(RuntimeError, match="must be an integer"):
         _pool_setting("DB_POOL_SIZE", 5, 1, 20)
 
-
-
-    monkeypatch.delenv("DB_POOL_SIZE", raising=False)
-    assert main._pool_setting("DB_POOL_SIZE", 5, 1, 20) == 5
-    monkeypatch.setenv("DB_POOL_SIZE", "8")
-    assert main._pool_setting("DB_POOL_SIZE", 5, 1, 20) == 8
-    monkeypatch.setenv("DB_POOL_SIZE", "0")
-    with pytest.raises(RuntimeError, match="between 1 and 20"):
-        main._pool_setting("DB_POOL_SIZE", 5, 1, 20)
-    monkeypatch.setenv("DB_POOL_SIZE", "many")
-    with pytest.raises(RuntimeError, match="must be an integer"):
-        main._pool_setting("DB_POOL_SIZE", 5, 1, 20)
 
 
 def test_transaction_idempotency_replays_original_response_and_rejects_payload_reuse(monkeypatch):
