@@ -226,6 +226,38 @@ def test_concurrent_identical_statement_import_commits_once(monkeypatch):
     assert len(transactions) == len(batches) == len(events) == 1
 
 
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="Supabase role grants and RLS policies are PostgreSQL-specific")
+def test_private_user_tables_reject_direct_supabase_client_access():
+    private_tables = {
+        "portfolio_transaction_idempotency",
+        "portfolio_goals",
+        "portfolio_report_snapshots",
+        "fund_watchlist_items",
+        "api_rate_limit_buckets",
+    }
+    with SessionLocal() as db:
+        rows = db.execute(text("""
+            SELECT c.relname,
+                   c.relrowsecurity AS rls_enabled,
+                   has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
+                   has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
+                   (SELECT count(*) FROM pg_policies p
+                    WHERE p.schemaname = 'public'
+                      AND p.tablename = c.relname
+                      AND p.policyname = 'deny_direct_client_access') AS deny_policy_count
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+              AND c.relname = ANY(:table_names)
+        """), {"table_names": list(private_tables)}).mappings().all()
+    assert {row["relname"] for row in rows} == private_tables
+    for row in rows:
+        assert row["rls_enabled"] is True
+        assert row["anon_select"] is False
+        assert row["authenticated_select"] is False
+        assert row["deny_policy_count"] == 1
+
+
 def test_database_backed_api_rate_limit_isolated_and_returns_retry_after(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "test")
     init_db()
