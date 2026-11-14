@@ -90,7 +90,7 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
         json=transaction_payload,
     ).status_code == 404
     csv_text = (
-        "date,scheme_code,type,units,nav,amount\\n"
+        "date,scheme_code,type,units,nav,amount\n"
         + f"{date.today().isoformat()},{scheme_code},BUY,1,10,10"
     )
     assert client.post(
