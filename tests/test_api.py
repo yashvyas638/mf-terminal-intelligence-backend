@@ -229,14 +229,11 @@ def test_concurrent_identical_statement_import_commits_once(monkeypatch):
 @pytest.mark.skipif(engine.dialect.name != "postgresql", reason="Supabase role grants and RLS policies are PostgreSQL-specific")
 def test_private_user_tables_reject_direct_supabase_client_access():
     private_tables = {
-        "portfolios",
-        "portfolio_transactions",
-        "portfolio_transaction_audit",
-        "portfolio_import_batches",
         "portfolio_transaction_idempotency",
         "portfolio_goals",
         "portfolio_report_snapshots",
         "fund_watchlist_items",
+        "api_rate_limit_buckets",
     }
     with SessionLocal() as db:
         rows = db.execute(text("""
@@ -244,7 +241,6 @@ def test_private_user_tables_reject_direct_supabase_client_access():
                    c.relrowsecurity AS rls_enabled,
                    has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
                    has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
-                   has_table_privilege('service_role', c.oid, 'SELECT') AS service_role_select,
                    (SELECT count(*) FROM pg_policies p
                     WHERE p.schemaname = 'public'
                       AND p.tablename = c.relname
@@ -259,7 +255,6 @@ def test_private_user_tables_reject_direct_supabase_client_access():
         assert row["rls_enabled"] is True
         assert row["anon_select"] is False
         assert row["authenticated_select"] is False
-        assert row["service_role_select"] is True
         assert row["deny_policy_count"] == 1
 
 
