@@ -104,3 +104,9 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Selecting a card applies the exact source category group to the existing scheme filter and opens Fund Explorer; no new category taxonomy or inferred classifications.
 - Cards are keyboard-operable native buttons and expose selected state with aria-pressed.
 - Uses the existing scheme listing endpoint and existing filter state; no API, schema, NAV or ranking changes.
+
+
+## v8.2 — Research sticky-tab masthead offset
+- Position the desktop sticky research tab rail below the 76px sticky masthead to prevent overlap while scrolling.
+- Mobile breakpoints continue to switch the tabs to normal document flow.
+- Presentation-only change; no functional or data changes.
