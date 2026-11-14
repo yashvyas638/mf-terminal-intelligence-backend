@@ -181,7 +181,7 @@ async function runHoldingsOverlap(){const a=Number($("overlapSchemeA").value),b=
 $("runOverlap").onclick=()=>runHoldingsOverlap().catch(e=>{note(e.message,true);$("overlapBody").innerHTML='<div class="notice error">'+esc(e.message)+'</div>'});
 async function loadProfile(){
  const code=$("profileCode").value.trim();
- if(!/^\\d+$/.test(code))throw new Error("Enter a valid numeric scheme code.");
+ if(!/^\d+$/.test(code))throw new Error("Enter a valid numeric scheme code.");
  if(typeof window.renderFundDetail!=="function")throw new Error("The fund detail renderer is not available. Reload the page and retry.");
  $("profileBody").innerHTML='<div class="panel">Loading fund profile, stored NAV history, benchmark alignment and source evidence…</div>';
  try{return await window.renderFundDetail(code,$("profileDays").value)}
