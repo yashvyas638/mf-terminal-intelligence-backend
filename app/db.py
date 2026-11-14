@@ -19,9 +19,32 @@ def database_url() -> str:
 _url = database_url()
 if os.getenv("ENVIRONMENT", "").lower() == "production" and _url.startswith("sqlite"):
     raise RuntimeError("SQLite is not supported in production; configure a persistent PostgreSQL DATABASE_URL")
+def _pool_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Read a bounded SQLAlchemy pool setting; fail fast on unsafe configuration."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
 _engine_args: dict[str, object] = {"pool_pre_ping": True}
 if _url.startswith("sqlite"):
     _engine_args["connect_args"] = {"check_same_thread": False}
+else:
+    # Keep SQLAlchemy's conservative 5+10 connection capacity explicit and
+    # allow Render/Supabase deployments to tune it without code changes.
+    _engine_args.update(
+        pool_size=_pool_setting("DB_POOL_SIZE", 5, 1, 20),
+        max_overflow=_pool_setting("DB_MAX_OVERFLOW", 10, 0, 20),
+        pool_timeout=_pool_setting("DB_POOL_TIMEOUT_SECONDS", 30, 1, 120),
+        pool_recycle=_pool_setting("DB_POOL_RECYCLE_SECONDS", 1800, 60, 86400),
+    )
 engine = create_engine(_url, **_engine_args)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 

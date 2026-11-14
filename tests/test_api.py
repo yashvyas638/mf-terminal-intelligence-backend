@@ -1,5 +1,7 @@
 import json
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -11,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
+from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioImportBatch, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, engine, init_db
 from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
@@ -62,6 +64,182 @@ def test_invalid_key_is_rejected(monkeypatch):
     client = TestClient(app)
     response = client.get("/v1/nav/status", headers={"X-API-Key": "wrong-secret"})
     assert response.status_code == 401
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="row-level concurrency guarantees are PostgreSQL-specific")
+def test_concurrent_same_idempotency_key_creates_one_transaction_and_one_audit_event(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    scheme_code = 999985
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code, scheme_name="Concurrent Idempotency Scheme",
+                isin_growth=None, isin_dividend_reinvestment=None,
+                first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+            ))
+            db.commit()
+    headers = {
+        "X-API-Key": "test-api-key-that-is-at-least-32-characters-long",
+        "Idempotency-Key": "concurrent-request-001",
+    }
+    client = TestClient(app)
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Idempotency"}).json()
+    url = f"/v1/portfolios/{portfolio['id']}/transactions"
+    payload = {
+        "scheme_code": scheme_code, "transaction_type": "BUY",
+        "transaction_date": "2026-01-01", "units": "2", "nav": "100", "amount": "200",
+    }
+    barrier = Barrier(2)
+
+    def submit():
+        barrier.wait(timeout=10)
+        client = TestClient(app)
+        try:
+            return client.post(url, headers=headers, json=payload)
+        finally:
+            client.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: submit(), range(2)))
+    assert [response.status_code for response in responses] == [201, 201]
+    assert responses[0].json() == responses[1].json()
+    transaction_id = responses[0].json()["id"]
+    with SessionLocal() as db:
+        transactions = db.execute(
+            select(PortfolioTransaction).where(PortfolioTransaction.portfolio_id == portfolio["id"])
+        ).scalars().all()
+        keys = db.execute(
+            select(PortfolioTransactionIdempotency).where(
+                PortfolioTransactionIdempotency.portfolio_id == portfolio["id"]
+            )
+        ).scalars().all()
+        events = db.execute(
+            select(PortfolioTransactionAudit).where(PortfolioTransactionAudit.transaction_id == transaction_id)
+        ).scalars().all()
+    assert len(transactions) == len(keys) == len(events) == 1
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="row-level concurrency guarantees are PostgreSQL-specific")
+def test_concurrent_sell_requests_cannot_oversell_portfolio_units(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    scheme_code = 999986
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code, scheme_name="Concurrent Ledger Scheme",
+                isin_growth=None, isin_dividend_reinvestment=None,
+                first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+            ))
+            db.commit()
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    client = TestClient(app)
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Ledger"}).json()
+    url = f"/v1/portfolios/{portfolio['id']}/transactions"
+    opening_buy = client.post(
+        url, headers=headers,
+        json={"scheme_code": scheme_code, "transaction_type": "BUY", "transaction_date": "2026-01-01",
+              "units": "5", "nav": "100", "amount": "500"},
+    )
+    assert opening_buy.status_code == 201
+    barrier = Barrier(2)
+
+    def sell(key):
+        barrier.wait(timeout=10)
+        client = TestClient(app)
+        try:
+            return client.post(
+                url,
+                headers={**headers, "Idempotency-Key": key},
+                json={"scheme_code": scheme_code, "transaction_type": "SELL", "transaction_date": "2026-01-02",
+                      "units": "4", "nav": "100", "amount": "400"},
+            )
+        finally:
+            client.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(sell, ["concurrent-sell-a", "concurrent-sell-b"]))
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(PortfolioTransaction).where(
+                PortfolioTransaction.portfolio_id == portfolio["id"],
+                PortfolioTransaction.voided_at.is_(None),
+            ).order_by(PortfolioTransaction.transaction_date, PortfolioTransaction.id)
+        ).scalars().all()
+    balance = sum((row.units if row.transaction_type == "BUY" else -row.units) for row in rows)
+    assert balance == Decimal("1")
+    assert len(rows) == 2
+
+
+@pytest.mark.skipif(engine.dialect.name != "postgresql", reason="row-level concurrency guarantees are PostgreSQL-specific")
+def test_concurrent_identical_statement_import_commits_once(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    scheme_code = 999987
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code, scheme_name="Concurrent Import Scheme",
+                isin_growth=None, isin_dividend_reinvestment=None,
+                first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+            ))
+            db.commit()
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    client = TestClient(app)
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Concurrent Import"}).json()
+    csv_text = f"date,scheme_code,type,units,nav,amount\n2026-01-01,{scheme_code},BUY,2,100,200\n"
+    preview = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions/import/preview",
+        headers=headers, json={"csv_text": csv_text},
+    )
+    assert preview.status_code == 200
+    import_url = f"/v1/portfolios/{portfolio['id']}/transactions/import"
+    payload = {"csv_text": csv_text, "confirmation_token": preview.json()["confirmation_token"]}
+    barrier = Barrier(2)
+
+    def submit():
+        barrier.wait(timeout=10)
+        client = TestClient(app)
+        try:
+            return client.post(import_url, headers=headers, json=payload)
+        finally:
+            client.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: submit(), range(2)))
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    with SessionLocal() as db:
+        transactions = db.execute(
+            select(PortfolioTransaction).where(PortfolioTransaction.portfolio_id == portfolio["id"])
+        ).scalars().all()
+        batches = db.execute(
+            select(PortfolioImportBatch).where(PortfolioImportBatch.portfolio_id == portfolio["id"])
+        ).scalars().all()
+        events = db.execute(
+            select(PortfolioTransactionAudit).where(PortfolioTransactionAudit.transaction_id == transactions[0].id)
+        ).scalars().all()
+    assert len(transactions) == len(batches) == len(events) == 1
+
+
+def test_database_pool_settings_are_bounded_and_fail_fast(monkeypatch):
+    from app.db import _pool_setting
+
+    monkeypatch.delenv("DB_POOL_SIZE", raising=False)
+    assert _pool_setting("DB_POOL_SIZE", 5, 1, 20) == 5
+    monkeypatch.setenv("DB_POOL_SIZE", "8")
+    assert _pool_setting("DB_POOL_SIZE", 5, 1, 20) == 8
+    monkeypatch.setenv("DB_POOL_SIZE", "0")
+    with pytest.raises(RuntimeError, match="between 1 and 20"):
+        _pool_setting("DB_POOL_SIZE", 5, 1, 20)
+    monkeypatch.setenv("DB_POOL_SIZE", "many")
+    with pytest.raises(RuntimeError, match="must be an integer"):
+        _pool_setting("DB_POOL_SIZE", 5, 1, 20)
+
 
 
 def test_transaction_idempotency_replays_original_response_and_rejects_payload_reuse(monkeypatch):
