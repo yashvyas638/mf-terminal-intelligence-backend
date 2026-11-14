@@ -74,3 +74,9 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Keep the top-level asset/scheme group shortcuts visible and easy to scan.
 - Place the longer sub-category list behind a native disclosure control with an explicit count, preserving all facet-backed options without flooding the initial viewport.
 - Quick filters retain button semantics and `aria-pressed` state; selecting a sub-category updates the existing screener query only.
+
+
+## Fund Research Profile resilience (v7)
+- The core research profile remains the required source for metrics; a temporary NAV-history endpoint failure no longer prevents the profile, rolling-return tables, benchmark panel and evidence pack from rendering.
+- NAV-history unavailability is surfaced explicitly beside the chart; an empty series is not represented as a zero-return chart.
+- Profile loads show an explicit loading state and an inline error if the core research request fails.
