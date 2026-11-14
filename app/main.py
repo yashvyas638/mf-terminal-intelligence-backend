@@ -691,7 +691,9 @@ def _require_portfolio_owner(db: Any, portfolio_id: int) -> Portfolio:
     user_id = _authenticated_user_id.get()
     # In production, the shared operator key is for operational endpoints only.
     # It must never act as a wildcard owner for private portfolio data.
-    if not user_id and os.getenv("ENVIRONMENT", "").lower() == "production":
+    # Operator credentials may access operational endpoints, never personal portfolios.
+    # Permit the legacy operator fixture only in the explicitly marked test environment.
+    if not user_id and os.getenv("ENVIRONMENT", "").strip().lower() != "test":
         raise HTTPException(401, "Sign in with a personal account to access portfolio data")
     if user_id and portfolio.owner_user_id != user_id:
         raise HTTPException(404, "Portfolio not found")
