@@ -66,6 +66,13 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
     assert created.status_code == 201
     portfolio_id = created.json()["id"]
 
+    # A different authenticated user cannot generate a report for this portfolio.
+    denied_report_create = client.post(
+        f"/v1/portfolios/{portfolio_id}/reports",
+        headers=user_b_headers,
+    )
+    assert denied_report_create.status_code == 404
+
     report_payload = '{"report_version":"portfolio-report-v1","summary":{"current_value":12345}}'
     with SessionLocal() as db:
         report_snapshot = PortfolioReportSnapshot(
@@ -89,7 +96,9 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
         f"/v1/portfolios/{portfolio_id}/reports",
         headers=user_b_headers,
     ).status_code == 404
-    assert client.get(f"/v1/reports/{report_id}", headers=user_a_headers).status_code == 200
+    own_report = client.get(f"/v1/reports/{report_id}", headers=user_a_headers)
+    assert own_report.status_code == 200
+    assert own_report.json()["integrity_status"] == "VERIFIED"
     assert client.get(f"/v1/reports/{report_id}", headers=user_b_headers).status_code == 404
     assert client.get(f"/v1/reports/{report_id}/pdf", headers=user_a_headers).status_code == 200
     assert client.get(f"/v1/reports/{report_id}/pdf", headers=user_b_headers).status_code == 404
