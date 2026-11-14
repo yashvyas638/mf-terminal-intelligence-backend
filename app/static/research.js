@@ -26,9 +26,9 @@ function renderCategoryQuickFilters(facets){
   const root=$("categoryQuickFilters");if(!root)return;
   const groups=Array.isArray(facets?.categories)?facets.categories:[];
   const subs=Array.isArray(facets?.sub_categories)?facets.sub_categories:[];
-  const groupButtons=groups.map(value=>'<button type="button" data-quick-kind="group" data-quick-value="'+esc(value)+'">'+esc(value.replace(/ Scheme$/,""))+'</button>').join("");
-  const subButtons=subs.map(value=>'<button type="button" data-quick-kind="sub" data-quick-value="'+esc(value)+'">'+esc(value)+'</button>').join("");
-  root.innerHTML='<span class="quick-label">Asset groups</span><button type="button" data-quick-kind="all" class="active" aria-pressed="true">All categories</button>'+groupButtons+(subButtons?'<span class="quick-label">Categories</span>'+subButtons:"");
+  const groupButtons=groups.map(value=>'<button type="button" data-quick-kind="group" data-quick-value="'+esc(value)+'" aria-pressed="false">'+esc(value.replace(/ Scheme$/,""))+'</button>').join("");
+  const subButtons=subs.map(value=>'<button type="button" data-quick-kind="sub" data-quick-value="'+esc(value)+'" aria-pressed="false">'+esc(value)+'</button>').join("");
+  root.innerHTML='<span class="quick-label">Asset groups</span><div class="quick-group-list"><button type="button" data-quick-kind="all" class="active" aria-pressed="true">All categories</button>'+groupButtons+'</div>'+(subButtons?'<details class="quick-subcategories"><summary>Browse sub-categories <span>'+subs.length+' available</span></summary><div class="quick-subcategory-list">'+subButtons+'</div></details>':"");
   root.querySelectorAll("[data-quick-kind]").forEach(button=>button.addEventListener("click",()=>{
     const kind=button.dataset.quickKind,value=button.dataset.quickValue||"";
     if(kind==="all"){$("category").value="";$("subCategory").value=""}
