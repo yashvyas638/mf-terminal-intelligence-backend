@@ -1,0 +1,21 @@
+/* Portfolio Lab and shared responsive polish v7 */
+.portfolio-jump{position:sticky;top:68px;z-index:12;display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:9px;margin:12px 0 16px;border:1px solid #dfe7f1;border-radius:12px;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);box-shadow:0 5px 18px rgba(20,42,72,.06);scrollbar-width:thin}
+.portfolio-jump a{flex:0 0 auto;padding:8px 11px;border-radius:8px;background:#f5f8fc;color:#50627a;font-size:11px;font-weight:750}
+.portfolio-jump a:hover,.portfolio-jump a:focus-visible{background:#e8f1ff;color:#1f5598;outline:2px solid #a9c7ef;outline-offset:1px}
+.portfolio-anchor{scroll-margin-top:130px}
+#portfolioWorkspace .sectionhead{gap:10px;flex-wrap:wrap}
+#portfolioWorkspace .sectionhead>h3{margin:0}
+#portfolioWorkspace .formgrid{align-items:start}
+#portfolioWorkspace .filebox{min-width:0}
+#portfolioWorkspace .stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+#portfolioWorkspace .tablewrap{max-width:100%;overscroll-behavior-x:contain;border:1px solid #e7edf4;border-radius:10px}
+#portfolioWorkspace table{min-width:980px}
+#portfolioWorkspace th{white-space:nowrap}
+#portfolioWorkspace td{vertical-align:top}
+#portfolioWorkspace button,#portfolioWorkspace select,#portfolioWorkspace input{min-height:38px}
+#portfolioWorkspace button:disabled{opacity:.55;cursor:not-allowed}
+#portfolioWorkspace .notice,#portfolioWorkspace .result{overflow-wrap:anywhere}
+#portfolioWorkspace .allocation-row{min-width:0}
+@media(max-width:900px){.portfolio-jump{top:6px}.portfolio-anchor{scroll-margin-top:75px}#portfolioWorkspace .stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.portfolio-jump{margin-left:-3px;margin-right:-3px;padding:7px}.portfolio-jump a{padding:8px 10px;font-size:10px}#portfolioWorkspace .stats{grid-template-columns:repeat(2,minmax(0,1fr))}#portfolioWorkspace .stat{padding:11px}#portfolioWorkspace .stat strong{font-size:17px}#portfolioWorkspace .toolbar>*{min-width:0;flex:1 1 130px}#portfolioWorkspace .toolbar button{flex:0 0 auto}#portfolioWorkspace .sectionhead{align-items:flex-start}#portfolioWorkspace .sectionhead .toolbar{width:100%}#portfolioWorkspace .sectionhead .toolbar select{flex:1 1 110px}#portfolioWorkspace .filebox{padding:12px!important}}
+@media(prefers-reduced-motion:reduce){.portfolio-jump{scroll-behavior:auto}}
