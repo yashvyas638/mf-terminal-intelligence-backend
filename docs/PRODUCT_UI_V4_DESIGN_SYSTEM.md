@@ -97,3 +97,10 @@ Before changing a workflow, inspect the existing DOM IDs, API contract, and cont
 - Refines category leader cards, sticky research tabs, profile metric grids, comparison cards, portfolio shell and mobile navigation.
 - Presentation-only: no API, database, authentication, NAV ingestion, ranking, metric or portfolio calculation changes.
 - Validation: dashboard and research JavaScript syntax checks pass; duplicate static HTML IDs absent; dashboard's only unresolved static JS reference is the existing dynamically inserted `ccCreateFirst` empty-state action; CSS braces balanced.
+
+
+## v8.1 — Data-driven category discovery cards
+- Added category-group cards to Overview Fund discovery, populated exclusively from the existing authenticated /v1/nav/facets response.
+- Selecting a card applies the exact source category group to the existing scheme filter and opens Fund Explorer; no new category taxonomy or inferred classifications.
+- Cards are keyboard-operable native buttons and expose selected state with aria-pressed.
+- Uses the existing scheme listing endpoint and existing filter state; no API, schema, NAV or ranking changes.
