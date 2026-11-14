@@ -30,11 +30,10 @@ def test_dashboard_discards_late_private_workspace_responses_after_a_b_a_switch(
     }
 
     const pendingOld = [];
-    let session = { access_token: "token-a-old", user: { id: "user-a" } };
-    let authWorkspaceRequest = 1;
+    let context;
 
     function api(path) {
-      const token = session.access_token;
+      const token = context.session.access_token;
       if (token === "token-a-old") {
         return new Promise(resolve => pendingOld.push({ path, resolve }));
       }
@@ -48,12 +47,13 @@ def test_dashboard_discards_late_private_workspace_responses_after_a_b_a_switch(
       throw new Error("Unexpected API path: " + path);
     }
 
-    const context = {
-      session, authWorkspaceRequest,
+    context = {
+      session: { access_token: "token-a-old", user: { id: "user-a" } },
+      authWorkspaceRequest: 1,
       api,
       isCurrentAuthWorkspace(requestId, userId) {
-        return requestId === authWorkspaceRequest &&
-          !!session?.access_token && session.user.id === userId;
+        return requestId === context.authWorkspaceRequest &&
+          !!context.session?.access_token && context.session.user.id === userId;
       },
       renderGoals(goals) {
         element("goalList").innerHTML = goals.map(goal => goal.name).join(",");
