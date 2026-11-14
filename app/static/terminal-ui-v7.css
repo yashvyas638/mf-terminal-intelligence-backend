@@ -19,3 +19,17 @@
 @media(max-width:900px){.portfolio-jump{top:6px}.portfolio-anchor{scroll-margin-top:75px}#portfolioWorkspace .stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.portfolio-jump{margin-left:-3px;margin-right:-3px;padding:7px}.portfolio-jump a{padding:8px 10px;font-size:10px}#portfolioWorkspace .stats{grid-template-columns:repeat(2,minmax(0,1fr))}#portfolioWorkspace .stat{padding:11px}#portfolioWorkspace .stat strong{font-size:17px}#portfolioWorkspace .toolbar>*{min-width:0;flex:1 1 130px}#portfolioWorkspace .toolbar button{flex:0 0 auto}#portfolioWorkspace .sectionhead{align-items:flex-start}#portfolioWorkspace .sectionhead .toolbar{width:100%}#portfolioWorkspace .sectionhead .toolbar select{flex:1 1 110px}#portfolioWorkspace .filebox{padding:12px!important}}
 @media(prefers-reduced-motion:reduce){.portfolio-jump{scroll-behavior:auto}}
+
+/* Research taxonomy density and discoverability v7 */
+.category-quick-filters{display:grid;grid-template-columns:1fr;gap:9px}
+.quick-group-list,.quick-subcategory-list{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.quick-subcategories{border-top:1px solid #e4eaf2;padding-top:8px}
+.quick-subcategories summary{cursor:pointer;list-style:none;font-size:10px;font-weight:800;color:#536780;display:flex;gap:8px;align-items:center}
+.quick-subcategories summary::-webkit-details-marker{display:none}
+.quick-subcategories summary:after{content:'+';font-size:14px;color:#4774ad}
+.quick-subcategories[open] summary:after{content:'−'}
+.quick-subcategories summary span{font-weight:500;color:#8b98a9}
+.quick-subcategory-list{padding:10px 0 2px;max-height:220px;overflow:auto;overscroll-behavior:contain}
+.quick-subcategory-list button{max-width:100%;white-space:normal;text-align:left;line-height:1.35}
+.category-quick-filters button[aria-pressed=true]{background:#eaf2ff!important;border-color:#bcd3f2!important;color:#1d559e!important}
+@media(max-width:700px){.category-quick-filters{padding:9px}.quick-group-list{overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px}.quick-group-list button{flex:0 0 auto}.quick-subcategory-list{max-height:180px}}
