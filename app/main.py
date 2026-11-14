@@ -46,6 +46,7 @@ from app.db import (
     NavBackfillCheckpoint,
     Portfolio,
     PortfolioImportBatch,
+    PortfolioTransactionIdempotency,
     PortfolioGoal,
     PortfolioReportSnapshot,
     PortfolioTransaction,
@@ -4032,12 +4033,31 @@ def add_portfolio_transaction(
     portfolio_id: int,
     payload: TransactionCreate,
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     require_api_key(x_api_key)
     _validate_transaction_amount(payload)
+    if idempotency_key is not None:
+        idempotency_key = idempotency_key.strip()
+        if not idempotency_key or len(idempotency_key) > 128:
+            raise HTTPException(422, "Idempotency-Key must contain 1 to 128 non-whitespace characters")
+    request_sha256 = hashlib.sha256(
+        json.dumps(payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     with SessionLocal() as db:
         _lock_portfolio(db, portfolio_id)
         _require_portfolio_owner(db, portfolio_id)
+        if idempotency_key is not None:
+            prior = db.execute(
+                select(PortfolioTransactionIdempotency).where(
+                    PortfolioTransactionIdempotency.portfolio_id == portfolio_id,
+                    PortfolioTransactionIdempotency.idempotency_key == idempotency_key,
+                )
+            ).scalar_one_or_none()
+            if prior is not None:
+                if prior.request_sha256 != request_sha256:
+                    raise HTTPException(409, "Idempotency-Key was already used with a different transaction payload")
+                return json.loads(prior.response_json)
         if db.get(Scheme, payload.scheme_code) is None:
             raise HTTPException(404, "Scheme code not found; ingest the AMFI scheme master first")
         transaction = PortfolioTransaction(
@@ -4049,6 +4069,21 @@ def add_portfolio_transaction(
         _validate_portfolio_ledger(db, portfolio_id, transaction)
         db.add(transaction)
         db.flush()
+        response_body = {"id": transaction.id, "portfolio_id": portfolio_id, "scheme_code": transaction.scheme_code,
+                "transaction_type": transaction.transaction_type, "transaction_date": transaction.transaction_date.isoformat(),
+                "units": str(transaction.units), "nav": str(transaction.nav), "amount": str(transaction.amount),
+                "charges": str(transaction.charges)}
+        if idempotency_key is not None:
+            db.add(
+                PortfolioTransactionIdempotency(
+                    portfolio_id=portfolio_id,
+                    idempotency_key=idempotency_key,
+                    request_sha256=request_sha256,
+                    transaction_id=transaction.id,
+                    response_json=json.dumps(response_body, sort_keys=True, separators=(",", ":")),
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
         db.add(
             PortfolioTransactionAudit(
                 transaction_id=transaction.id,
@@ -4057,12 +4092,23 @@ def add_portfolio_transaction(
                 details_json=_transaction_details(transaction),
             )
         )
-        db.commit()
-        db.refresh(transaction)
-        return {"id": transaction.id, "portfolio_id": portfolio_id, "scheme_code": transaction.scheme_code,
-                "transaction_type": transaction.transaction_type, "transaction_date": transaction.transaction_date.isoformat(),
-                "units": str(transaction.units), "nav": str(transaction.nav), "amount": str(transaction.amount),
-                "charges": str(transaction.charges)}
+        try:
+            db.commit()
+        except IntegrityError as integrity_error:
+            db.rollback()
+            if idempotency_key is not None:
+                prior = db.execute(
+                    select(PortfolioTransactionIdempotency).where(
+                        PortfolioTransactionIdempotency.portfolio_id == portfolio_id,
+                        PortfolioTransactionIdempotency.idempotency_key == idempotency_key,
+                    )
+                ).scalar_one_or_none()
+                if prior is not None:
+                    if prior.request_sha256 != request_sha256:
+                        raise HTTPException(409, "Idempotency-Key was already used with a different transaction payload") from integrity_error
+                    return json.loads(prior.response_json)
+            raise
+        return response_body
 
 
 @app.get("/v1/portfolios/{portfolio_id}/transactions")

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
+from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, init_db
 from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
@@ -62,6 +62,83 @@ def test_invalid_key_is_rejected(monkeypatch):
     client = TestClient(app)
     response = client.get("/v1/nav/status", headers={"X-API-Key": "wrong-secret"})
     assert response.status_code == 401
+
+
+def test_transaction_idempotency_replays_original_response_and_rejects_payload_reuse(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    scheme_code = 999993
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code, scheme_name="Idempotency Scheme",
+                isin_growth=None, isin_dividend_reinvestment=None,
+                first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+            ))
+            db.commit()
+    client = TestClient(app)
+    headers = {
+        "X-API-Key": "test-api-key-that-is-at-least-32-characters-long",
+        "Idempotency-Key": "txn-create-retry-001",
+    }
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Idempotency Test"}).json()
+    url = f"/v1/portfolios/{portfolio['id']}/transactions"
+    payload = {
+        "scheme_code": scheme_code, "transaction_type": "BUY",
+        "transaction_date": "2026-01-01", "units": "2", "nav": "100", "amount": "200",
+    }
+    first = client.post(url, headers=headers, json=payload)
+    replay = client.post(url, headers=headers, json=payload)
+    assert first.status_code == 201
+    assert replay.status_code == 201
+    assert replay.json() == first.json()
+    changed = {**payload, "units": "3", "amount": "300"}
+    conflict = client.post(url, headers=headers, json=changed)
+    assert conflict.status_code == 409
+    with SessionLocal() as db:
+        transactions = db.execute(
+            select(PortfolioTransaction).where(PortfolioTransaction.portfolio_id == portfolio["id"])
+        ).scalars().all()
+        idempotency = db.execute(
+            select(PortfolioTransactionIdempotency).where(
+                PortfolioTransactionIdempotency.portfolio_id == portfolio["id"]
+            )
+        ).scalars().all()
+        events = db.execute(
+            select(PortfolioTransactionAudit).where(
+                PortfolioTransactionAudit.transaction_id == first.json()["id"]
+            )
+        ).scalars().all()
+    assert len(transactions) == 1
+    assert len(idempotency) == 1
+    assert len(events) == 1
+
+
+def test_transaction_without_idempotency_key_preserves_existing_client_contract(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    scheme_code = 999994
+    with SessionLocal() as db:
+        if db.get(Scheme, scheme_code) is None:
+            db.add(Scheme(
+                scheme_code=scheme_code, scheme_name="Legacy Transaction Scheme",
+                isin_growth=None, isin_dividend_reinvestment=None,
+                first_seen_at=datetime.now(timezone.utc), last_seen_at=datetime.now(timezone.utc),
+            ))
+            db.commit()
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    portfolio = client.post("/v1/portfolios", headers=headers, json={"name": "Legacy Contract"}).json()
+    response = client.post(
+        f"/v1/portfolios/{portfolio['id']}/transactions",
+        headers=headers,
+        json={"scheme_code": scheme_code, "transaction_type": "BUY", "transaction_date": "2026-01-01",
+              "units": "1", "nav": "100", "amount": "100"},
+    )
+    assert response.status_code == 201
+    assert "id" in response.json()
 
 
 def test_portfolio_ledger_rejects_cash_mismatch_and_oversell_and_records_audit(monkeypatch):
