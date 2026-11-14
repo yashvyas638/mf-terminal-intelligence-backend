@@ -201,6 +201,25 @@ class PortfolioImportBatch(Base):
     )
 
 
+class PortfolioTransactionIdempotency(Base):
+    """Durable idempotency keys for single transaction creation requests."""
+
+    __tablename__ = "portfolio_transaction_idempotency"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("portfolio_transactions.id"), nullable=False, unique=True)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "idempotency_key", name="uq_portfolio_transaction_idempotency_key"),
+        Index("ix_portfolio_txn_idempotency_created", "portfolio_id", "created_at"),
+        CheckConstraint("length(idempotency_key) BETWEEN 1 AND 128", name="ck_portfolio_txn_idempotency_key_length"),
+        CheckConstraint("length(request_sha256) = 64", name="ck_portfolio_txn_idempotency_hash_length"),
+    )
+
+
 class FundWatchlistItem(Base):
     """One authenticated user's saved fund, independent from other users' lists."""
 
