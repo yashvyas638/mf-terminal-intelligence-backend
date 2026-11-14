@@ -30,6 +30,7 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
     }
 
     const guard = extractFunction("function isCurrentPortfolioRequest(");
+    const actionGuard = extractFunction("function handlePortfolioAction(");
     const stress = extractFunction("async function runPortfolioStress()");
     const verify = extractFunction("async function verifyPortfolioReport(");
     const download = extractFunction("async function downloadPortfolioReport(");
@@ -61,6 +62,8 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
       },
       api: () => new Promise(resolve => apiResolvers.push(resolve)),
       fetch: () => new Promise(resolve => { resolvePdf = resolve; }),
+      startFailingAction: () => new Promise((resolve, reject) => { contextReject = reject; }),
+      recordError: error => { context.errorMessage = error.message; },
       headers: () => ({}),
       base: "https://example.test",
       Promise, Number, String, Error, Blob,
@@ -68,7 +71,7 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
       setTimeout() {},
     };
     vm.createContext(context);
-    vm.runInContext(guard + "\n" + stress + "\n" + verify + "\n" + download, context);
+    vm.runInContext(guard + "\n" + actionGuard + "\n" + stress + "\n" + verify + "\n" + download, context);
 
     (async () => {
       const stressPending = vm.runInContext("runPortfolioStress()", context);
@@ -101,6 +104,13 @@ def test_private_portfolio_action_responses_are_discarded_after_account_switch()
       if (createElementCalls !== 0) {
         throw new Error("A PDF belonging to the prior account was downloaded after the account switch.");
       }
+
+      let contextReject;
+      const staleError = vm.runInContext("handlePortfolioAction(startFailingAction, recordError)", context);
+      context.authWorkspaceRequest = 5;
+      contextReject(new Error("prior-account request failed"));
+      await staleError;
+      if (context.errorMessage) throw new Error("A prior-account action error was shown in the current workspace.");
     })().catch(error => {
       console.error(error);
       process.exitCode = 1;
