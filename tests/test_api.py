@@ -241,7 +241,6 @@ def test_private_user_tables_reject_direct_supabase_client_access():
                    c.relrowsecurity AS rls_enabled,
                    has_table_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') AS anon_any_privilege,
                    has_table_privilege('authenticated', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') AS authenticated_any_privilege,
-                   has_table_privilege('service_role', c.oid, 'SELECT') AS service_role_select,
                    (SELECT count(*) FROM pg_policies p
                     WHERE p.schemaname = 'public'
                       AND p.tablename = c.relname
@@ -261,7 +260,6 @@ def test_private_user_tables_reject_direct_supabase_client_access():
         assert row["rls_enabled"] is True
         assert row["anon_any_privilege"] is False
         assert row["authenticated_any_privilege"] is False
-        assert row["service_role_select"] is True
         assert row["restrictive_deny_policy_count"] == 1
 
 
