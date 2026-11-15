@@ -239,13 +239,17 @@ def test_private_user_tables_reject_direct_supabase_client_access():
         rows = db.execute(text("""
             SELECT c.relname,
                    c.relrowsecurity AS rls_enabled,
-                   has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
-                   has_table_privilege('authenticated', c.oid, 'SELECT') AS authenticated_select,
+                   has_table_privilege('anon', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') AS anon_any_privilege,
+                   has_table_privilege('authenticated', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') AS authenticated_any_privilege,
                    (SELECT count(*) FROM pg_policies p
                     WHERE p.schemaname = 'public'
                       AND p.tablename = c.relname
                       AND p.policyname = 'deny_direct_client_access'
-                      AND p.permissive = 'RESTRICTIVE') AS restrictive_deny_policy_count
+                      AND p.permissive = 'RESTRICTIVE'
+                      AND p.roles @> ARRAY['anon','authenticated']::name[]
+                      AND p.cmd = 'ALL'
+                      AND p.qual = 'false'
+                      AND p.with_check = 'false') AS restrictive_deny_policy_count
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = 'public' AND c.relkind = 'r'
@@ -254,8 +258,8 @@ def test_private_user_tables_reject_direct_supabase_client_access():
     assert {row["relname"] for row in rows} == private_tables
     for row in rows:
         assert row["rls_enabled"] is True
-        assert row["anon_select"] is False
-        assert row["authenticated_select"] is False
+        assert row["anon_any_privilege"] is False
+        assert row["authenticated_any_privilege"] is False
         assert row["restrictive_deny_policy_count"] == 1
 
 
