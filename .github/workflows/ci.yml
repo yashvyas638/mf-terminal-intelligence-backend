@@ -38,7 +38,8 @@ jobs:
           node --test tests/password-screening.test.cjs
       - name: Validate operational audit scripts
         run: |
-          python -m py_compile scripts/p0_production_audit.py
+          python -m py_compile scripts/p0_production_audit.py scripts/validate_operational_workflows.py
+          python scripts/validate_operational_workflows.py
           pytest -q tests/test_p0_production_audit.py
       - name: Validate authentication and portfolio DOM contracts
         run: |
