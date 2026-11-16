@@ -6,14 +6,30 @@ from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignK
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
-def database_url() -> str:
-    """Return a SQLAlchemy URL compatible with Render/Supabase Postgres URLs."""
-    url = os.getenv("DATABASE_URL", "sqlite:///./mf_terminal.db")
+def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url[len("postgres://"):]
     if url.startswith("postgresql://") and "+psycopg" not in url:
         return "postgresql+psycopg://" + url[len("postgresql://"):]
     return url
+
+
+def database_url() -> str:
+    """Return the runtime SQLAlchemy URL compatible with Render/Supabase."""
+    return _normalize_database_url(os.getenv("DATABASE_URL", "sqlite:///./mf_terminal.db"))
+
+
+def migration_database_url() -> str:
+    """Require a separate privileged connection for production Alembic migrations."""
+    configured = os.getenv("MIGRATION_DATABASE_URL")
+    if configured and configured.strip():
+        return _normalize_database_url(configured.strip())
+    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        raise RuntimeError(
+            "MIGRATION_DATABASE_URL must be configured separately from runtime DATABASE_URL "
+            "for production schema migrations"
+        )
+    return database_url()
 
 
 _url = database_url()
