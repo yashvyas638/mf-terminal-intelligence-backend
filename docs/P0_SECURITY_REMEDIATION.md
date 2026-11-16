@@ -96,6 +96,7 @@ Record redacted request/result evidence, account labels (A/B, never email/passwo
 - [ ] Confirm the candidate migration chain and production drift have no unexplained differences.
 - [ ] Configure required GitHub Actions secrets without disclosing values.
 - [ ] Complete real signup, confirmation, login, session, password-reset and sign-out browser tests.
+- [ ] Enable native leaked-password protection where supported, or record explicit risk acceptance and compensating controls; frontend breach screening is not equivalent.
 - [ ] Complete two-account production/staging isolation evidence using approved test accounts.
 - [ ] Complete encrypted off-site backup and isolated restore drill.
 - [ ] Complete live AMFI refresh, idempotent replay, correction provenance and data freshness checks.
