@@ -46,6 +46,42 @@ def main() -> int:
                         f"{workflow_path}:{job_name}: step {step.get('name', index)!r} "
                         f"has invalid shell syntax: {result.stderr.strip()}"
                     )
+    render_path = Path("render.yaml")
+    if not render_path.is_file():
+        errors.append("render.yaml: missing deployment blueprint")
+    else:
+        render_document = yaml.safe_load(render_path.read_text(encoding="utf-8"))
+        services = render_document.get("services", []) if isinstance(render_document, dict) else []
+        web_services = [item for item in services if isinstance(item, dict) and item.get("type") == "web"]
+        if len(web_services) != 1:
+            errors.append("render.yaml: expected exactly one web service in the candidate blueprint")
+        for service in web_services:
+            env_vars = {
+                item.get("key"): item
+                for item in service.get("envVars", [])
+                if isinstance(item, dict) and item.get("key")
+            }
+            for required in ("DATABASE_URL", "MIGRATION_DATABASE_URL"):
+                if required not in env_vars or env_vars[required].get("sync") is not False:
+                    errors.append(
+                        f"render.yaml: {required} must be declared as a non-synchronised secret"
+                    )
+            command = str(service.get("startCommand", ""))
+            migration = command.find("alembic upgrade head")
+            unset = command.find("unset MIGRATION_DATABASE_URL")
+            server = command.find("uvicorn app.main:app")
+            if not (0 <= migration < unset < server):
+                errors.append(
+                    "render.yaml: run Alembic with the migration-only URL, unset it, then start Uvicorn"
+                )
+
+    migration_env = Path("migrations/env.py").read_text(encoding="utf-8")
+    db_config = Path("app/db.py").read_text(encoding="utf-8")
+    if "migration_database_url()" not in migration_env:
+        errors.append("migrations/env.py: Alembic must use the dedicated migration URL")
+    if "MIGRATION_DATABASE_URL must be configured separately" not in db_config:
+        errors.append("app/db.py: production migrations must fail closed without a dedicated URL")
+
     if errors:
         for error in errors:
             print(f"ERROR: {error}")
