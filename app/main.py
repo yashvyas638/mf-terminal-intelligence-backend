@@ -544,9 +544,9 @@ def _verify_trusted_database_role(db: Any) -> str:
     row = db.execute(
         text(
             """
-            SELECT current_user, role.rolsuper
-              FROM pg_roles AS role
-             WHERE role.rolname = current_user
+            SELECT current_user, r.rolsuper
+              FROM pg_roles AS r
+             WHERE r.rolname = current_user
             """
         )
     ).one()
