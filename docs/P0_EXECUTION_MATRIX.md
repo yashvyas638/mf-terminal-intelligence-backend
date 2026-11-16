@@ -91,6 +91,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 **Build requirements**
 - Verify signup, confirmation email, sign-in, session restoration/refresh, password reset request, reset link, password update and sign-out in a real browser.
 - Validate Supabase Site URL, redirect allow-list, email provider and SMTP delivery.
+- Confirm native leaked-password protection is enabled. If the current Supabase plan does not support it, record an explicit risk acceptance or upgrade; browser-side Pwned Password screening is not equivalent and can be bypassed through direct Auth API calls.
 - Confirm protected API routes reject missing, malformed, expired and invalid bearer tokens.
 - Confirm operator-only routes reject browser bearer-only access where the server key is required.
 - Ensure logout clears private UI state and stale cached account data.
@@ -99,6 +100,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 - [ ] Real signup and confirmation completed for test account A.
 - [ ] Login, reload/session restoration, refresh and logout pass.
 - [ ] Password reset email is received and password update succeeds.
+- [ ] Native leaked-password protection is enabled or the limitation is formally accepted with compensating controls.
 - [ ] Invalid/expired token requests are rejected.
 - [ ] No account/session material is leaked in logs or frontend storage beyond the provider's intended session mechanism.
 - [ ] Evidence includes browser version, timestamp, environment and redacted result.
