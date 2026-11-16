@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 15
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      MF_TERMINAL_API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+      MF_TERMINAL_API_URL: https://mf-terminal-intelligence-backend.onrender.com
       MF_TERMINAL_API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
     steps:
       - name: Checkout
