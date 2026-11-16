@@ -40,7 +40,7 @@ Project `zgfdvhzhvccsfmpoaqah` was inspected using read-only SQL, table metadata
 - RLS is enabled on all 21 inspected public tables. Effective table privileges show no `anon` access. `authenticated` has SELECT only on the six intended read surfaces; it has no write privileges.
 - All 18 inspected public sequences deny `anon` and `authenticated` USAGE/SELECT. The two public financial trigger functions are SECURITY INVOKER, have fixed `search_path=pg_catalog, public`, and deny EXECUTE to `anon` and `authenticated`.
 - Eleven RLS-enabled tables have no policies and are denied direct client privileges; this matches the intended backend-only model and explains the informational advisor notices.
-- **New P0 finding:** schema-specific default privileges for creator role `supabase_admin` in `public` still grant `anon` and `authenticated` access to future tables, sequences and functions. Current existing tables are not thereby exposed, but future objects could inherit client access. Candidate migration `0029_admin_default_acl` revokes those defaults, and the P0 audit now checks both global and schema-specific default ACLs. Production is not changed by this candidate migration.
+- **New P0 finding:** schema-specific default privileges for creator role `supabase_admin` in `public` still grant `anon` and `authenticated` access to future tables, sequences and functions. Current existing tables are not thereby exposed, but future objects could inherit client access. Candidate migration `0029_admin_default_acl` revokes explicit client defaults and global PUBLIC function execution for every role able to CREATE in `public`; the P0 audit evaluates the effective combination of global and schema-specific defaults. Production is not changed by this candidate migration. The inspected SQL role `postgres` is not a member of `supabase_admin`, so it cannot be assumed to apply this migration; the migration fails closed unless its connection is authorised for every creator role.
 - Security Advisor reports one warning: native leaked-password protection disabled; 11 informational RLS-enabled/no-policy notices. Health Advisor reports no findings. Performance Advisor reports 24 unused-index INFO notices; do not drop these automatically.
 - The SQL inspection connection reports `current_user=postgres`. This is not evidence of the actual Render backend connection role.
 
@@ -90,7 +90,8 @@ Record redacted request/result evidence, account labels (A/B, never email/passwo
 ## Remaining P0 work
 
 - [ ] Refresh live Supabase schema, grants, RLS, functions and migration revision evidence.
-- [ ] Apply candidate migration `0029_admin_default_acl` only after CI, Render role and backup/restore approval; verify no unsafe future-object default ACLs remain.
+- [ ] Apply candidate migration `0029_admin_default_acl` only after CI, Render role and backup/restore approval; verify no unsafe effective future-object default ACLs remain.
+- [ ] Confirm the migration connection is superuser/member of every public-schema creator role; otherwise execute through an approved privileged migration path.
 - [ ] Verify the actual Render database role and deployed SHA privately.
 - [ ] Confirm the candidate migration chain and production drift have no unexplained differences.
 - [ ] Configure required GitHub Actions secrets without disclosing values.
