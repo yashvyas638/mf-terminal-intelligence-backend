@@ -1,30 +1,35 @@
 # MF Terminal Intelligence — NAV Data Service
 
-A secure, deployable FastAPI service that retrieves the official AMFI all-schemes NAV feed, validates it, and stores an auditable daily history in SQLite (local development) or PostgreSQL (production).
+A deployable FastAPI service that retrieves the official AMFI all-schemes NAV feed, validates it, and stores dated NAV observations plus append-only correction provenance in PostgreSQL (production) or SQLite (local tests only).
 
 > Research support only. This service does not place orders, provide investment advice, or reconcile a scheme against AMC disclosures.
 
 ## What it does
 
-- Protects every data endpoint with a constant-time API-key check.
+- Protects `/v1/*` data endpoints with a verified Supabase Auth session or a server-side operator API key; NAV refresh remains restricted to the server-side operator key.
 - Downloads AMFI's official `NAVAll.txt` source only when an authenticated refresh is requested.
-- Rejects empty, malformed, and unexpectedly small source responses before changing persisted data.
+- Rejects empty, malformed, oversized, invalid-UTF-8, stale, and unexpectedly small source responses before changing persisted data.
 - Stores scheme metadata, dated NAV observations, source hashes, quality metrics, and validation details.
-- Prevents duplicate refreshes within a running service process.
+- Preserves prior NAV values and both source snapshot references when AMFI republishes a corrected NAV for the same scheme/date.
+- Uses Alembic as the production schema manager; production startup does not run ORM create-all.
+- Prevents duplicate refreshes within a process and across PostgreSQL-backed service instances using an advisory lock.
 - Provides health, freshness, scheme search, history, and latest-snapshot endpoints.
+- Records an append-only audit event for each portfolio transaction and supports audited voids rather than destructive deletes.
+- Rejects transaction cash/NAV mismatches and any transaction or void that would create a negative unit balance.
 - Includes GitHub Actions CI and a Monday–Saturday 09:30 IST scheduler.
 
 ## Quick start
 
-Python 3.11+ is recommended.
+Python 3.12.16 is the pinned and CI-tested runtime.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# Set a strong API_KEY in .env, then export it for your shell.
+pip install -r requirements.lock
 export API_KEY='replace-with-a-long-random-secret'
+# Optional for local SQLite; production must set DATABASE_URL to PostgreSQL.
+export ENVIRONMENT=development
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -42,32 +47,123 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /health` | Public database/service readiness probe; exposes no data or secrets. |
-| `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot. |
+| `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot; server-side operator key only. |
 | `GET /v1/nav/status` | Latest ingestion snapshot and retrieval freshness. |
-| `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |
+| `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |\n| `GET /v1/nav/schemes/{scheme_code}` | Scheme metadata, ISINs, latest stored NAV, observation coverage and NAV-derived metrics. |\n| `POST /v1/analytics/compare` | Compare 2–10 schemes on stored AMFI NAV series; each scheme's coverage is reported independently. |
 | `GET /v1/nav/history/{scheme_code}?days=` | Stored NAV history for one scheme. |
 | `GET /v1/nav/snapshot/latest` | Latest full validation report. |
+| `POST /v1/portfolios` | Creates a portfolio owned by the authenticated Supabase user (or trusted server-side operator). |
+| `GET /v1/portfolios` | Lists only the signed-in user's portfolios; operator access is server-side only. |
+| `POST /v1/portfolios/{id}/transactions` | Creates a validated BUY/SELL ledger transaction. |
+| `POST /v1/portfolios/{id}/transactions/{transaction_id}/void` | Audited void; never deletes a financial record. |
+| `GET /v1/portfolios/{id}/transactions/{transaction_id}/audit` | Immutable, authenticated event history for one transaction. |
+| `POST /v1/portfolios/{id}/transactions/import/preview` | Validates a CSV without writing transactions and returns a short-lived signed confirmation token. |
+| `POST /v1/portfolios/{id}/transactions/import` | Requires the preview token; atomically imports the exact normalized statement and rejects duplicates. |
+| `POST /v1/portfolios/{id}/rebalance/preview` | Non-executable target-allocation trade estimate using stored NAVs. |
+| `GET /v1/portfolios/{id}/valuation` | Latest stored-NAV valuation, with explicit missing-coverage status. |
 
-Except `/health`, every endpoint requires `X-API-Key`.
+**Authentication rules**
+
+- Browser/user access to `/v1/*` requires `Authorization: Bearer <Supabase access token>`; the backend verifies the token against Supabase Auth and scopes portfolio access to the verified user ID.
+- Trusted scheduled/server automation uses `X-API-Key`; the key must remain in server-side secret storage and must never be embedded in browser JavaScript, HTML, mobile apps, or committed files.
+- `POST /v1/nav/refresh` is deliberately excluded from browser-session auth and requires the server-side operator key.
+- `GET /health` is public and reports only service/database readiness, not portfolio or account data.
+- Supabase RLS and table grants provide database-layer defence in depth. Application ownership checks also apply to portfolio reads, writes, imports, audit history, valuation and rebalance previews.
 
 ## Deployment on Render
 
 1. Push this folder to a GitHub repository.
 2. Create a managed PostgreSQL database. Do **not** use SQLite on an ephemeral web-service disk in production.
-3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL URL.
+3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL URL. Production mode rejects SQLite.
 4. Keep Render's generated `API_KEY`, or replace it with a strong secret.
 5. Confirm `/health` reports `database: reachable`, then run one authenticated refresh.
-6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler then refreshes Monday–Saturday at 09:30 IST.
+6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler refreshes Monday–Saturday at 22:45 IST, after AMFI's normal publication window (including late liquid/overnight NAVs).
+
+### Release checklist
+
+- Run `alembic upgrade head` against a staging copy and confirm the recorded revision before promoting a release.
+- Store `API_KEY`, `DATABASE_URL`, and scheduler credentials only in the deployment secret manager; never commit a populated `.env` file.
+- Trigger one authenticated NAV refresh, then verify `/v1/nav/status` reports the expected retrieval timestamp and quality status.
+- Configure an external probe for `/health` and alert on failed refresh jobs or `STALE_RETRIEVAL` data.
+- Restore a PostgreSQL backup into a non-production environment and run the migration and API smoke checks before relying on disaster recovery.
 
 ## Quality and operational boundaries
 
 Run checks locally with:
 
 ```bash
-ruff check .
+ruff check --select F,B .
 pytest -q
 ```
 
-The included concurrency guard applies to a single process. If this service is scaled to multiple workers or instances, use a PostgreSQL advisory lock or a dedicated job queue before enabling more than one scheduler.
+NAV refresh uses a process-local fast guard plus a PostgreSQL session-level advisory lock across service instances. SQLite tests exercise only the local guard; the PostgreSQL CI job exercises the database lock.
 
-The data model uses `create_all` for the initial deploy. Introduce Alembic migrations before making schema changes to an already populated production database.
+Alembic is the sole production schema manager. Render runs `alembic upgrade head` before starting the API. `init_db()` remains only for local development and isolated tests. Production startup does not mutate schema.
+
+## Portfolio ledger integrity
+
+Portfolio transactions are immutable financial facts. To correct one, use the audited void endpoint with a reason and record a replacement transaction; do not alter rows directly. The API enforces `amount = units × NAV` rounded to paisa and evaluates the complete dated ledger before accepting a BUY, SELL, or void, so an oversell cannot be stored.
+
+`valuation_status=PARTIAL_MISSING_NAV` means at least one active holding has no stored NAV. In that state the displayed covered holding values are informational only: aggregate unrealized gain/loss, total gain/loss, and XIRR are intentionally withheld rather than calculated from incomplete coverage.
+
+## Statement import and rebalancing
+
+The statement-import workflow accepts CSV text with a header and these required fields (common aliases shown): `date`/`transaction_date`, `scheme_code`, `type`/`transaction_type`, `units`, `nav`, and `amount`; `charges` and `notes` are optional. Preview validates known schemes, arithmetic and chronological unit balances without writing transactions. The confirmation token is bound to the portfolio, normalized transaction fingerprint and row count, and expires after 10 minutes. Confirmation revalidates under a per-portfolio database lock and commits all rows atomically. Re-importing the same normalized statement into the same portfolio is rejected. The raw statement is deliberately not retained; only a SHA-256 fingerprint is stored.
+
+The rebalance preview accepts target percentages totaling exactly 100 and returns indicative BUY/SELL/HOLD quantities at the latest stored NAV. It rejects stale NAV inputs rather than presenting them as current values. It does not consider taxes, exit loads, scheme restrictions, or suitability, and never executes transactions.
+
+
+### NAV ingestion performance and resilience
+
+The refresh pipeline streams the official AMFI file with a 30 MB hard cap, bounded connect/read timeouts, and up to three attempts for transient network/HTTP failures. It records response metadata (status, content type, bytes and attempt number) without logging payloads or credentials. A failed or malformed source response never replaces accepted data.
+
+Persistence uses batched scheme and NAV lookups rather than one database round-trip per feed row. The validated snapshot, scheme-master changes, NAV observations and correction history are committed in one transaction. Exact replays remain idempotent; corrections retain their prior-value provenance.
+
+The scheduled refresh runs at 22:45 IST Monday–Saturday to avoid racing AMFI's evening publication, which can include later liquid/overnight NAV updates. Manual refresh remains available. AMFI's official NAVAll.txt remains the sole ingestion authority; third-party mirrors are not silently substituted into the canonical dataset.
+
+## NAV correction history
+
+The current NAV table stores one effective value per scheme/date. If AMFI republishes a different value for the same date, the previous value, replacement value, both source snapshot IDs, and correction timestamp are appended to `nav_observation_revisions` before the effective observation is updated. Replaying an identical feed does not create a correction record. This preserves corrections observed after migration 0003; it cannot reconstruct values overwritten before that migration.
+
+## Authentication and tenancy boundary
+
+Fund comparison is now implemented using the stored NAV time series for 2–10 schemes, returning total return, CAGR, volatility, drawdown and underlying coverage counts. The comparison is NAV-derived only: it does not add benchmark TRI, dividend/distribution adjustment or peer/category ranking.\n\nThe current service uses one shared server-side API key and is suitable only for a single trusted operator/private workspace. It is not yet a multi-tenant public SaaS: portfolio records are not bound to authenticated user identities, and the shared API key is not a substitute for per-user JWT authorization and Supabase RLS. Do not expose it to unrelated users until ownership mapping, authorization checks, and RLS have been implemented and verified. Use a random API key of at least 32 characters.
+
+## Database and source CI
+
+CI applies migrations and runs tests independently against SQLite and PostgreSQL 16, including financial CHECK constraints, append-only audit triggers, import idempotency and advisory locking. A separate scheduled/manual workflow validates the public AMFI response without writing to any database. These checks do not replace verification against the actual Supabase project or Render deployment.
+
+
+## Product roadmap and engineering governance
+
+The product is developed in seven gated phases. Read these documents before changing scope:
+
+- [Development Roadmap — phase gates and acceptance criteria](DEVELOPMENT_ROADMAP.md)
+- [Product Blueprint — modules, user outcomes and feature boundaries](docs/PRODUCT_BLUEPRINT.md)
+- [Engineering Playbook — end-to-end development, CI, database and deployment flow](docs/ENGINEERING_PLAYBOOK.md)
+- [Architecture and Data Model — canonical entities, tenancy and provenance](docs/ARCHITECTURE_AND_DATA_MODEL.md)
+- [UX and Design System — terminal experience and interaction standards](docs/UX_AND_DESIGN_SYSTEM.md)
+- [Final Release Runbook — Supabase, Render, smoke tests and rollback](docs/FINAL_RELEASE_RUNBOOK.md)
+
+**Current phase: P0 — OPEN / BLOCKED.** P0 security/authentication foundations are implemented and deployed through Alembic revision `0011_research_security_tuning`; automated SQLite/PostgreSQL CI and simulated two-user isolation tests pass. Remaining P0 exit evidence includes real two-account production login/isolation verification, Auth provider/redirect confirmation, backup restore drill, live AMFI refresh/quality verification, and full production endpoint smoke tests. P1 analytics work must not be represented as complete until its benchmark/peer data dependencies and acceptance tests pass. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
+
+
+## P0 security remediation
+
+Live Supabase access findings and the containment migration are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md). Migration 0004 passed isolated PostgreSQL CI after its revision identifier was shortened. Migrations 0004–0007 have not been applied to production Supabase; the Render database role and deployment state must be verified before the final release.
+
+
+## NAV ingestion diagnostics
+
+The service emits structured lifecycle diagnostics for refresh start, source HTTP metadata, validation totals, freshness/minimum-record gates, database transaction failures and successful snapshot commits. Logs exclude API keys, database URLs and raw feed contents. `GET /health` confirms only basic database connectivity; use authenticated `GET /v1/nav/status` and the snapshot ID/quality details to verify actual ingestion.
+
+
+### Historical NAV backfill (operator-only, gated)
+
+AMFI's official NAV Download page documents a maximum 90-day date range per history download. The backfill planner therefore keeps the hard 90-day validation limit but defaults to conservative 7-day windows to bound response size and make retries/resume granular. The planner is idempotent and makes no network requests; each window has a durable checkpoint. A bounded worker batch can be resumed after a timeout or process restart. Historical fetching remains disabled unless both `AMFI_HISTORY_CONTRACT_VERIFIED=true` and `AMFI_HISTORY_BACKFILL_ENABLED=true` are explicitly configured after a live source-contract check.
+
+- `POST /v1/nav/backfill/plan` — create checkpoints (default 7-day windows; configurable up to 90 days), no AMFI request.
+- `GET /v1/nav/backfill/status` — inspect pending/running/failed/complete windows and inserted/corrected/unchanged totals.
+- `POST /v1/nav/backfill/run` — run a bounded batch only after both release gates are enabled; operator key required.
+
+Do not enable the execution gates solely because CI passes. First verify a live response from the official AMFI NAV History form for each scheme type and reconcile its response dates and row layout. The public AMFI page confirms the 90-day maximum: https://www.amfiindia.com/net-asset-value/nav-download.
