@@ -277,6 +277,9 @@ def main() -> int:
                   (SELECT count(*) FROM auth.users WHERE email_confirmed_at IS NOT NULL),
                   (SELECT count(*) FROM public.portfolios),
                   (SELECT count(DISTINCT owner_user_id) FROM public.portfolios),
+                  (SELECT count(*) FROM public.portfolios p
+                    LEFT JOIN auth.users u ON u.id::text = p.owner_user_id
+                    WHERE u.id IS NULL OR u.email_confirmed_at IS NULL),
                   (SELECT count(*) FROM public.portfolio_goals),
                   (SELECT count(*) FROM public.portfolio_goals g
                     JOIN auth.users u ON u.id::text = g.owner_user_id
@@ -292,6 +295,7 @@ def main() -> int:
             )
             (
                 confirmed_users, portfolio_count, portfolio_owners,
+                portfolios_without_confirmed_owner,
                 portfolio_goals, goals_with_confirmed_owner, goals_without_confirmed_owner,
                 goals_with_cross_owner_portfolio_link,
             ) = cur.fetchone()
@@ -299,12 +303,17 @@ def main() -> int:
                 "confirmed_auth_users": confirmed_users,
                 "portfolios": portfolio_count,
                 "distinct_portfolio_owners": portfolio_owners,
+                "portfolios_without_confirmed_auth_owner": portfolios_without_confirmed_owner,
                 "portfolio_goals": portfolio_goals,
                 "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
                 "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
                 "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
                 "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
             }
+            if portfolios_without_confirmed_owner:
+                report["failures"].append(
+                    "Portfolio ownership integrity failed: one or more portfolios do not belong to a confirmed Auth account."
+                )
             if goals_without_confirmed_owner:
                 report["failures"].append(
                     "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
