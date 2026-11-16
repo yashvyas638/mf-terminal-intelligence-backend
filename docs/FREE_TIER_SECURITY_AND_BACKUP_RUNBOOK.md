@@ -60,6 +60,10 @@ After adding the required secrets, open Actions → Supabase Free-Tier Encrypted
 4. Run the application migration checks, API smoke tests, private-table grant/RLS checks and data reconciliation against that isolated target.
 5. Only plan a production recovery after the isolated restore is verified and a maintenance window/rollback path is approved. Never use production as the restore test target.
 
+### Network safety
+
+The workflow intentionally does not set `SUPABASE_YES` and never auto-approves removal of a Supabase network ban. If the CLI reports that a network ban or network restriction blocks the connection, the job stops. Resolve connectivity through an approved Session Pooler/database allowlist route; do not remove an existing production network restriction merely to make backups pass. The export commands are read-only.
+
 ### Important backup scope
 
 Supabase CLI logical dumps exclude Supabase-managed `auth`, `storage` and extension schemas. Storage object bytes are not included either. The dump therefore protects the application's PostgreSQL schema, application data and custom role definitions, but is not a complete Supabase account/Storage backup.
