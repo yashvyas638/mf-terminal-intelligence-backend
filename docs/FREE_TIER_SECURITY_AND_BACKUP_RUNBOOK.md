@@ -13,6 +13,10 @@ Workflow: \`.github/workflows/supabase-free-tier-backup.yml\`
 - Can additionally copy the encrypted archive to Cloudflare R2 or another S3-compatible object store.
 - Never writes database exports into the repository or workflow logs.
 
+### Activation note
+
+The repository's current default branch is `main`, while this work has been merged into `audit/production-foundation`. GitHub scheduled workflows run only from the default branch, and `workflow_dispatch` is available only after the workflow file exists on the default branch. Therefore these schedules are prepared but are **not active yet**. The existing repository governance keeps `main` unchanged without approval; after the owner approves promotion of these workflow files to `main`, the daily schedules become active. Do not mistake the merge into the audit branch for a completed backup run.
+
 ### One-time GitHub configuration
 
 Create a private backup bucket in Cloudflare R2 (or another S3-compatible provider). Generate an age key pair on a trusted local machine:
