@@ -1303,7 +1303,7 @@ def _snapshot_dict(snapshot: IngestionSnapshot) -> dict[str, Any]:
 def _render_build_commit() -> str | None:
     """Expose only Render's public deployment SHA, never arbitrary environment text."""
     value = os.getenv("RENDER_GIT_COMMIT", "").strip().lower()
-    if len(value) < 7 or len(value) > 40:
+    if len(value) != 40:
         return None
     if any(character not in "0123456789abcdef" for character in value):
         return None
