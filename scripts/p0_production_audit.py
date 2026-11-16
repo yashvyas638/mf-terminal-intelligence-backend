@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 import psycopg
 
@@ -45,7 +46,10 @@ def http_json(url: str, headers: dict[str, str] | None = None) -> dict:
         with urlopen(request, timeout=20) as response:
             if response.status != 200:
                 raise RuntimeError(f"HTTP check failed for {url}: {response.status}")
-            payload = json.loads(response.read(1_000_001))
+            raw = response.read(1_000_001)
+            if len(raw) > 1_000_000:
+                raise RuntimeError(f"HTTP check response exceeded the 1 MB safety limit: {urlparse(url).path}")
+            payload = json.loads(raw)
             if not isinstance(payload, dict):
                 raise RuntimeError(f"Unexpected JSON response from {url}")
             return payload
@@ -122,6 +126,9 @@ def check_policy(conn, table: str) -> dict:
 def main() -> int:
     database_url = require_env("SUPABASE_DB_URL")
     api_url = require_env("MF_TERMINAL_API_URL").rstrip("/")
+    parsed_api_url = urlparse(api_url)
+    if parsed_api_url.scheme != "https" or not parsed_api_url.hostname or parsed_api_url.username or parsed_api_url.password:
+        raise RuntimeError("MF_TERMINAL_API_URL must be a credential-free HTTPS origin.")
     api_key = require_env("MF_TERMINAL_API_KEY")
     report: dict = {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
