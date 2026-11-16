@@ -77,10 +77,11 @@ The native Supabase leaked-password protection warning is separate from the futu
 **Required secret inventory**
 - P0 audit: `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`.
 - Encrypted backup: `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`.
-- Render: trusted PostgreSQL `DATABASE_URL`, operator `API_KEY`, Supabase URL and publishable key, plus required provider settings.
+- Render: least-privilege runtime PostgreSQL `DATABASE_URL`, privileged migration-only `MIGRATION_DATABASE_URL`, operator `API_KEY`, Supabase URL and publishable key, plus required provider settings.
 
 **Acceptance evidence**
 - [ ] Every required secret exists in its correct secret store.
+- [ ] Runtime `DATABASE_URL` and migration-only `MIGRATION_DATABASE_URL` are separate; the privileged migration URL is never used by the running API process.
 - [ ] Secret presence is validated without printing values.
 - [ ] Operator API key is rotated and matches between authorised services.
 - [ ] Audit and backup workflows pass configuration preflight.
@@ -108,7 +109,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 - Audit every portfolio-scoped API path, including goals, transactions, import preview/commit, void/audit, valuation, rebalance and report/watchlist features.
 - Verify every query is scoped to the authenticated owner; never trust a user-supplied owner ID.
 - Compare the complete candidate Alembic migration chain with live Supabase schema, indexes, constraints, triggers, grants, RLS and functions.
-- Verify Render uses a trusted server-side PostgreSQL role, not `anon` or `authenticated`.
+- Verify Render runtime uses a least-privilege trusted server-side PostgreSQL role, not `anon` or `authenticated`; Alembic uses a separate privileged `MIGRATION_DATABASE_URL`.
 - Verify RLS and grants on every public table, including global and schema-specific default privileges for every object-creating role, sequences and functions. Confirm intended client-readable allowlist and deny-all internal tables.
 - Verify security-definer functions use a fixed safe `search_path` and least-privilege execution grants.
 - Test horizontal privilege escalation using two real accounts.
