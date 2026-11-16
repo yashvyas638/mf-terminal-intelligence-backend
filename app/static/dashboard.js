@@ -191,7 +191,7 @@ async function assertPasswordNotPwned(password){
   if(error.name==="AbortError")throw new Error("Leaked-password screening timed out. Please retry.");
   throw error;
  }finally{clearTimeout(timeout)}
- const compromised=body.split(/\\r?\\n/).some(line=>{
+ const compromised=body.split(/\r?\n/).some(line=>{
   const [candidate,count]=line.trim().split(":");
   return candidate?.toUpperCase()===suffix&&Number(count)>0;
  });
