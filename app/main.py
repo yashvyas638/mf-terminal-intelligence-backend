@@ -540,15 +540,29 @@ def _scheme_taxonomy(scheme: Scheme) -> dict[str, str | None]:
 
 
 def _verify_trusted_database_role(db: Any) -> str:
-    """Fail closed when production connects through a Supabase client role."""
-    role_value = db.execute(text("SELECT current_user")).scalar_one()
-    role = str(role_value or "").strip().lower()
+    """Require a trusted non-superuser runtime role; migrations use a separate URL."""
+    row = db.execute(
+        text(
+            """
+            SELECT current_user, role.rolsuper
+              FROM pg_roles AS role
+             WHERE role.rolname = current_user
+            """
+        )
+    ).one()
+    role = str(row[0] or "").strip().lower()
+    is_superuser = bool(row[1])
     if not role:
         raise RuntimeError("Unable to identify the production PostgreSQL connection role")
     if role in {"anon", "authenticated"}:
         raise RuntimeError(
             "Production DATABASE_URL must use a trusted server-side PostgreSQL role; "
             "Supabase client roles are not permitted"
+        )
+    if is_superuser:
+        raise RuntimeError(
+            "Production runtime DATABASE_URL must not use a PostgreSQL superuser; "
+            "use the separate migration-only connection for schema changes"
         )
     return role
 
