@@ -101,6 +101,10 @@ jobs:
               app_pos = html.find(app_script)
               if screening_pos < 0 or app_pos < 0 or screening_pos > app_pos:
                   raise SystemExit(f"{html_path} must load shared password screening before {app_script}.")
+          for auth_script in ("app/static/dashboard.js", "app/static/research.js"):
+              source = Path(auth_script).read_text(encoding="utf-8")
+              if source.count("screenPasswordAgainstBreachCorpus(password)") != 2:
+                  raise SystemExit(f"{auth_script} must screen both signup and password-reset changes.")
           parser = StructureCheck()
           parser.feed(Path("app/static/dashboard.html").read_text(encoding="utf-8"))
           portfolio_ancestors = parser.ancestors.get("portfolioOverview", [])
