@@ -80,6 +80,19 @@ Rotate the API key that was previously exposed. Generate a new random value of a
 
 Also verify GitHub Actions secret `MF_TERMINAL_API_URL` contains the service base URL without a trailing slash. Never copy secret values into this runbook or chat.
 
+## GitHub Actions secret preflight
+
+The latest secret preflight reported these names missing; secret values were not accessed:
+- `SUPABASE_DB_URL`
+- `MF_TERMINAL_API_KEY`
+- `BACKUP_AGE_RECIPIENT`
+- `BACKUP_S3_BUCKET`
+- `BACKUP_S3_ENDPOINT`
+- `BACKUP_S3_ACCESS_KEY_ID`
+- `BACKUP_S3_SECRET_ACCESS_KEY`
+
+Configure them privately in [GitHub Actions secrets](https://github.com/yashvyas638/mf-terminal-intelligence-backend-backend/settings/secrets/actions) before expecting the P0 audit or encrypted offsite backup workflow to complete. Do not paste values into chat, commit them, or add them to this runbook.
+
 ## Database migration execution
 
 Only after all pre-deployment checks and explicit release approval:
