@@ -1906,7 +1906,7 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         status_code = 200
 
         def json(self):
-            return {"id": user_id}
+            return {"id": user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"}
 
     monkeypatch.setattr(main.requests, "get", lambda url, headers, timeout: AuthResponse())
     client = TestClient(app)
