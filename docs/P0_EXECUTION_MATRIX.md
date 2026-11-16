@@ -1,0 +1,244 @@
+# P0 Execution and Evidence Matrix
+
+Last reviewed: 2026-11-16  
+Repository: `yashvyas638/mf-terminal-intelligence-backend`  
+Candidate branch: `audit/production-foundation`  
+Production policy: **read-only inspection only until explicit release approval**
+
+## Purpose and closure rule
+
+P0 establishes the minimum security, data-integrity, operational and user-workflow foundation required before research analytics can be trusted. This matrix is the execution ledger for P0. A code change, passing unit test, green CI run, successful health probe or configured workflow is not closure evidence by itself.
+
+Each gate closes only when its acceptance evidence is attached or linked, the exact commit/deployment/database revision is identified, and the result is reviewed. Unknown or unavailable evidence remains **BLOCKED**, never assumed PASS.
+
+## Current evidence baseline
+
+| Area | Known evidence | Current disposition |
+|---|---|---|
+| Candidate application | Supabase bearer-token validation, user ownership checks, portfolio workflows, migrations and simulated tenancy tests are present on this candidate branch | Implemented in code; live verification pending |
+| Production database | Prior read-only Supabase inspection found application data and migration revision `0007_append_only_audit`; candidate migrations are ahead of that observed production revision | Do not deploy until full diff, Render role and backup/restore are verified |
+| Auth | Supabase Auth integration and browser flows exist; provider, redirect, SMTP delivery and real browser confirmation/reset are not evidenced | BLOCKED |
+| Tenancy | Prior live inspection found only one confirmed user and no portfolio rows/owners at that checkpoint; refresh read-only evidence before making current claims | BLOCKED: no demonstrated two-account production isolation |
+| Backups | Encrypted backup workflow requires database, age recipient and S3/R2 credentials; earlier run stopped at configuration preflight | BLOCKED: no successful off-site backup or isolated restore evidence |
+| P0 audit workflow | Read-only audit workflow exists; earlier run stopped because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` were absent | BLOCKED: required GitHub Actions secrets not verified |
+| NAV | AMFI latest-feed pipeline, validation, idempotency and correction provenance are implemented; actual scheduled run and current production freshness require live evidence | BLOCKED pending fresh live refresh evidence |
+| Historical NAV | Planner/checkpoint/retry foundations exist; official AMFI history form request/response contract is not live-verified | Execution remains disabled until contract fixture is verified |
+| Render | Service URL is known; deployed SHA and actual database role have not been independently confirmed in this execution | BLOCKED |
+| Browser workflow | API/UI flows exist, but complete real-browser end-to-end evidence is pending | BLOCKED |
+
+This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
+
+## Gate register
+
+### P0-0 — Release governance and reproducibility
+
+**Build requirements**
+- Keep candidate application work isolated on `audit/production-foundation`.
+- Record exact candidate SHA, changed files, migration head, CI run and test summary for every implementation batch.
+- Confirm candidate work does not overwrite unrelated work on `main`.
+- Do not deploy, run production migrations, create test users, mutate production portfolios or trigger production data changes without explicit approval.
+
+**Acceptance evidence**
+- [ ] Candidate SHA and branch recorded.
+- [ ] GitHub diff reviewed; no secrets or local data committed.
+- [ ] Required CI jobs pass on the exact candidate SHA.
+- [ ] Migration head and ordered migration list recorded.
+- [ ] Production deploy/migration approval recorded separately.
+
+### P0-1 — Secrets and operational configuration
+
+**Build requirements**
+- Validate required configuration before any network/database operation.
+- Keep secrets out of source, logs, artifacts and chat.
+- Ensure missing configuration produces a clear, redacted failure artifact and never a false green result.
+- Rotate any credential previously exposed; coordinate Render and GitHub secret stores without disclosing values.
+
+**Required secret inventory**
+- P0 audit: `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`.
+- Encrypted backup: `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`.
+- Render: trusted PostgreSQL `DATABASE_URL`, operator `API_KEY`, Supabase URL and publishable key, plus required provider settings.
+
+**Acceptance evidence**
+- [ ] Every required secret exists in its correct secret store.
+- [ ] Secret presence is validated without printing values.
+- [ ] Operator API key is rotated and matches between authorised services.
+- [ ] Audit and backup workflows pass configuration preflight.
+
+### P0-2 — Authentication and account lifecycle
+
+**Build requirements**
+- Verify signup, confirmation email, sign-in, session restoration/refresh, password reset request, reset link, password update and sign-out in a real browser.
+- Validate Supabase Site URL, redirect allow-list, email provider and SMTP delivery.
+- Confirm protected API routes reject missing, malformed, expired and invalid bearer tokens.
+- Confirm operator-only routes reject browser bearer-only access where the server key is required.
+- Ensure logout clears private UI state and stale cached account data.
+
+**Acceptance evidence**
+- [ ] Real signup and confirmation completed for test account A.
+- [ ] Login, reload/session restoration, refresh and logout pass.
+- [ ] Password reset email is received and password update succeeds.
+- [ ] Invalid/expired token requests are rejected.
+- [ ] No account/session material is leaked in logs or frontend storage beyond the provider's intended session mechanism.
+- [ ] Evidence includes browser version, timestamp, environment and redacted result.
+
+### P0-3 — Multi-user ownership and database security
+
+**Build requirements**
+- Audit every portfolio-scoped API path, including goals, transactions, import preview/commit, void/audit, valuation, rebalance and report/watchlist features.
+- Verify every query is scoped to the authenticated owner; never trust a user-supplied owner ID.
+- Compare the complete candidate Alembic migration chain with live Supabase schema, indexes, constraints, triggers, grants, RLS and functions.
+- Verify Render uses a trusted server-side PostgreSQL role, not `anon` or `authenticated`.
+- Verify RLS and grants on every public table, including default privileges, sequences and functions. Confirm intended client-readable allowlist and deny-all internal tables.
+- Verify security-definer functions use a fixed safe `search_path` and least-privilege execution grants.
+- Test horizontal privilege escalation using two real accounts.
+
+**Acceptance evidence**
+- [ ] Live schema-to-migration diff reviewed with no unexplained drift.
+- [ ] Actual Render database role confirmed privately.
+- [ ] Every table, sequence and function privilege is reconciled.
+- [ ] RLS enabled and intended policies verified for each relevant table.
+- [ ] Account A cannot read, update, void, import into or infer Account B's records; reverse test also passes.
+- [ ] Goal-to-portfolio owner mismatch and orphan-link cases are rejected.
+- [ ] Append-only ledger/audit/NAV revision invariants pass against PostgreSQL.
+- [ ] No production migration executed before approval and a verified recovery path.
+
+### P0-4 — Backup, off-site retention and restore
+
+**Build requirements**
+- Create a consistent logical export of supported application schemas/data and role definitions.
+- Encrypt before upload; do not retain plaintext in workflow artifacts or logs.
+- Require off-site R2/S3 storage; GitHub artifact is secondary only.
+- Verify uploaded object size and cryptographic checksum by downloading the object back and checking bytes.
+- Record explicit backup scope exclusions: Supabase-managed Auth/Storage/extension schemas and Storage object bytes are not included by the current CLI logical dump.
+- Restore into a separate isolated project and reconcile schema, migration state, row counts, constraints, grants, RLS and application smoke tests.
+- Keep the private age identity offline; only its public recipient belongs in Actions secrets.
+
+**Acceptance evidence**
+- [ ] First encrypted backup workflow succeeds end-to-end.
+- [ ] R2/S3 object download-back checksum matches local encrypted artifact.
+- [ ] Backup manifest, timestamp, object key and checksum are recorded without secrets.
+- [ ] Isolated restore succeeds with no unresolved SQL errors.
+- [ ] Restored schema/data counts reconcile to source snapshot.
+- [ ] Application tests and security posture checks pass against restored target.
+- [ ] Recovery time and recovery point are measured and recorded.
+
+### P0-5 — AMFI latest NAV ingestion integrity
+
+**Build requirements**
+- Verify the live official AMFI response, parser version, content type, byte size, source hash, retrieved timestamp and effective NAV date.
+- Enforce minimum valid records and reject malformed, empty, stale, future-dated or unexpectedly small source responses without replacing accepted data.
+- Verify exact replay idempotency and correction provenance.
+- Verify missing ISIN values never erase known identifiers or get fabricated.
+- Confirm scheduled GitHub Actions run is configured, has required secrets and succeeds on its intended cadence.
+- Expose ingestion freshness, effective-date freshness, snapshot quality and accepted/rejected counts to operators.
+
+**Acceptance evidence**
+- [ ] Live source validation passes and records source hash/metadata.
+- [ ] Production refresh creates one accepted snapshot with expected record counts.
+- [ ] Exact replay creates no duplicate NAV observations or false revisions.
+- [ ] Controlled correction fixture creates append-only prior/replacement provenance.
+- [ ] Bad-source fixtures fail closed and preserve the last accepted snapshot.
+- [ ] Scheduled refresh has at least one successful observed run.
+- [ ] Freshness and effective-date status are visible and alertable.
+
+### P0-6 — Historical NAV contract and coverage
+
+**Build requirements**
+- Capture the official AMFI historical NAV form request and response for each supported scheme type.
+- Preserve sanitized fixtures and document parameters, date format, encoding, row layout, pagination/limits and error responses.
+- Keep the documented maximum range validation and conservative checkpoint windows.
+- Validate retry/resume, duplicate replay, correction handling and per-scheme coverage.
+- Do not enable history execution until the source contract is verified; never substitute an unofficial mirror as canonical data.
+
+**Acceptance evidence**
+- [ ] Official source request/response contract independently reproduced.
+- [ ] Sanitized fixtures cover supported response variants and failure cases.
+- [ ] Parser fixture tests pass and date/value reconciliation is documented.
+- [ ] A bounded historical backfill is run only after explicit operator enablement.
+- [ ] Coverage report shows scheme count, date span, gaps and last successful backfill.
+- [ ] Ranking windows with insufficient baseline data are withheld, not fabricated.
+
+### P0-7 — Portfolio workflow and ledger correctness
+
+**Build requirements**
+- Complete authenticated first-run, portfolio creation, BUY/SELL entry, CSV preview, confirmed import, valuation, transaction history and audited void.
+- Verify arithmetic, Decimal precision, chronological unit balances, oversell prevention, duplicate import rejection and idempotency.
+- Verify partial NAV coverage withholds aggregate metrics that cannot be supported.
+- Confirm all workflows persist across reload and fresh login.
+- Keep test data isolated and identifiable; do not delete real production financial records as test cleanup.
+
+**Acceptance evidence**
+- [ ] Account A creates and reads its own portfolio.
+- [ ] BUY/SELL and transaction ledger reconcile to units, cost and cash flow.
+- [ ] CSV preview performs no writes; confirmation commits atomically.
+- [ ] Duplicate import is rejected without duplicate transactions.
+- [ ] Invalid arithmetic, negative units and oversell are rejected.
+- [ ] Void is reasoned, audited, one-time and non-destructive.
+- [ ] Missing NAV produces explicit partial status and no fabricated aggregate gain/loss or XIRR.
+- [ ] Portfolio state survives logout/login and is not visible to Account B.
+
+### P0-8 — Render deployment, API smoke tests and rollback
+
+**Build requirements**
+- Verify deployed service, branch, exact SHA, runtime, environment configuration and startup command.
+- Verify startup runs the approved Alembic migration process and rejects unsafe DB roles.
+- Run endpoint smoke tests for health, NAV status, scheme search/detail/history, portfolio lifecycle and auth.
+- Record deploy ID, migration head, logs, previous known-good deploy and rollback route.
+- Do not infer deployment state from environment variable presence or a successful health endpoint alone.
+
+**Acceptance evidence**
+- [ ] Actual Render service and deployed SHA verified.
+- [ ] Actual PostgreSQL connection role verified privately.
+- [ ] Migration head matches approved candidate.
+- [ ] Required endpoints pass with correct authentication/authorization.
+- [ ] No secret or sensitive portfolio data appears in logs.
+- [ ] Previous deploy and rollback path are recorded.
+- [ ] Post-deploy data integrity checks show no unexpected row-count or ledger changes.
+
+### P0-9 — Monitoring and operational failure handling
+
+**Build requirements**
+- Distinguish service health from NAV freshness and effective-date freshness.
+- Alert on missed refresh, stale data, failed backfill, failed snapshot rebuild, backup failure and failed audit.
+- Preserve redacted run artifacts and enough metadata to diagnose failures.
+- Document operator response and recovery actions.
+
+**Acceptance evidence**
+- [ ] Health and data-freshness checks are independent.
+- [ ] At least one controlled alert test is observed.
+- [ ] Failure artifacts are redacted and retained.
+- [ ] Operator runbook describes retry, stop, escalation and recovery.
+
+## P0 execution order
+
+1. Correct stale/contradictory documentation and reconcile candidate branch scope.
+2. Inspect and harden code-level Auth, ownership, database privilege and migration checks.
+3. Build automated negative tests for every owner-scoped endpoint and ledger invariant.
+4. Harden backup/audit workflows and produce redacted failure evidence when configuration is absent.
+5. Complete AMFI live-source and historical contract validation without enabling unsafe production writes.
+6. Complete browser workflow automation and two-account test harness.
+7. Once secrets and approvals are supplied in their proper systems, execute live verification and isolated restore.
+8. Reconcile all evidence, fix failures, rerun exact-SHA CI, then request explicit release approval.
+
+## P0 sign-off
+
+P0 status remains **OPEN — BLOCKED** until every mandatory gate above is closed. A warning is not a pass. A simulated test is not a real-account test. A backup upload is not a restore drill. A health check is not a data-quality check. CI is not production verification.
+
+Final sign-off record:
+- Candidate branch/SHA:
+- CI run(s):
+- Candidate Alembic head:
+- Production Alembic revision:
+- Render deploy ID/SHA:
+- Render database role:
+- Auth/browser evidence:
+- Two-account isolation evidence:
+- Grants/RLS/function audit:
+- Encrypted backup object/checksum:
+- Isolated restore evidence:
+- AMFI latest snapshot/source hash:
+- Historical NAV contract/coverage:
+- Portfolio workflow evidence:
+- Rollback reference:
+- Remaining limitations:
+- Explicit release approval:
