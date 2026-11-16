@@ -1183,7 +1183,7 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
             self.user_id = user_id
 
         def json(self):
-            return {"id": self.user_id}
+            return {"id": self.user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"}
 
     def fake_auth_get(url, headers, timeout):
         assert url.endswith("/auth/v1/user")
@@ -1282,7 +1282,7 @@ def test_fund_watchlists_are_persistent_and_isolated_between_two_users(monkeypat
             self.user_id = user_id
 
         def json(self):
-            return {"id": self.user_id}
+            return {"id": self.user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"}
 
     monkeypatch.setattr(
         main.requests,
@@ -2133,7 +2133,7 @@ def test_financial_goals_are_private_and_projection_is_owner_scoped(monkeypatch)
             self.user_id = user_id
 
         def json(self):
-            return {"id": self.user_id}
+            return {"id": self.user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"}
 
     monkeypatch.setattr(
         main.requests,
