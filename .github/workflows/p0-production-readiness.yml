@@ -45,7 +45,7 @@ jobs:
           [[ -n "$SUPABASE_DB_URL" ]] || missing+=("SUPABASE_DB_URL")
           [[ -n "$MF_TERMINAL_API_KEY" ]] || missing+=("MF_TERMINAL_API_KEY")
           if (( ${#missing[@]} )); then
-            printf '::error::Missing required GitHub Actions secrets: %s\\n' "${missing[*]}"
+            printf '::error::Missing required GitHub Actions secrets: %s\n' "${missing[*]}"
             exit 1
           fi
           [[ "$SUPABASE_DB_URL" == postgres://* || "$SUPABASE_DB_URL" == postgresql://* ]] || {
