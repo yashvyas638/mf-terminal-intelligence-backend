@@ -45,19 +45,27 @@ def upgrade() -> None:
         creator = quoted_creator
         op.execute(
             f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} "
-            "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"
+            "REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated"
+        )
+        op.execute(
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} "
+            "REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated"
+        )
+        op.execute(
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} "
+            "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated"
         )
         op.execute(
             f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} IN SCHEMA public "
-            "REVOKE ALL ON TABLES FROM anon, authenticated"
+            "REVOKE ALL ON TABLES FROM PUBLIC, anon, authenticated"
         )
         op.execute(
             f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} IN SCHEMA public "
-            "REVOKE ALL ON SEQUENCES FROM anon, authenticated"
+            "REVOKE ALL ON SEQUENCES FROM PUBLIC, anon, authenticated"
         )
         op.execute(
             f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} IN SCHEMA public "
-            "REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated"
+            "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated"
         )
 
 
