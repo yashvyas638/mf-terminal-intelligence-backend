@@ -28,6 +28,13 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 
 This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
 
+## Branch integration status
+
+- Existing PR [#1](https://github.com/yashvyas638/mf-terminal-intelligence-backend/pull/1) targets `main` from `audit/production-foundation`.
+- GitHub compare reports the branch as diverged: **566 commits ahead, 51 behind**, with 144 changed files (132 added, 12 modified). The diff includes the application, migrations, UI, CI/operations workflows and product documentation—not just the P0 hardening changes.
+- GitHub currently reports the PR as `mergeable=false` / `mergeable_state=dirty`. No merge, rebase, force-push or branch reset has been attempted.
+- P0 closure requires a reviewed integration plan: reconcile the 51 commits on `main`, review the full 144-file diff, identify conflicts, and confirm the intended application release before merge.
+
 ## External configuration blockers
 
 Latest GitHub Actions secret preflight reported these names missing (values were not accessed):
@@ -91,6 +98,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 
 **Acceptance evidence**
 - [ ] Candidate SHA and branch recorded.
+- [ ] PR branch divergence/conflicts are reconciled without dropping unrelated `main` work or silently importing unrelated application changes.
 - [ ] GitHub diff reviewed; no secrets or local data committed.
 - [ ] Required CI jobs pass on the exact candidate SHA.
 - [ ] Migration head and ordered migration list recorded.
