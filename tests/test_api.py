@@ -688,13 +688,24 @@ def test_portfolio_rejects_blank_names_and_future_transactions(monkeypatch):
     assert future.status_code == 422
 
 
-def test_health_reports_service_identity_and_database_readiness():
+def test_health_reports_service_identity_database_readiness_and_render_commit(monkeypatch):
     init_db()
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "a" * 40)
     response = TestClient(app).get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["service"] == "mf-terminal-intelligence-backend"
     assert response.json()["database"] == "reachable"
+    assert response.json()["build_commit"] == "a" * 40
+
+
+def test_health_does_not_expose_malformed_render_commit(monkeypatch):
+    init_db()
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "not-a-sha-secret")
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert response.json()["build_commit"] is None
+    assert "not-a-sha-secret" not in response.text
 
 
 def test_transaction_can_be_voided_once_with_audited_reason(monkeypatch):
