@@ -26,19 +26,21 @@ def explicit_operator_test_environment(monkeypatch):
 
 
 class _RoleResult:
-    def __init__(self, role):
+    def __init__(self, role, is_superuser=False):
         self.role = role
+        self.is_superuser = is_superuser
 
-    def scalar_one(self):
-        return self.role
+    def one(self):
+        return self.role, self.is_superuser
 
 
 class _RoleSession:
-    def __init__(self, role):
+    def __init__(self, role, is_superuser=False):
         self.role = role
+        self.is_superuser = is_superuser
 
     def execute(self, statement):
-        return _RoleResult(self.role)
+        return _RoleResult(self.role, self.is_superuser)
 
 
 @pytest.mark.parametrize("role", ["anon", "authenticated"])
