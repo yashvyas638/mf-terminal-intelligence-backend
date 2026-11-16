@@ -52,11 +52,11 @@ The backup workflow cannot produce/verify an offsite encrypted backup until the 
 
 ## Candidate CI evidence
 
-- Full code-verification commit: `e002b56c3f8e2714d5c6fdb8a47ca68c700d39bb` (subsequent commits through `6f9ed3d481855c0ef6ade4f9f096a2850f53cd32` are documentation-only).
+- Full code-verification commit: `e002b56c3f8e2714d5c6fdb8a47ca68c700d39bb`; current candidate head `abf20ea0929371dbd183e60b253a818bd19d2bbc` adds documentation-only release evidence.
+- Latest current-head run [#43848283053](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43848283053): **all three jobs passed** (SQLite, PostgreSQL, live AMFI source validation).
 - PostgreSQL CI: **357 passed**, 1 non-blocking Python 3.12/SQLite datetime-adapter deprecation warning; migration chain reached `0029_admin_default_acl`.
 - SQLite migration suite, lint, dashboard/research JavaScript checks, DOM/auth contracts and operational workflow/Render-secret validator: passed.
 - Live AMFI historical response contract checks for scheme types 1, 2 and 3: passed. Performance taxonomy contract and 43-category read-only coverage audit: passed. Official scheme-summary metadata probe returned HTTP 200. No production database writes were performed.
-- The current documentation-only head has a CI run in progress; the latest completed full run at `e002b56c3f` passed all three jobs.
 
 ## Code-level tenancy evidence
 
