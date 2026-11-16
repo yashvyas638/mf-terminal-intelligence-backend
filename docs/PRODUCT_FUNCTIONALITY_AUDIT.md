@@ -1,4 +1,4 @@
-# Product functionality audit — 2026-11-12
+# Product functionality audit — 2026-11-16 (P0 status reconciled)
 
 ## Executive finding
 
