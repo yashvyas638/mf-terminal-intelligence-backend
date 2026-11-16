@@ -17,7 +17,7 @@ Workflow: `.github/workflows/supabase-free-tier-backup.yml`
 
 The operational backup and P0 audit workflows, plus the read-only audit script, are installed on the repository's default branch (`main`). Their daily schedules and manual dispatch entry points are therefore active. The application source remains on `audit/production-foundation`; these standalone operational files were installed on `main` without merging the unrelated application history.
 
-The first default-branch executions were triggered and correctly stopped at configuration validation because `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `MF_TERMINAL_API_URL`, and `MF_TERMINAL_API_KEY` are not currently configured as GitHub Actions secrets. No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
+The first default-branch executions were triggered and correctly stopped at configuration validation because `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, the four `BACKUP_S3_*`/S3 credential values, `MF_TERMINAL_API_URL`, and `MF_TERMINAL_API_KEY` are not currently configured as GitHub Actions secrets. No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
 
 ### One-time GitHub configuration
 
