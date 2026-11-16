@@ -1,9 +1,14 @@
 name: Supabase Free-Tier Encrypted Backup
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/supabase-free-tier-backup.yml"
   schedule:
     - cron: "30 23 * * *"
   workflow_dispatch:
+
 
 permissions:
   contents: read
