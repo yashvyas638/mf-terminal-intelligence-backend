@@ -333,6 +333,61 @@ def check_public_default_privileges(conn) -> tuple[dict, list[str]]:
     return evaluate_public_default_privileges(rows)
 
 
+
+def evaluate_backfill_checkpoint_groups(rows: list[tuple[str, str, str | None, int, int]]) -> tuple[dict, list[str]]:
+    """Separate intentionally superseded paused windows from real execution failures."""
+    groups = [
+        {
+            "sampling_mode": str(sampling_mode),
+            "status": str(status),
+            "reason": str(reason) if reason is not None else None,
+            "checkpoints": int(checkpoints),
+            "stale_running": int(stale_running),
+        }
+        for sampling_mode, status, reason, checkpoints, stale_running in rows
+    ]
+    failed = sum(item["checkpoints"] for item in groups if item["status"] == "failed")
+    stale_running = sum(item["stale_running"] for item in groups)
+    superseded_paused = sum(
+        item["checkpoints"]
+        for item in groups
+        if item["status"] == "paused" and item["reason"] == "StorageOptimizedHybridPlan"
+    )
+    evidence = {
+        "groups": groups,
+        "failed_checkpoints": failed,
+        "stale_running_checkpoints": stale_running,
+        "superseded_by_hybrid_plan": superseded_paused,
+    }
+    failures = []
+    if failed:
+        failures.append(f"Historical NAV backfill has {failed} failed checkpoint(s) requiring review.")
+    if stale_running:
+        failures.append(f"Historical NAV backfill has {stale_running} stale running checkpoint(s) requiring recovery.")
+    return evidence, failures
+
+
+def check_backfill_checkpoint_status(conn) -> tuple[dict, list[str]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sampling_mode,
+                   status,
+                   error_class,
+                   count(*) AS checkpoints,
+                   count(*) FILTER (
+                       WHERE status = 'running'
+                         AND updated_at < now() - interval '30 minutes'
+                   ) AS stale_running
+              FROM public.nav_backfill_checkpoints
+             GROUP BY sampling_mode, status, error_class
+             ORDER BY sampling_mode, status, error_class
+            """
+        )
+        rows = cur.fetchall()
+    return evaluate_backfill_checkpoint_groups(rows)
+
+
 def main() -> int:
     database_url = require_env("SUPABASE_DB_URL")
     api_url = require_env("MF_TERMINAL_API_URL").rstrip("/")
@@ -465,6 +520,10 @@ def main() -> int:
         default_privileges, default_privilege_failures = check_public_default_privileges(conn)
         report["checks"]["public_default_privileges"] = default_privileges
         report["failures"].extend(default_privilege_failures)
+
+        backfill_evidence, backfill_failures = check_backfill_checkpoint_status(conn)
+        report["checks"]["historical_nav_backfill"] = backfill_evidence
+        report["failures"].extend(backfill_failures)
 
     report["result"] = "FAIL" if report["failures"] else ("PASS_WITH_WARNINGS" if report["warnings"] else "PASS")
     print(json.dumps(report, indent=2, default=str), flush=True)
