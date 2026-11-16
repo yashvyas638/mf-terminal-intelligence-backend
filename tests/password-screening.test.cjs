@@ -6,7 +6,7 @@ const { webcrypto } = require("node:crypto");
 const { screenPasswordAgainstBreachCorpus } = require("../app/static/password-screening.js");
 
 function screen(password, options = {}) {
-  return screen(password, { crypto: webcrypto, ...options });
+  return screenPasswordAgainstBreachCorpus(password, { crypto: webcrypto, ...options });
 }
 
 async function sha1(value) {
