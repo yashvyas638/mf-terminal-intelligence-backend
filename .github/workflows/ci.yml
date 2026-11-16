@@ -34,6 +34,8 @@ jobs:
           node --check app/static/dashboard.js
           node --check app/static/research.js
           node --check app/static/fund-detail.js
+      - name: Validate operational audit scripts
+        run: python -m py_compile scripts/p0_production_audit.py
       - name: Validate authentication and portfolio DOM contracts
         run: |
           python - <<'PY'
