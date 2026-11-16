@@ -37,6 +37,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Validate audit script syntax
+        run: python -m py_compile scripts/p0_production_audit.py
+
       - name: Validate audit configuration
         shell: bash
         run: |
@@ -56,7 +59,7 @@ jobs:
                   "note": "No production endpoint or database checks were attempted."
               }, report, indent=2)
           PY
-            printf '::error::Missing required GitHub Actions secrets: %s\\n' "${missing[*]}"
+            printf '::error::Missing required GitHub Actions secrets: %s\n' "${missing[*]}"
             exit 1
           fi
           [[ "$SUPABASE_DB_URL" == postgres://* || "$SUPABASE_DB_URL" == postgresql://* ]] || {
