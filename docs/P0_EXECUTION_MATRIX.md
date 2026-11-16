@@ -28,6 +28,12 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 
 This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
 
+## Code-level tenancy evidence
+
+- `tests/test_supabase_auth.py` simulates two distinct verified Supabase identities and exercises portfolio, transaction, import, stress, void, audit, report, watchlist and goal ownership boundaries.
+- Dashboard and Research tests exercise A→B→A account switches and reject late responses from a previous session.
+- These are valuable code-level tests, but they do not prove real Supabase signup/confirmation, actual JWT issuance, SMTP delivery, browser persistence, or two real production accounts. Those remain release gates.
+
 ## Latest live Supabase read-only audit — 2026-11-16 09:51 UTC
 
 Project: `zgfdvhzhvccsfmpoaqah`. No DDL or data writes were performed.
