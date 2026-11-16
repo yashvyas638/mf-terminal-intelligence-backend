@@ -111,7 +111,8 @@ The native Supabase leaked-password protection warning is separate from the futu
 
 **Acceptance evidence**
 - [ ] Live schema-to-migration diff reviewed with no unexplained drift.
-- [ ] Migration `0029_admin_default_acl` passes PostgreSQL CI and the live default-ACL audit reports no client/PUBLIC grants before production approval.
+- [ ] Migration `0029_admin_default_acl` passes PostgreSQL CI and the live effective-default-ACL audit reports no client/PUBLIC grants before production approval.
+- [ ] Actual migration connection is confirmed superuser/member of every public-schema creator role; otherwise use an approved privileged migration process.
 - [ ] Actual Render database role confirmed privately.
 - [ ] Every table, sequence and function privilege is reconciled.
 - [ ] No global or schema-specific default privilege grants future public objects to `PUBLIC`, `anon` or `authenticated` for any creator role.
