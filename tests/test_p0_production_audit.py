@@ -208,3 +208,26 @@ def test_public_default_privileges_reject_client_and_public_grants() -> None:
     assert any("anon" in failure for failure in failures)
     assert any("authenticated" in failure for failure in failures)
     assert any("PUBLIC" in failure for failure in failures)
+
+
+
+def test_backfill_audit_does_not_treat_hybrid_superseded_windows_as_failures() -> None:
+    evidence, failures = audit.evaluate_backfill_checkpoint_groups([
+        ("daily", "complete", None, 168, 0),
+        ("month_end", "complete", None, 144, 0),
+        ("daily", "paused", "StorageOptimizedHybridPlan", 780, 0),
+    ])
+    assert evidence["failed_checkpoints"] == 0
+    assert evidence["stale_running_checkpoints"] == 0
+    assert evidence["superseded_by_hybrid_plan"] == 780
+    assert failures == []
+
+
+def test_backfill_audit_fails_for_failed_or_stale_running_checkpoints() -> None:
+    evidence, failures = audit.evaluate_backfill_checkpoint_groups([
+        ("daily", "failed", "ReadTimeout", 2, 0),
+        ("daily", "running", None, 1, 1),
+    ])
+    assert evidence["failed_checkpoints"] == 2
+    assert evidence["stale_running_checkpoints"] == 1
+    assert len(failures) == 2
