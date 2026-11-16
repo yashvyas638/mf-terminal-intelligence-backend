@@ -28,6 +28,14 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 
 This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
 
+## Candidate CI evidence
+
+- Code-verification commit: `85d5f53e3e9a633775226a49d5c16e6d60aead1f` (subsequent commits through `256eb53ffbf05ef00b227c9e1f6ab7717a80fd65` are documentation-only).
+- PostgreSQL CI: **356 passed**, 1 non-blocking Python 3.12/SQLite datetime-adapter deprecation warning; migration chain reached `0029_admin_default_acl`.
+- SQLite migration suite, lint, dashboard/research JavaScript checks, DOM/auth contracts and operational workflow/Render-secret validator: passed.
+- Live AMFI historical response contract checks for scheme types 1, 2 and 3: passed. Performance taxonomy contract and 43-category read-only coverage audit: passed. Official scheme-summary metadata probe returned HTTP 200. No production database writes were performed.
+- Latest CI run for the current documentation-only head is still running; recheck before release.
+
 ## Code-level tenancy evidence
 
 - `tests/test_supabase_auth.py` simulates two distinct verified Supabase identities and exercises portfolio, transaction, import, stress, void, audit, report, watchlist and goal ownership boundaries.
