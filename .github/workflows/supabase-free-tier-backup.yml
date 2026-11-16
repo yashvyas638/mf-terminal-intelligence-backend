@@ -1,0 +1,112 @@
+name: Supabase Free-Tier Encrypted Backup
+
+on:
+  schedule:
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-free-tier-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_DB_URL: \${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_AGE_RECIPIENT: \${{ secrets.BACKUP_AGE_RECIPIENT }}
+      BACKUP_S3_BUCKET: \${{ secrets.BACKUP_S3_BUCKET }}
+      BACKUP_S3_ENDPOINT: \${{ secrets.BACKUP_S3_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: \${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: \${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate backup configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$SUPABASE_DB_URL" ]] || { echo "::error::Add the SUPABASE_DB_URL repository secret."; exit 1; }
+          [[ -n "$BACKUP_AGE_RECIPIENT" ]] || { echo "::error::Add BACKUP_AGE_RECIPIENT (an age public recipient). Keep the matching private identity offline."; exit 1; }
+          if [[ -n "$BACKUP_S3_BUCKET" ]]; then
+            [[ -n "$BACKUP_S3_ENDPOINT" && -n "$AWS_ACCESS_KEY_ID" && -n "$AWS_SECRET_ACCESS_KEY" ]] || {
+              echo "::error::R2/S3 backup requires BACKUP_S3_ENDPOINT, BACKUP_S3_ACCESS_KEY_ID and BACKUP_S3_SECRET_ACCESS_KEY.";
+              exit 1;
+            }
+          fi
+
+      - name: Install Supabase CLI and age
+        uses: supabase/setup-cli@v3
+        with:
+          version: 3.2.0
+
+      - name: Install age
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes age
+
+      - name: Export, checksum and encrypt database
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/mf-terminal-backup"
+          mkdir -p "$WORK"
+          trap 'rm -rf "$WORK"' EXIT
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          supabase --version
+          supabase db dump --remote="$SUPABASE_DB_URL" --role-only --file "$WORK/roles.sql"
+          supabase db dump --remote="$SUPABASE_DB_URL" --file "$WORK/schema.sql"
+          supabase db dump --remote="$SUPABASE_DB_URL" --data-only --use-copy \
+            --exclude "storage.buckets_vectors" \
+            --exclude "storage.vector_indexes" \
+            --file "$WORK/data.sql"
+          (
+            cd "$WORK"
+            sha256sum roles.sql schema.sql data.sql > SHA256SUMS
+          )
+          cat > "$WORK/manifest.txt" <<EOF
+          backup_created_utc=$STAMP
+          project_ref=zgfdvhzhvccsfmpoaqah
+          postgres_major=17
+          export_format=Supabase CLI logical SQL dumps
+          files=roles.sql,schema.sql,data.sql,SHA256SUMS
+          exclusions=Supabase-managed auth/storage/extension schemas; storage object bytes
+          restore_policy=restore to an isolated target first; never overwrite production as a test
+          EOF
+          ARCHIVE="$RUNNER_TEMP/mf-terminal-intelligence-$STAMP.tar.gz"
+          tar -czf "$ARCHIVE" -C "$WORK" roles.sql schema.sql data.sql SHA256SUMS manifest.txt
+          age --encrypt --recipient "$BACKUP_AGE_RECIPIENT" --output "$ARCHIVE.age" "$ARCHIVE"
+          rm -f "$ARCHIVE"
+          echo "archive=$ARCHIVE.age" >> "$GITHUB_OUTPUT"
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+          ls -lh "$ARCHIVE.age"
+
+      - name: Upload encrypted GitHub recovery copy
+        uses: actions/upload-artifact@v4
+        with:
+          name: mf-terminal-intelligence-db-backup-\${{ steps.backup.outputs.stamp }}
+          path: \${{ steps.backup.outputs.archive }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Copy encrypted backup to off-site S3-compatible storage
+        if: env.BACKUP_S3_BUCKET != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY="mf-terminal-intelligence/database/\${{ steps.backup.outputs.stamp }}.tar.gz.age"
+          aws s3 cp "\${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$KEY" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
+          echo "Encrypted off-site copy uploaded: s3://$BACKUP_S3_BUCKET/$KEY"
+
+      - name: Report artifact-only retention boundary
+        if: env.BACKUP_S3_BUCKET == ''
+        run: |
+          echo "::warning::Backup is encrypted and stored as a GitHub Actions artifact for 30 days only. Configure the optional S3-compatible destination (Cloudflare R2 recommended) for durable off-site retention."
