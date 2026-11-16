@@ -103,7 +103,7 @@ Workflow: `.github/workflows/p0-production-readiness.yml`
 
 The read-only audit checks:
 
-- Render `/health` and authenticated `/v1/nav/status`.
+- Render `/health` (including the validated `build_commit` deployment fingerprint) and authenticated `/v1/nav/status`.
 - Supabase Alembic revision and production connection.
 - RLS and restrictive deny policies on the five backend-only tables.
 - No direct anon/authenticated table privileges and retained `service_role` read access.
@@ -111,6 +111,7 @@ The read-only audit checks:
 - Every public table is checked against a strict allowlist: only six intended authenticated read surfaces are allowed, with owner-scoped policies for portfolio data; every other public table must deny all direct anon/authenticated privileges.
 - Confirmed Auth user count and portfolio-owner count (and fails P0 when fewer than two confirmed users or two portfolio owners exist).
 - Portfolio and goal ownership integrity: every portfolio and goal must belong to a confirmed Auth user, and any linked portfolio must belong to the same user as its goal.
+- A valid Render `build_commit` is now a required P0 audit check. The candidate API exposes Render's built-in `RENDER_GIT_COMMIT`; until that candidate code is approved and deployed, the default-branch audit will correctly remain blocked on this check even after its secrets are configured.
 
 It does not mutate data, create test users, trigger NAV refreshes, or restore backups.
 
