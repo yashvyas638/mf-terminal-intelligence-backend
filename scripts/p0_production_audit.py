@@ -283,12 +283,17 @@ def main() -> int:
                     WHERE u.email_confirmed_at IS NOT NULL),
                   (SELECT count(*) FROM public.portfolio_goals g
                     LEFT JOIN auth.users u ON u.id::text = g.owner_user_id
-                    WHERE u.id IS NULL OR u.email_confirmed_at IS NULL)
+                    WHERE u.id IS NULL OR u.email_confirmed_at IS NULL),
+                  (SELECT count(*) FROM public.portfolio_goals g
+                    LEFT JOIN public.portfolios p ON p.id = g.linked_portfolio_id
+                    WHERE g.linked_portfolio_id IS NOT NULL
+                      AND (p.id IS NULL OR p.owner_user_id IS DISTINCT FROM g.owner_user_id))
                 """
             )
             (
                 confirmed_users, portfolio_count, portfolio_owners,
                 portfolio_goals, goals_with_confirmed_owner, goals_without_confirmed_owner,
+                goals_with_cross_owner_portfolio_link,
             ) = cur.fetchone()
             report["checks"]["live_tenancy_evidence"] = {
                 "confirmed_auth_users": confirmed_users,
@@ -297,11 +302,16 @@ def main() -> int:
                 "portfolio_goals": portfolio_goals,
                 "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
                 "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
+                "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
                 "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
             }
             if goals_without_confirmed_owner:
                 report["failures"].append(
                     "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
+                )
+            if goals_with_cross_owner_portfolio_link:
+                report["failures"].append(
+                    "Portfolio-goal linkage integrity failed: one or more goals are linked to a portfolio owned by a different account."
                 )
             if confirmed_users < 2 or portfolio_owners < 2:
                 report["failures"].append(
