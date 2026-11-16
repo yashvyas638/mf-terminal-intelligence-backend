@@ -92,6 +92,7 @@ The read-only audit checks:
 - RLS and restrictive deny policies on the five backend-only tables.
 - No direct anon/authenticated table privileges and retained `service_role` read access.
 - RLS and client privilege posture on the additional internal tables.
+- Every public table is checked against a strict allowlist: only six intended authenticated read surfaces are allowed, with owner-scoped policies for portfolio data; every other public table must deny all direct anon/authenticated privileges.
 - Confirmed Auth user count and portfolio-owner count (reported as evidence, not fabricated).
 
 It does not mutate data, create test users, trigger NAV refreshes, or restore backups.
