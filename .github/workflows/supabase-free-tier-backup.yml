@@ -17,12 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      SUPABASE_DB_URL: \${{ secrets.SUPABASE_DB_URL }}
-      BACKUP_AGE_RECIPIENT: \${{ secrets.BACKUP_AGE_RECIPIENT }}
-      BACKUP_S3_BUCKET: \${{ secrets.BACKUP_S3_BUCKET }}
-      BACKUP_S3_ENDPOINT: \${{ secrets.BACKUP_S3_ENDPOINT }}
-      AWS_ACCESS_KEY_ID: \${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: \${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
+      BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+      BACKUP_S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -90,8 +90,8 @@ jobs:
       - name: Upload encrypted GitHub recovery copy
         uses: actions/upload-artifact@v4
         with:
-          name: mf-terminal-intelligence-db-backup-\${{ steps.backup.outputs.stamp }}
-          path: \${{ steps.backup.outputs.archive }}
+          name: mf-terminal-intelligence-db-backup-${{ steps.backup.outputs.stamp }}
+          path: ${{ steps.backup.outputs.archive }}
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -101,8 +101,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          KEY="mf-terminal-intelligence/database/\${{ steps.backup.outputs.stamp }}.tar.gz.age"
-          aws s3 cp "\${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$KEY" \
+          KEY="mf-terminal-intelligence/database/${{ steps.backup.outputs.stamp }}.tar.gz.age"
+          aws s3 cp "${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
           echo "Encrypted off-site copy uploaded: s3://$BACKUP_S3_BUCKET/$KEY"
 
