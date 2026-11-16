@@ -210,11 +210,19 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
     from uuid import uuid4
 
     user_a, user_b = str(uuid4()), str(uuid4())
+    scheme_code = 900_000_000 + (uuid4().int % 90_000_000)
     now = datetime.now(timezone.utc)
-    with engine.begin() as connection:
-        scheme_code = connection.execute(
-            text("SELECT scheme_code FROM public.schemes ORDER BY scheme_code LIMIT 1")
-        ).scalar_one()
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(
+                text(
+                    "INSERT INTO public.schemes "
+                    "(scheme_code, scheme_name, first_seen_at, last_seen_at) "
+                    "VALUES (:code, 'RLS isolation test scheme', :first_seen, :last_seen)"
+                ),
+                {"code": scheme_code, "first_seen": now, "last_seen": now},
+            )
 
         portfolio_a = connection.execute(
             text(
@@ -231,11 +239,10 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
             {"owner": user_b, "created_at": now},
         ).scalar_one()
 
-        transaction_ids = {}
-        audit_ids = {}
-        import_ids = {}
-        for owner, portfolio_id in (("a", portfolio_a), ("b", portfolio_b)):
-            transaction_ids[owner] = connection.execute(
+            transaction_ids = {}
+            import_ids = {}
+            for owner, portfolio_id in (("a", portfolio_a), ("b", portfolio_b)):
+                transaction_ids[owner] = connection.execute(
                 text(
                     """
                     INSERT INTO public.portfolio_transactions
@@ -254,18 +261,17 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
                     "created_at": now,
                 },
             ).scalar_one()
-            audit_ids[owner] = connection.execute(
-                text(
-                    """
-                    INSERT INTO public.portfolio_transaction_audit
-                        (transaction_id, event_type, event_at, details_json)
-                    VALUES (:transaction_id, 'CREATED', :event_at, '{}')
-                    RETURNING id
-                    """
-                ),
-                {"transaction_id": transaction_ids[owner], "event_at": now},
-            ).scalar_one()
-            import_ids[owner] = connection.execute(
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO public.portfolio_transaction_audit
+                            (transaction_id, event_type, event_at, details_json)
+                        VALUES (:transaction_id, 'CREATED', :event_at, '{}')
+                        """
+                    ),
+                    {"transaction_id": transaction_ids[owner], "event_at": now},
+                )
+                import_ids[owner] = connection.execute(
                 text(
                     """
                     INSERT INTO public.portfolio_import_batches
@@ -281,21 +287,23 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
                 },
             ).scalar_one()
 
-        connection.exec_driver_sql("SET LOCAL ROLE authenticated")
-        for owner, subject in (("a", user_a), ("b", user_b)):
-            connection.execute(
-                text("SELECT set_config('request.jwt.claim.sub', :subject, true)"),
-                {"subject": subject},
-            )
-            assert connection.execute(
-                text("SELECT id FROM public.portfolios ORDER BY id")
-            ).scalars().all() == [portfolio_a if owner == "a" else portfolio_b]
-            assert connection.execute(
-                text("SELECT id FROM public.portfolio_transactions ORDER BY id")
-            ).scalars().all() == [transaction_ids[owner]]
-            assert connection.execute(
-                text("SELECT transaction_id FROM public.portfolio_transaction_audit ORDER BY id")
-            ).scalars().all() == [transaction_ids[owner]]
-            assert connection.execute(
-                text("SELECT id FROM public.portfolio_import_batches ORDER BY id")
-            ).scalars().all() == [import_ids[owner]]
+            connection.exec_driver_sql("SET LOCAL ROLE authenticated")
+            for owner, subject in (("a", user_a), ("b", user_b)):
+                connection.execute(
+                    text("SELECT set_config('request.jwt.claim.sub', :subject, true)"),
+                    {"subject": subject},
+                )
+                assert connection.execute(
+                    text("SELECT id FROM public.portfolios ORDER BY id")
+                ).scalars().all() == [portfolio_a if owner == "a" else portfolio_b]
+                assert connection.execute(
+                    text("SELECT id FROM public.portfolio_transactions ORDER BY id")
+                ).scalars().all() == [transaction_ids[owner]]
+                assert connection.execute(
+                    text("SELECT transaction_id FROM public.portfolio_transaction_audit ORDER BY id")
+                ).scalars().all() == [transaction_ids[owner]]
+                assert connection.execute(
+                    text("SELECT id FROM public.portfolio_import_batches ORDER BY id")
+                ).scalars().all() == [import_ids[owner]]
+        finally:
+            transaction.rollback()
