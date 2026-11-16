@@ -28,6 +28,19 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 
 This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
 
+## External configuration blockers
+
+Latest GitHub Actions secret preflight reported these names missing (values were not accessed):
+- `SUPABASE_DB_URL`
+- `MF_TERMINAL_API_KEY`
+- `BACKUP_AGE_RECIPIENT`
+- `BACKUP_S3_BUCKET`
+- `BACKUP_S3_ENDPOINT`
+- `BACKUP_S3_ACCESS_KEY_ID`
+- `BACKUP_S3_SECRET_ACCESS_KEY`
+
+The backup workflow cannot produce/verify an offsite encrypted backup until the backup secrets are configured. The P0 audit cannot complete its authenticated API/database checks until its required secrets are configured. Render environment values and the live service's selected branch/plan remain unverified.
+
 ## Candidate CI evidence
 
 - Code-verification commit: `85d5f53e3e9a633775226a49d5c16e6d60aead1f` (subsequent commits through `256eb53ffbf05ef00b227c9e1f6ab7717a80fd65` are documentation-only).
