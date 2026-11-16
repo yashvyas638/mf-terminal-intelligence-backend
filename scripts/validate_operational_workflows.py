@@ -151,7 +151,7 @@ def main() -> int:
     if "MIGRATION_DATABASE_URL must be configured separately" not in db_config:
         errors.append("app/db.py: production migrations must fail closed without a dedicated URL")
     app_main = Path("app/main.py").read_text(encoding="utf-8")
-    if "role.rolsuper" not in app_main or "must not use a PostgreSQL superuser" not in app_main:
+    if "r.rolsuper" not in app_main or "must not use a PostgreSQL superuser" not in app_main:
         errors.append("app/main.py: API runtime must reject PostgreSQL superuser credentials")
 
     if errors:
