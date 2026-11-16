@@ -54,6 +54,7 @@ After adding the required secrets, open Actions → Supabase Free-Tier Encrypted
    \`\`\`
 
 3. Restore first to a separate, isolated PostgreSQL/Supabase project. Review Supabase-managed roles, extensions, default privileges and migration state before applying the exports. Use a privileged database connection and stop on the first SQL error.
+   Before restoring the schema, follow Supabase's privilege guidance on the target: `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;`. Inspect the dump's GRANT/REVOKE statements and confirm the intended RLS posture before applying it; never assume a new target's defaults are safe.
 4. Run the application migration checks, API smoke tests, private-table grant/RLS checks and data reconciliation against that isolated target.
 5. Only plan a production recovery after the isolated restore is verified and a maintenance window/rollback path is approved. Never use production as the restore test target.
 
