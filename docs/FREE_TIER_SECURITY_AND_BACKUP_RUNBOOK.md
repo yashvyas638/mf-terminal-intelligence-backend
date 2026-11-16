@@ -9,15 +9,15 @@ Workflow: `.github/workflows/supabase-free-tier-backup.yml`
 - Runs daily at 23:30 UTC (05:00 IST) and on manual dispatch.
 - Uses the supported Supabase CLI logical export for roles, schema and data.
 - Encrypts the compressed archive with `age` before uploading it anywhere.
-- Keeps a 30-day encrypted GitHub Actions artifact as a recovery copy.
-- Requires a verified encrypted off-site copy in Cloudflare R2 or another S3-compatible object store; a GitHub artifact alone is not accepted as a durable backup.
+- Keeps a 30-day encrypted GitHub Actions artifact as a secondary recovery copy.
+- Requires a verified encrypted off-site copy in Cloudflare R2 or another S3-compatible object store. A GitHub artifact alone is not accepted as a successful or durable backup.
 - Never writes database exports into the repository or workflow logs.
 
 ### Activation status
 
 The operational backup and P0 audit workflows, plus the read-only audit script, are installed on the repository's default branch (`main`). Their daily schedules and manual dispatch entry points are therefore active. The application source remains on `audit/production-foundation`; these standalone operational files were installed on `main` without merging the unrelated application history.
 
-The first default-branch executions were triggered and correctly stopped at configuration validation. GitHub Actions confirmed these missing values: backup — `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`; P0 audit — `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`. The Render URL is configured directly in the workflow. No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
+The first default-branch executions were triggered and stopped at configuration validation because the required Actions secrets were absent. No database export, Auth operation, or production mutation was attempted. The currently confirmed missing values were: backup — `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`; P0 audit — `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`. The Render URL is configured directly in the workflow. No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
 
 ### One-time GitHub configuration
 
@@ -95,7 +95,7 @@ Both the main dashboard and Research Terminal now use the same shared, tested pa
 - Known compromised passwords are rejected before Supabase Auth is called.
 - If the HIBP request fails or times out, signup/password change fails closed and asks the user to retry.
 
-This is a practical Free-tier mitigation, not identical to Supabase's native server-side leaked-password protection. A user who bypasses either browser UI and calls Supabase Auth directly can bypass the browser check. Supabase's Before User Created hook is available on Free, but its event does not contain the submitted password; the password-verification hook is not available on Free. Keep the native Auth minimum length/complexity controls enabled as well.
+This is a practical browser-side mitigation, not server-enforced leaked-password protection. A caller who invokes Supabase Auth directly can bypass it. Supabase's Before User Created hook does not receive the submitted password, so it cannot independently perform this exact check; a server-side password-verification hook requires a plan/feature that exposes the submitted password to the hook. Keep native Auth minimum-length and password-strength controls enabled as well.
 
 ## 3. Daily P0 production readiness audit
 
@@ -122,12 +122,22 @@ Add these repository Actions secrets:
 
 The public Render URL is configured directly in the workflow; it does not need to be stored as a secret.
 
-The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
+The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Therefore, a green operational audit alone does not close the two-account acceptance gate. Close that gate only after two real confirmed accounts each create/read their own representative portfolio and cross-account reads/writes are verified to be denied.
 
 ## 4. Current limits and next P0 gate
 
-- The native Supabase Pro-only leaked-password feature and managed daily backups remain unavailable on Free. The controls above are independent workarounds.
-- GitHub Actions database, encryption and R2 secrets must be configured; no credentials are committed.
-- The first successful encrypted backup and a successful isolated restore are required before the backup/restore gate can be marked complete.
-- Two-account production isolation, full live AMFI ingestion evidence and endpoint smoke checks remain separate P0 acceptance gates.
+- Browser HIBP screening cannot stop direct Supabase Auth API callers. Native server-side leaked-password protection depends on Supabase plan/feature availability; verify the current project dashboard rather than assuming the browser mitigation is equivalent.
+- GitHub Actions database, encryption and R2 secrets must be configured; no credentials are committed. Do not paste any of these values into chat or commit them to the repository.
+- The first successful encrypted backup, verified R2 object size, successful decryption/checksum validation, and a successful isolated restore are required before the backup/restore gate can be marked complete.
+- Two-account production isolation, full live AMFI ingestion evidence, endpoint smoke checks, and a review of the backup's documented exclusions remain separate P0 acceptance gates.
 - P1 research implementation must not be represented as complete until P0 exit criteria are met.
+
+### Exact P0 closure evidence
+
+| Gate | Evidence required to close |
+|---|---|
+| Native password control | Supabase Auth dashboard/export confirms the strongest available native password policy; browser-side HIBP remains explicitly classified as bypassable mitigation. |
+| Two-account isolation | Two real confirmed accounts; one separately owned portfolio per account; positive owner reads and negative cross-owner read/write tests through the deployed API. |
+| Encrypted backup | Successful default-branch run; encrypted artifact retained; R2 object uploaded and size-verified; no plaintext dump retained in runner. |
+| Restore drill | Decrypt with offline identity; SHA-256 verification; restore into a separate isolated Supabase project; schema/data counts and application smoke tests reconciled. |
+| Operational schedule | Scheduled workflow execution on `main` completes its full job, not merely workflow dispatch or preflight. |
