@@ -28,7 +28,7 @@ def migration_database_url() -> str:
         if (
             production
             and migration_url == database_url()
-            and os.getenv("CI", "").lower() not in {"true", "1"}
+            and os.getenv("GITHUB_ACTIONS", "").lower() not in {"true", "1"}
         ):
             raise RuntimeError(
                 "MIGRATION_DATABASE_URL must use a separate privileged connection from runtime DATABASE_URL"
