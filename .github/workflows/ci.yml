@@ -170,6 +170,7 @@ jobs:
                 END IF;
               END
               $roles$;
+              GRANT CREATE ON SCHEMA public TO supabase_admin;
               -- Reproduce the unsafe managed-role defaults found in the live
               -- project so revision 0029 is exercised rather than skipped.
               ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
