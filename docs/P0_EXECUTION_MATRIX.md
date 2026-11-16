@@ -45,11 +45,11 @@ The backup workflow cannot produce/verify an offsite encrypted backup until the 
 
 ## Candidate CI evidence
 
-- Code-verification commit: `85d5f53e3e9a633775226a49d5c16e6d60aead1f` (subsequent commits through `256eb53ffbf05ef00b227c9e1f6ab7717a80fd65` are documentation-only).
-- PostgreSQL CI: **356 passed**, 1 non-blocking Python 3.12/SQLite datetime-adapter deprecation warning; migration chain reached `0029_admin_default_acl`.
+- Full code-verification commit: `e002b56c3f` (subsequent commits through `1b8a5609a3` are documentation-only).
+- PostgreSQL CI: **357 passed**, 1 non-blocking Python 3.12/SQLite datetime-adapter deprecation warning; migration chain reached `0029_admin_default_acl`.
 - SQLite migration suite, lint, dashboard/research JavaScript checks, DOM/auth contracts and operational workflow/Render-secret validator: passed.
 - Live AMFI historical response contract checks for scheme types 1, 2 and 3: passed. Performance taxonomy contract and 43-category read-only coverage audit: passed. Official scheme-summary metadata probe returned HTTP 200. No production database writes were performed.
-- Latest CI run for the current documentation-only head is still running; recheck before release.
+- The current documentation-only head has a CI run in progress; the latest completed full run at `e002b56c3f` passed all three jobs.
 
 ## Code-level tenancy evidence
 
