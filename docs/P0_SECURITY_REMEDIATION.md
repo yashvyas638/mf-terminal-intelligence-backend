@@ -1,82 +1,103 @@
-# P0 Security Remediation — Supabase client-role containment
+# P0 Security Remediation — Supabase, tenancy and database boundary
 
-## Live finding (2026-11-11)
+Last reconciled: 2026-11-16  
+Candidate branch: `audit/production-foundation`  
+Production rule: no migration or deployment without explicit release approval.
 
-The production `public` schema contains eight application tables. RLS was
-reported disabled on all eight and `pg_policies` returned no policies.
-`information_schema.role_table_grants` showed table privileges assigned to
-Supabase API roles `anon` and `authenticated`. SQL Editor reported
-`current_user = postgres`; this does not establish Render's connection role.
+## Executive status
 
-The schema has no portfolio owner/tenant column. The current FastAPI service
-uses a shared server-side API key and is a trusted single-operator/private
-workspace design, not a multi-user SaaS authorization model.
+P0 remains **OPEN — BLOCKED**. The candidate application has moved beyond the original shared-operator-only design: it implements Supabase bearer-token validation, owner-scoped portfolio operations, database hardening migrations and simulated two-user tests. These are code-level controls, not proof that the currently deployed Render service and live Supabase database enforce the same boundary.
 
-## Migration 0004
+The old statements in this document that the service has no authenticated user identity or portfolio ownership model describe an earlier architecture and must not be used as the current candidate-branch description.
 
-`0004_supabase_role_lockdown` revokes existing table, sequence and
-function privileges from `anon` and `authenticated`, and revokes their
-default privileges for future objects created by PostgreSQL role `postgres`.
+## Historical finding — 2026-11-11 to 2026-11-12
 
-This is containment, not a substitute for RLS or per-user authorization. It
-does not modify, delete, rewrite or truncate application data. The downgrade
-is deliberately a no-op so a code rollback cannot silently reopen access.
-CI creates Supabase-role fixtures and tests that the roles cannot access
-application tables after migration.
+An earlier read-only review reported RLS disabled on the then-inspected public tables. Effective privilege checks at that checkpoint did not confirm direct `anon` or `authenticated` table access; SQL Editor's `current_user = postgres` did not establish the Render service's database role. That report is retained as historical context, not as a current live-state assertion.
 
-## Portfolio import integrity addition (migration 0005)
+The observed production Alembic revision at the later 2026-11-12 checkpoint was `0007_append_only_audit`. The candidate branch has since advanced. Production and candidate schema must therefore be reconciled before any migration or deployment.
 
-Migration `0005_portfolio_import_dedup` adds a per-portfolio statement fingerprint ledger. The service stores only the SHA-256 fingerprint, import timestamp and row count—not raw CSV statement content. Re-uploading the exact same CSV to the same portfolio is rejected with HTTP 409. This prevents accidental duplicate ledger entries; it is not a substitute for row-level reconciliation when the same transactions appear in a differently formatted statement.
+## Candidate-branch security controls
 
-## Production precondition
+The current candidate architecture includes:
 
-Before applying migration 0004 in production, verify Render's
-`DATABASE_URL` uses a trusted server-side PostgreSQL role, not `anon` or
-`authenticated`. Never paste connection strings or credentials into chat,
-GitHub issues or logs. If Render uses Supabase Data API rather than direct
-PostgreSQL, stop and redesign the access path before deployment.
+- Supabase email/password authentication in the dashboard and Research Terminal.
+- Backend bearer-token verification against Supabase Auth `/auth/v1/user`.
+- Owner-scoped portfolio access and checks across portfolio reads/writes, transactions, imports, audit history, valuation and rebalance workflows.
+- Portfolio-goal ownership checks, including validation that a linked portfolio belongs to the same user as the goal.
+- A production startup guard that identifies PostgreSQL `current_user` and rejects untrusted `anon` or `authenticated` database identities.
+- Alembic migrations for client-role containment, ownership, financial constraints, append-only evidence and research/security tuning.
+- SQLite and PostgreSQL CI plus simulated cross-user isolation tests.
+
+Do not infer live deployment or migration status from these source-code controls.
+
+## Latest known live Supabase evidence
+
+The latest read-only audit available in this work context found:
+
+- One confirmed Supabase Auth user at the inspected checkpoint.
+- Zero portfolios and zero distinct portfolio owners at that checkpoint.
+- One portfolio goal linked to the confirmed user; it had no portfolio link and was not orphaned. Do not delete or reassign it.
+- Eleven internal tables had RLS enabled and denied direct `anon`/`authenticated` SELECT access.
+- Supabase Security Advisor reported the leaked-password-protection setting disabled and informational RLS-enabled/no-policy findings on deny-all internal tables. Health Advisor had no findings. Performance Advisor listed unused-index informational notices; do not drop indexes automatically.
+- The actual Render PostgreSQL connection role and deployed application SHA remained unverified.
+
+These observations are timestamped evidence, not a live guarantee. Refresh them before release. The lack of two separately owned portfolios means a real two-account production isolation test has not been demonstrated.
+
+## Migration and database controls
+
+Migrations are forward-only where they protect financial evidence or security posture. Never run a downgrade merely to roll back application code.
+
+Before applying any candidate migration to production:
+
+1. Fetch the exact candidate branch SHA and ordered Alembic migration chain.
+2. Compare all tables, columns, indexes, constraints, triggers, policies, grants, sequences, functions and ownership against live Supabase.
+3. Confirm the actual Render database role privately. Never paste `DATABASE_URL`, connection strings or credentials into chat or logs.
+4. Verify the role is a trusted server-side database role and not `anon` or `authenticated`.
+5. Verify direct client grants and RLS policy behaviour for every public table, including inherited PUBLIC privileges and default privileges.
+6. Verify security-definer functions have a fixed safe `search_path` and least-privilege EXECUTE grants.
+7. Take a fresh encrypted off-site backup and complete a restore into a separate isolated project.
+8. Obtain explicit release approval before deployment or migration.
+
+The migration head in the release evidence must be read from the candidate and approved deployment; do not hard-code an old revision such as `0007_append_only_audit`.
+
+## Two-account isolation acceptance test
+
+Use two real, confirmed test accounts with no production financial data:
+
+- Account A creates portfolio A and goal A.
+- Account B creates portfolio B and goal B.
+- A must not list, read, update, import into, void, audit, value, rebalance or infer B's records by changing IDs or request parameters.
+- B must not access A's records.
+- A goal linked to a portfolio owned by the other account must be rejected.
+- Invalid, expired, missing and malformed bearer tokens must be rejected.
+- Sign-out and fresh sign-in must not leak the previous account's cached UI state.
+- Repeat key negative tests through direct API requests, not only by hiding UI controls.
+
+Record redacted request/result evidence, account labels (A/B, never email/password), timestamp, environment and exact deployed SHA. Do not create these accounts or test records in production without an approved test plan and explicit permission.
+
+## Credential and provider controls
+
+- Rotate any operator key previously exposed in chat, screenshots or logs.
+- Store operator/API/database credentials only in Render and GitHub Actions secret stores.
+- Do not expose the operator key to browser JavaScript, HTML, mobile apps or repository files.
+- Verify Supabase Email provider, Site URL, redirect allow-list and SMTP delivery in a real browser.
+- Supabase Free tier may not expose native leaked-password protection. The browser-side Pwned Passwords range check is a mitigation only; it is not equivalent to a server-side Auth control and can be bypassed by direct Auth API calls.
 
 ## Remaining P0 work
-### Code-level startup defence (2026-11-12)
 
-The production lifespan now queries PostgreSQL `current_user` and refuses to start when the connection identity is `anon` or `authenticated`. It allows a trusted server-side role and fails closed if the role cannot be identified. Automated tests cover both rejected client roles and an accepted server-side role. Verified on commit `cac21e0e4daba3680e2bee99481e93b099d83031`; CI run `43142960810` passed SQLite and PostgreSQL jobs.
+- [ ] Refresh live Supabase schema, grants, RLS, functions and migration revision evidence.
+- [ ] Verify the actual Render database role and deployed SHA privately.
+- [ ] Confirm the candidate migration chain and production drift have no unexplained differences.
+- [ ] Configure required GitHub Actions secrets without disclosing values.
+- [ ] Complete real signup, confirmation, login, session, password-reset and sign-out browser tests.
+- [ ] Complete two-account production/staging isolation evidence using approved test accounts.
+- [ ] Complete encrypted off-site backup and isolated restore drill.
+- [ ] Complete live AMFI refresh, idempotent replay, correction provenance and data freshness checks.
+- [ ] Complete portfolio workflow E2E and append-only ledger checks.
+- [ ] Complete approved Render deployment smoke tests and rollback evidence.
 
-This does **not** prove which role the live Render service currently uses. The private Render environment must still be inspected before migration 0004 or any production deployment.
+## Safety and release boundary
 
+This document does not authorise a production migration, deployment, test-account creation, portfolio mutation or destructive action. Keep production inspection read-only until the exact candidate SHA, migration diff, actual database role, successful backup/restore and explicit release approval are all present.
 
-- Verify Render's actual database connection role without exposing secrets.
-- Verify Supabase Data API cannot read or mutate application tables as
-  `anon` or `authenticated` after migration.
-- For multi-user use, add authenticated identity, owner/tenant columns,
-  approved ownership backfill, ownership checks in every service query, RLS
-  policies and cross-user isolation tests.
-- Audit objects created by roles other than `postgres`.
-- Rotate any API key previously exposed in chat/screenshots and update Render
-  and GitHub Actions secret stores without disclosing values.
-- Verify production migration, health, NAV persistence, portfolio flows,
-  backups and rollback before P0 sign-off.
-
-## Safety
-
-The migration changes permissions only. It does not touch portfolio
-transactions, NAV observations, source snapshots, correction history or
-scheme master data. Do not merge to `main` or deploy until the exact SHA,
-CI and Render connection role are verified and the user approves.
-
-## Connected Supabase verification (2026-11-12, read-only)
-
-Project mf-terminal-intelligence was inspected using read-only project/table/advisor queries and SQL SELECT statements. No DDL, data mutation or production migration was executed.
-
-Observed:
-- Alembic database revision: 0007_append_only_audit.
-- Data present: 14,206 schemes, 22,305 NAV observations and 4 ingestion snapshots; portfolio and transaction tables are currently empty.
-- RLS is disabled on all 9 public tables, and there are no RLS policies.
-- Effective privilege checks (has_table_privilege) returned false for both anon and authenticated on SELECT and INSERT for every public table. The expanded table ACL check also found no PUBLIC table grants. service_role has the expected server-side table privileges.
-- SQL Editor reports current_user = postgres. This is not evidence of the Render backend connection identity; Render remains unverified.
-- The schemes table does not yet have research classification columns.
-- Supabase security advisor flags prevent_financial_audit_mutation() for a mutable search_path. A safe function-search-path hardening migration is being added to the synchronized research branch; it has not been applied to production.
-
-Interpretation:
-- The RLS-disabled finding is a critical hardening gap and must be resolved deliberately. However, the direct privilege checks did not confirm that anon or authenticated currently have table SELECT/INSERT access. Do not describe this as confirmed anonymous table access.
-- Enabling RLS without policies could block access for roles that do not bypass RLS. Design and test the intended server-side role path and any future user policies before changing production.
-- Re-run grants, RLS, policy, sequence and function checks after the approved permission migration.
+See [P0 Execution and Evidence Matrix](P0_EXECUTION_MATRIX.md) for gate-by-gate acceptance criteria and the [Final Release Runbook](FINAL_RELEASE_RUNBOOK.md) for the controlled release procedure.
