@@ -46,7 +46,7 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health` | Public database/service readiness probe; exposes no data or secrets. |
+| `GET /health` | Public database/service readiness probe with a validated Render deployment commit fingerprint; exposes no secrets or portfolio data. |
 | `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot; server-side operator key only. |
 | `GET /v1/nav/status` | Latest ingestion snapshot and retrieval freshness. |
 | `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |\n| `GET /v1/nav/schemes/{scheme_code}` | Scheme metadata, ISINs, latest stored NAV, observation coverage and NAV-derived metrics. |\n| `POST /v1/analytics/compare` | Compare 2–10 schemes on stored AMFI NAV series; each scheme's coverage is reported independently. |
