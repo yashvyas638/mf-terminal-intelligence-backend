@@ -1,6 +1,6 @@
 # MF Terminal Intelligence — Development Roadmap
 
-Last reviewed: 2026-11-11
+Last reviewed: 2026-11-16
 Repository: `yashvyas638/mf-terminal-intelligence-backend`
 Authorised branch: `audit/production-foundation`
 Product structure: **P0–P6** (seven gated phases)
@@ -13,6 +13,8 @@ This is the single phase-control document. Detailed product requirements live in
 - [Engineering Playbook](docs/ENGINEERING_PLAYBOOK.md)
 - [Architecture and Data Model](docs/ARCHITECTURE_AND_DATA_MODEL.md)
 - [UX and Design System](docs/UX_AND_DESIGN_SYSTEM.md)
+- [P0 Execution and Evidence Matrix](docs/P0_EXECUTION_MATRIX.md)
+- [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md)
 
 Every feature must be linked to a phase, an acceptance test and a commit. No phase is complete because code was written; it is complete only when the relevant evidence is recorded here and sign-off is explicitly granted.
 
