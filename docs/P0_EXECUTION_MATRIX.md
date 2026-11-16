@@ -51,6 +51,7 @@ Project: `zgfdvhzhvccsfmpoaqah`. No DDL or data writes were performed.
 
 The native Supabase leaked-password protection warning is separate from the future-object ACL issue. The browser-side Pwned Passwords mitigation is not equivalent to server-side Auth enforcement.
 
+- Official AMFI performance/taxonomy live audit on report date `13-Nov-2026`: 43 categories checked, 86 requests, 2,140 rows, 2,073 current allowlisted identifiers and 67 legacy/rejected rows retained as diagnostic-only. The audit performed zero database writes. The official scheme-summary probe also returned scheme details and category/manager fields for sampled schemes.
 - NAV freshness: the latest daily-feed snapshot was retrieved at `2026-11-12 02:53 UTC`, with maximum effective NAV date `2026-11-11`. No later accepted daily-feed snapshot was present at audit time.
 - Historical backfill checkpoints: 168 daily complete, 144 month-end complete, and 780 daily paused. The paused rows carry `StorageOptimizedHybridPlan` because the hybrid planner deliberately superseded the original all-daily plan. They are not failed requests. No pending or running checkpoints were present.
 - Workflow activation: candidate `nav-refresh.yml` and `amfi-live-source-check.yml` are not present on default `main`. The current default-branch `render.yaml` contains one web service and no Cron service. A schedule on a non-default branch is not an active GitHub scheduled workflow.
