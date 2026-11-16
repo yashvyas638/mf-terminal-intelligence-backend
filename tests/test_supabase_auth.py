@@ -387,3 +387,29 @@ def test_unconfirmed_supabase_email_cannot_access_private_api(monkeypatch):
     )
     assert response.status_code == 403
     assert "confirm your email" in response.json()["detail"].lower()
+
+
+
+def test_runtime_database_role_rejects_postgres_superuser():
+    class FakeResult:
+        def one(self):
+            return ("supabase_admin", True)
+
+    class FakeDatabase:
+        def execute(self, _statement):
+            return FakeResult()
+
+    with pytest.raises(RuntimeError, match="must not use a PostgreSQL superuser"):
+        main._verify_trusted_database_role(FakeDatabase())
+
+
+def test_runtime_database_role_allows_trusted_non_superuser():
+    class FakeResult:
+        def one(self):
+            return ("postgres", False)
+
+    class FakeDatabase:
+        def execute(self, _statement):
+            return FakeResult()
+
+    assert main._verify_trusted_database_role(FakeDatabase()) == "postgres"
