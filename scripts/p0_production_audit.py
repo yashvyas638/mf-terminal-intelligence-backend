@@ -265,6 +265,49 @@ def evaluate_tenancy_integrity(
     return evidence, failures
 
 
+
+def evaluate_public_default_privileges(rows: list[tuple[str, str, str, str]]) -> tuple[dict, list[str]]:
+    """Fail closed when future public objects inherit client or PUBLIC privileges."""
+    findings = [
+        {
+            "creator_role": str(creator_role),
+            "object_type": str(object_type),
+            "grantee": str(grantee),
+            "privilege": str(privilege),
+        }
+        for creator_role, object_type, grantee, privilege in rows
+    ]
+    failures = [
+        (
+            "Unsafe public default privilege: "
+            f"{item['creator_role']} grants {item['privilege']} to {item['grantee']} "
+            f"on future public {item['object_type']} objects."
+        )
+        for item in findings
+    ]
+    return {"safe": not findings, "findings": findings}, failures
+
+
+def check_public_default_privileges(conn) -> tuple[dict, list[str]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT d.defaclrole::regrole::text AS creator_role,
+                   d.defaclobjtype AS object_type,
+                   CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE grantee.rolname END AS grantee,
+                   acl.privilege_type
+              FROM pg_default_acl d
+              CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+              LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+             WHERE d.defaclnamespace = 'public'::regnamespace
+               AND (acl.grantee = 0 OR grantee.rolname IN ('anon', 'authenticated'))
+             ORDER BY creator_role, object_type, grantee, privilege_type
+            """
+        )
+        rows = cur.fetchall()
+    return evaluate_public_default_privileges(rows)
+
+
 def main() -> int:
     database_url = require_env("SUPABASE_DB_URL")
     api_url = require_env("MF_TERMINAL_API_URL").rstrip("/")
@@ -393,6 +436,10 @@ def main() -> int:
             "tables": public_surface,
         }
         report["failures"].extend(surface_failures)
+
+        default_privileges, default_privilege_failures = check_public_default_privileges(conn)
+        report["checks"]["public_default_privileges"] = default_privileges
+        report["failures"].extend(default_privilege_failures)
 
     report["result"] = "FAIL" if report["failures"] else ("PASS_WITH_WARNINGS" if report["warnings"] else "PASS")
     print(json.dumps(report, indent=2, default=str), flush=True)
