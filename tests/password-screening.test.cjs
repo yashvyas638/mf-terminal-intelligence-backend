@@ -37,6 +37,8 @@ test("clean password uses k-anonymity prefix request and validates the complete 
   assert.equal(request.options.cache, "no-store");
   assert.equal(request.options.referrerPolicy, "no-referrer");
   assert.equal(request.options.redirect, "error");
+  assert.equal(request.options.body, undefined);
+  assert.deepEqual(Object.keys(request.options.headers), ["Add-Padding"]);
 });
 
 test("known breached password is rejected", async () => {
@@ -83,6 +85,27 @@ test("network failure fails closed", async () => {
       fetch: async () => { throw new TypeError("network down"); }
     }),
     /could not be reached/
+  );
+});
+
+test("oversized response fails closed", async () => {
+  await assert.rejects(
+    screen("another-password", { fetch: async () => response("A".repeat(300001)) }),
+    /response was invalid/
+  );
+});
+
+test("invalid frequency count fails closed", async () => {
+  await assert.rejects(
+    screen("another-password", { fetch: async () => response("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:not-a-number\\n") }),
+    /could not be verified/
+  );
+});
+
+test("missing Web Crypto fails closed", async () => {
+  await assert.rejects(
+    screen("another-password", { crypto: {}, fetch: async () => response("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:0\\n") }),
+    /Secure password screening is unavailable/
   );
 });
 
