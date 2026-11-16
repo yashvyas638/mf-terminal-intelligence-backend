@@ -276,16 +276,33 @@ def main() -> int:
                 SELECT
                   (SELECT count(*) FROM auth.users WHERE email_confirmed_at IS NOT NULL),
                   (SELECT count(*) FROM public.portfolios),
-                  (SELECT count(DISTINCT owner_user_id) FROM public.portfolios)
+                  (SELECT count(DISTINCT owner_user_id) FROM public.portfolios),
+                  (SELECT count(*) FROM public.portfolio_goals),
+                  (SELECT count(*) FROM public.portfolio_goals g
+                    JOIN auth.users u ON u.id::text = g.owner_user_id
+                    WHERE u.email_confirmed_at IS NOT NULL),
+                  (SELECT count(*) FROM public.portfolio_goals g
+                    LEFT JOIN auth.users u ON u.id::text = g.owner_user_id
+                    WHERE u.id IS NULL OR u.email_confirmed_at IS NULL)
                 """
             )
-            confirmed_users, portfolio_count, portfolio_owners = cur.fetchone()
+            (
+                confirmed_users, portfolio_count, portfolio_owners,
+                portfolio_goals, goals_with_confirmed_owner, goals_without_confirmed_owner,
+            ) = cur.fetchone()
             report["checks"]["live_tenancy_evidence"] = {
                 "confirmed_auth_users": confirmed_users,
                 "portfolios": portfolio_count,
                 "distinct_portfolio_owners": portfolio_owners,
+                "portfolio_goals": portfolio_goals,
+                "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
+                "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
                 "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
             }
+            if goals_without_confirmed_owner:
+                report["failures"].append(
+                    "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
+                )
             if confirmed_users < 2 or portfolio_owners < 2:
                 report["failures"].append(
                     "P0 tenancy gate failed: two real confirmed accounts and at least two separately owned portfolios are required before operational readiness can pass."
