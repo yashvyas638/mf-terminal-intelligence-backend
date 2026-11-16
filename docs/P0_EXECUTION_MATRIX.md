@@ -23,7 +23,7 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 | P0 audit workflow | Read-only audit workflow and expanded ownership/default-ACL checks exist; earlier run stopped because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` were absent | BLOCKED: required GitHub Actions secrets not verified |
 | NAV | Latest production feed snapshot was retrieved 2026-11-12 02:53 UTC with max NAV date 2026-11-11. The scheduled NAV-refresh and AMFI-monitor workflows exist only on the candidate branch; default `main` has neither, and its `render.yaml` has no Cron service | BLOCKED: production refresh scheduler is not active/evidenced |
 | Historical NAV | Official AMFI history response contract checks passed in CI. Live checkpoint inventory: 168 completed daily + 144 completed month-end checkpoints; 780 paused daily checkpoints are intentionally superseded by the hybrid plan, not failures | Hybrid history plan is populated; execution remains operator-gated and coverage must be reconciled by scheme/window |
-| Render | Service URL is known; deployed SHA and actual Render database role have not been independently confirmed. Supabase SQL inspection ran as `postgres`, which is not proof of Render's connection role | BLOCKED |
+| Render | `main/render.yaml` declares `mf-terminal-nav-api` on Starter with Uvicorn-only startup; candidate `render.yaml` declares `mf-terminal-intelligence-backend` on Free and runs `alembic upgrade head` before Uvicorn. Actual Render service, plan, branch, deployed SHA and DB role are unverified | BLOCKED: blueprint mismatch must be reconciled before sync/deploy |
 | Browser workflow | API/UI flows exist, but complete real-browser end-to-end evidence is pending | BLOCKED |
 
 This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
@@ -213,8 +213,9 @@ The native Supabase leaked-password protection warning is separate from the futu
 - Do not infer deployment state from environment variable presence or a successful health endpoint alone.
 
 **Acceptance evidence**
-- [ ] Actual Render service and deployed SHA verified.
-- [ ] Actual PostgreSQL connection role verified privately.
+- [ ] Actual Render service, service identity, plan and deployed SHA verified.
+- [ ] Candidate Render blueprint is reconciled with the existing service; no accidental new service, service rename or plan change is introduced.
+- [ ] Actual PostgreSQL connection role verified privately and proven able to run the approved migration chain.
 - [ ] Migration head matches approved candidate.
 - [ ] Required endpoints pass with correct authentication/authorization.
 - [ ] No secret or sensitive portfolio data appears in logs.
