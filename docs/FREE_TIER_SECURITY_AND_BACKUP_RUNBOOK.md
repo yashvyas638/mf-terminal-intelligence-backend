@@ -37,8 +37,8 @@ Add these repository Actions secrets under GitHub → Settings → Secrets and v
 | `BACKUP_AGE_RECIPIENT` | Yes | Public `age1...` recipient; never the private identity. |
 | `BACKUP_S3_BUCKET` | Yes | Existing private R2/S3 bucket name. |
 | `BACKUP_S3_ENDPOINT` | Yes | R2 endpoint, e.g. `https://<account-id>.r2.cloudflarestorage.com`. |
-| `BACKUP_S3_ACCESS_KEY_ID` | Yes | R2/S3 access key with write access only to the backup bucket. |
-| `BACKUP_S3_SECRET_ACCESS_KEY` | Yes | Matching R2/S3 secret. |
+| `BACKUP_S3_ACCESS_KEY_ID` | Yes | R2/S3 access key scoped to this bucket/prefix with `ListBucket`, `GetObject` and `PutObject` permissions only. |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | Yes | Matching R2/S3 secret. The workflow preflights bucket access and the age recipient before exporting production data. |
 
 All six backup secrets are required. The workflow fails before connecting to production unless both the database/encryption configuration and the durable R2/S3 destination are present. Daily encrypted copies use the `mf-terminal-intelligence/daily/` prefix; the first run of each month also writes a monthly copy under `mf-terminal-intelligence/monthly/`. Configure R2 lifecycle rules to expire daily objects after 45 days and monthly objects after 400 days. Keep the bucket private and scope the access key to this bucket only.
 
