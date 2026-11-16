@@ -1,5 +1,9 @@
 /* Detailed fund profile renderer. The auth, API, screener and watchlist
    controllers remain owned by research.js; this file does not replace them. */
+function safeHttpUrl(value) {
+  try { const url = new URL(String(value ?? "")); return url.protocol === "https:" || url.protocol === "http:" ? url.href : ""; }
+  catch (_) { return ""; }
+}
 function navLineChart(points) {
   if (!points || points.length < 2) {
     return '<p class="muted">Not enough stored NAV observations for a history chart. The available profile metrics are still shown.</p>';
@@ -28,9 +32,12 @@ function evidencePackPanel(result) {
     const source = sourceById[item.source_id];
     return '<div class="metricrow"><div><strong>' + esc(item.claim) + '</strong><div class="muted">' + esc(item.evidence_type) + (source ? ' · ' + esc(source.title) : '') + '</div><div class="muted">' + esc(typeof item.value === "object" ? JSON.stringify(item.value) : item.value) + '</div></div></div>';
   }).join("") || '<p class="muted">No source-backed evidence is available in the selected period.</p>';
-  const sources = (result.sources || []).map(source =>
-    '<li><a href="' + esc(source.url) + '" target="_blank" rel="noopener noreferrer">' + esc(source.title) + '</a> · ' + esc(source.source_type) + (source.as_of_date || source.effective_nav_date ? ' · As of ' + esc(source.as_of_date || source.effective_nav_date) : '') + '</li>'
-  ).join("") || '<li class="muted">No source documents attached.</li>';
+  const sources = (result.sources || []).map(source => {
+    const url = safeHttpUrl(source.url);
+    const title = esc(source.title);
+    const link = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + title + '</a>' : title;
+    return '<li>' + link + ' · ' + esc(source.source_type) + (source.as_of_date || source.effective_nav_date ? ' · As of ' + esc(source.as_of_date || source.effective_nav_date) : '') + '</li>';
+  }).join("") || '<li class="muted">No source documents attached.</li>';
   const gaps = (result.data_gaps || []).map(gap => '<li>' + esc(gap) + '</li>').join("");
   return '<div class="panel"><div class="detailhead"><h3>Source evidence pack</h3><span class="tag">Evidence only · No AI claims generated</span></div><div class="metriclist">' + items + '</div><h4>Sources</h4><ul>' + sources + '</ul>' + (gaps ? '<h4>Data gaps</h4><ul>' + gaps + '</ul>' : '') + '<p class="footnote">Generated ' + esc(result.generated_at) + '. Any downstream AI summary must preserve these source references and distinguish source facts from derived calculations.</p></div>';
 }
@@ -59,7 +66,7 @@ function benchmarkComparisonPanel(result) {
           '<div class="metricrow"><span>Beta</span><strong>' + num(metric.beta) + '</strong></div>' +
           '<div class="metricrow"><span>Tracking error</span><strong>' + pct(metric.tracking_error) + '</strong></div>' +
           '<div class="metricrow"><span>Information ratio</span><strong>' + num(metric.information_ratio) + '</strong></div></div>') +
-        '<p class="footnote">Mapping evidence: <a href="' + esc(item.source_document_url) + '" target="_blank" rel="noopener noreferrer">source document</a> · SHA-256 ' + esc(item.source_document_sha256) + '</p></div>';
+        '<p class="footnote">Mapping evidence: ' + (safeHttpUrl(item.source_document_url) ? '<a href="' + esc(safeHttpUrl(item.source_document_url)) + '" target="_blank" rel="noopener noreferrer">source document</a>' : 'source document link unavailable') + ' · SHA-256 ' + esc(item.source_document_sha256) + '</p></div>';
     }).join("") +
     '<p class="footnote">' + (result.limitations || []).map(esc).join(" ") + '</p></div>';
 }
