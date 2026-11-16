@@ -122,15 +122,16 @@ jobs:
           DAILY_KEY="mf-terminal-intelligence/daily/${{ steps.backup.outputs.stamp }}.tar.gz.age"
           aws s3 cp "${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
-          aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$DAILY_KEY" \
-            --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto \
-            --query '{ContentLength:ContentLength,LastModified:LastModified}' --output json
+          LOCAL_SIZE="$(stat -c%s "${{ steps.backup.outputs.archive }}")"
+          REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$DAILY_KEY" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --query ContentLength --output text)"
+          [[ "$LOCAL_SIZE" == "$REMOTE_SIZE" ]] || { echo "::error::Daily R2 backup size verification failed."; exit 1; }
           if [[ "$(date -u +%d)" == "01" ]]; then
             MONTHLY_KEY="mf-terminal-intelligence/monthly/$(date -u +%Y-%m).tar.gz.age"
             aws s3 cp "${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" \
               --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
-            aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$MONTHLY_KEY" \
-              --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto \
-              --query '{ContentLength:ContentLength,LastModified:LastModified}' --output json
+            MONTHLY_REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$MONTHLY_KEY" \
+              --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --query ContentLength --output text)"
+            [[ "$LOCAL_SIZE" == "$MONTHLY_REMOTE_SIZE" ]] || { echo "::error::Monthly R2 backup size verification failed."; exit 1; }
           fi
           echo "Encrypted daily off-site copy uploaded and verified: s3://$BACKUP_S3_BUCKET/$DAILY_KEY"
