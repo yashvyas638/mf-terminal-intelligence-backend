@@ -229,6 +229,7 @@ def evaluate_tenancy_integrity(
     portfolio_owners: int,
     portfolios_without_confirmed_owner: int,
     portfolio_goals: int,
+    goals_with_confirmed_owner: int,
     goals_without_confirmed_owner: int,
     goals_with_cross_owner_portfolio_link: int,
 ) -> tuple[dict, list[str]]:
@@ -239,6 +240,7 @@ def evaluate_tenancy_integrity(
         "distinct_portfolio_owners": portfolio_owners,
         "portfolios_without_confirmed_auth_owner": portfolios_without_confirmed_owner,
         "portfolio_goals": portfolio_goals,
+        "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
         "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
         "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
         "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
@@ -347,6 +349,7 @@ def main() -> int:
                 portfolio_owners=portfolio_owners,
                 portfolios_without_confirmed_owner=portfolios_without_confirmed_owner,
                 portfolio_goals=portfolio_goals,
+                goals_with_confirmed_owner=goals_with_confirmed_owner,
                 goals_without_confirmed_owner=goals_without_confirmed_owner,
                 goals_with_cross_owner_portfolio_link=goals_with_cross_owner_portfolio_link,
             )
