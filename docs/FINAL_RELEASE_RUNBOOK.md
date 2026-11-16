@@ -50,7 +50,7 @@ The production database was read-only verified at Alembic revision `0028_restric
 
 The migrations are forward-only where they protect financial evidence or security posture. Downgrades must not remove audit/provenance or restore broad client privileges. Rollback is normally an application-code redeploy plus a reviewed forward-fix, not an Alembic downgrade.
 
-Before release, re-read the migration tree and confirm the candidate head is `0029_admin_default_acl` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires a migration connection authorised to alter default privileges for `supabase_admin`.
+Before release, re-read the migration tree and confirm the candidate head is `0029_admin_default_acl` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires a migration connection authorised to alter default privileges for every role able to CREATE in `public`. The latest Supabase SQL inspection ran as `postgres`, which is not a member of `supabase_admin`; do not assume that connection can apply 0029. The migration preflights this and aborts before changes if authority is insufficient. Use an approved privileged migration process if Render's actual database role lacks the required membership.
 
 ## Pre-deployment checks
 
