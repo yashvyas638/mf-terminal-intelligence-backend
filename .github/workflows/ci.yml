@@ -37,7 +37,7 @@ jobs:
           node --check app/static/research.js
           node --check app/static/fund-detail.js
           node --check app/static/password-screening.js
-          node --test tests/password-screening.test.cjs
+          node --test tests/password-screening.test.cjs tests/frontend-security-urls.test.cjs
       - name: Validate operational audit scripts
         run: |
           python -m py_compile scripts/p0_production_audit.py scripts/validate_operational_workflows.py
