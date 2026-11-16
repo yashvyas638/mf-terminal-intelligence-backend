@@ -126,7 +126,7 @@ The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST
 
 
 
-## 5. Verified project state (2026-11-16)
+## 4. Verified project state (2026-11-16)
 
 The linked Supabase organization currently reports the **Free** plan. Supabase's current password-security documentation states that native leaked-password protection is available on Pro and above. Do not claim this native control can be enabled on this Free project. Keep the shared browser-side HIBP range check as a defence-in-depth mitigation, keep the strongest available minimum-length/character requirements in Auth settings, and re-evaluate native protection after an approved plan change. The browser check remains bypassable by direct Auth API callers.
 
@@ -146,7 +146,7 @@ GitHub Actions currently exposes empty environment values for the required secre
 | Isolated restore | Not run | No verified encrypted backup exists |
 | Operational monitoring | Installed, not operationally proven | Workflows are on `main` but executions stop at secret validation |
 
-## 4. Current limits and next P0 gate
+## 5. Current limits and next P0 gate
 
 - Browser HIBP screening cannot stop direct Supabase Auth API callers. Native server-side leaked-password protection depends on Supabase plan/feature availability; verify the current project dashboard rather than assuming the browser mitigation is equivalent.
 - GitHub Actions database, encryption and R2 secrets must be configured; no credentials are committed. Do not paste any of these values into chat or commit them to the repository.
@@ -160,6 +160,6 @@ GitHub Actions currently exposes empty environment values for the required secre
 |---|---|
 | Native password control | Supabase Auth dashboard/export confirms the strongest available native password policy; browser-side HIBP remains explicitly classified as bypassable mitigation. |
 | Two-account isolation | Two real confirmed accounts; one separately owned portfolio per account; positive owner reads and negative cross-owner read/write tests through the deployed API. |
-| Encrypted backup | Successful default-branch run; encrypted artifact retained; R2 object uploaded and size-verified; no plaintext dump retained in runner. |
+| Encrypted backup | Successful default-branch run; encrypted artifact retained; R2 object downloaded back and both size and SHA-256 verified; no plaintext dump retained in runner. |
 | Restore drill | Decrypt with offline identity; SHA-256 verification; restore into a separate isolated Supabase project; schema/data counts and application smoke tests reconciled. |
 | Operational schedule | Scheduled workflow execution on `main` completes its full job, not merely workflow dispatch or preflight. |
