@@ -7,7 +7,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 
-import psycopg
 
 
 PRIVATE_TABLES = (
@@ -229,6 +228,8 @@ def main() -> int:
     if parsed_api_url.scheme != "https" or not parsed_api_url.hostname or parsed_api_url.username or parsed_api_url.password:
         raise RuntimeError("MF_TERMINAL_API_URL must be a credential-free HTTPS origin.")
     api_key = require_env("MF_TERMINAL_API_KEY")
+    import psycopg
+
     report: dict = {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "project_ref": "zgfdvhzhvccsfmpoaqah",
