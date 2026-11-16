@@ -174,3 +174,29 @@ def test_public_default_privileges_do_not_expose_future_objects_for_any_creator(
             """
         )).all()
     assert grants == [], f"Unsafe future-object grants remain for supabase_admin: {grants}"
+
+
+
+@pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
+def test_global_function_default_lockdown_preserves_managed_schema_grants():
+    with engine.connect() as connection:
+        rows = connection.execute(text(
+            """
+            SELECT n.nspname, grantee.rolname, acl.privilege_type
+              FROM pg_default_acl d
+              JOIN pg_namespace n ON n.oid = d.defaclnamespace
+              CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+              JOIN pg_roles grantee ON grantee.oid = acl.grantee
+             WHERE d.defaclrole = 'supabase_admin'::regrole
+               AND d.defaclobjtype = 'f'
+               AND n.nspname IN ('extensions', 'graphql_public')
+               AND grantee.rolname IN ('anon', 'authenticated')
+               AND acl.privilege_type = 'EXECUTE'
+            """
+        )).all()
+    assert {
+        ("extensions", "anon", "EXECUTE"),
+        ("extensions", "authenticated", "EXECUTE"),
+        ("graphql_public", "anon", "EXECUTE"),
+        ("graphql_public", "authenticated", "EXECUTE"),
+    }.issubset(set(rows))
