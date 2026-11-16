@@ -80,7 +80,7 @@ Project: `zgfdvhzhvccsfmpoaqah`. No DDL or data writes were performed.
 - Functions: the two public financial guard trigger functions are SECURITY INVOKER, pin `search_path=pg_catalog, public`, and are executable by `service_role` but not by `anon` or `authenticated`.
 - Default privileges: effective defaults for `postgres`, `pg_database_owner` and `supabase_admin` include built-in `PUBLIC EXECUTE` for future functions; `supabase_admin` also has explicit `anon`/`authenticated` grants for future public tables, sequences and functions. Candidate migration `0029_admin_default_acl` revokes global and schema-specific PUBLIC/client defaults for every role able to CREATE in `public`; production remains at 0028 until approved.
 - Security Advisor: one warning for native leaked-password protection disabled; 11 informational RLS-enabled/no-policy findings on deny-all tables. Health Advisor: no findings. Performance Advisor: 24 unused-index INFO notices; do not drop indexes without workload evidence.
-- SQL inspection reported `current_user=postgres`; this is the Supabase inspection role, not proof of the Render backend connection role.
+- SQL inspection reported `current_user=postgres` with `rolsuper=false`, `rolbypassrls=true`, `rolcreaterole=true` and `rolcreatedb=true`. This is a powerful Supabase audit role, not proof of the Render backend connection role or a least-privilege runtime role.
 
 The native Supabase leaked-password protection warning is separate from the future-object ACL issue. The browser-side Pwned Passwords mitigation is not equivalent to server-side Auth enforcement.
 
