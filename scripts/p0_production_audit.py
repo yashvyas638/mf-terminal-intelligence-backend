@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -64,6 +65,15 @@ def require_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Required Actions secret/environment variable is missing: {name}")
     return value
+
+
+def evaluate_render_build_commit(commit: object) -> tuple[dict, list[str]]:
+    """Require a safe, machine-readable Render deployment fingerprint."""
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-fA-F]{7,40}", commit) is None:
+        return {"build_commit": None, "verified": False}, [
+            "Render health endpoint does not expose a valid deployment commit SHA."
+        ]
+    return {"build_commit": commit.lower(), "verified": True}, []
 
 
 def http_json(url: str, headers: dict[str, str] | None = None) -> dict:
@@ -242,6 +252,9 @@ def main() -> int:
     report["checks"]["render_health"] = health
     if health.get("status") != "ok" or health.get("database") != "reachable":
         report["failures"].append("Render health/database check did not report ready")
+    render_build, render_build_failures = evaluate_render_build_commit(health.get("build_commit"))
+    report["checks"]["render_deployment"] = render_build
+    report["failures"].extend(render_build_failures)
 
     nav = http_json(f"{api_url}/v1/nav/status", {"X-API-Key": api_key})
     snapshot = nav.get("latest_snapshot")
