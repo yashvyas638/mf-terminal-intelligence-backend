@@ -1,9 +1,15 @@
 name: P0 Production Readiness Audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p0-production-readiness.yml"
+      - "scripts/p0_production_audit.py"
   schedule:
     - cron: "0 23 * * *"
   workflow_dispatch:
+
 
 permissions:
   contents: read
