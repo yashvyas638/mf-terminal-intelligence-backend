@@ -23,10 +23,12 @@ jobs:
         run: alembic upgrade 0003_nav_correction_history
         env:
           DATABASE_URL: sqlite:///./ci_migrations.db
+          MIGRATION_DATABASE_URL: sqlite:///./ci_migrations.db
       - name: Apply remaining SQLite migrations
         run: alembic upgrade head
         env:
           DATABASE_URL: sqlite:///./ci_migrations.db
+          MIGRATION_DATABASE_URL: sqlite:///./ci_migrations.db
       - name: Lint
         run: ruff check --select F,B .
       - name: Validate dashboard and research JavaScript
@@ -142,6 +144,7 @@ jobs:
     env:
       ENVIRONMENT: production
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mf_terminal_test
+      MIGRATION_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/mf_terminal_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
