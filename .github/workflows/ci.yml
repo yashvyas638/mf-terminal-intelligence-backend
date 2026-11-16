@@ -165,8 +165,19 @@ jobs:
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
                   CREATE ROLE authenticated NOLOGIN;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
+                  CREATE ROLE supabase_admin NOLOGIN;
+                END IF;
               END
               $roles$;
+              -- Reproduce the unsafe managed-role defaults found in the live
+              -- project so revision 0029 is exercised rather than skipped.
+              ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+                GRANT ALL ON TABLES TO anon, authenticated;
+              ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+                GRANT ALL ON SEQUENCES TO anon, authenticated;
+              ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+                GRANT EXECUTE ON FUNCTIONS TO anon, authenticated;
               CREATE SCHEMA IF NOT EXISTS auth;
               CREATE OR REPLACE FUNCTION auth.uid()
               RETURNS uuid
