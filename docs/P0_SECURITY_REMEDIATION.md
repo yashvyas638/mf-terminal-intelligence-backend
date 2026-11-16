@@ -30,18 +30,22 @@ The current candidate architecture includes:
 
 Do not infer live deployment or migration status from these source-code controls.
 
-## Latest known live Supabase evidence
+## Latest live Supabase evidence — 2026-11-16 09:51 UTC (read-only)
 
-The latest read-only audit available in this work context found:
+Project `zgfdvhzhvccsfmpoaqah` was inspected using read-only SQL, table metadata and Supabase advisors. No DDL or data mutation was executed.
 
-- One confirmed Supabase Auth user at the inspected checkpoint.
-- Zero portfolios and zero distinct portfolio owners at that checkpoint.
-- One portfolio goal linked to the confirmed user; it had no portfolio link and was not orphaned. Do not delete or reassign it.
-- Eleven internal tables had RLS enabled and denied direct `anon`/`authenticated` SELECT access.
-- Supabase Security Advisor reported the leaked-password-protection setting disabled and informational RLS-enabled/no-policy findings on deny-all internal tables. Health Advisor had no findings. Performance Advisor listed unused-index informational notices; do not drop indexes automatically.
-- The actual Render PostgreSQL connection role and deployed application SHA remained unverified.
+- `public.alembic_version` reports `0028_restrictive_private_access`. The Supabase MCP migration-list endpoint returned no rows because the application uses Alembic; the Alembic version table is the relevant application migration record.
+- Data counts: 16,143 schemes, 2,664,820 NAV observations, 317 ingestion snapshots, 34,852 research snapshots and 1,092 backfill checkpoints. Portfolio and transaction tables are empty; one portfolio goal exists.
+- One confirmed Auth user exists. The goal belongs to a confirmed user; there are no goals linked to a portfolio owned by another user and no unconfirmed goal owner. There are no portfolios, so real two-account isolation remains untested.
+- RLS is enabled on all 21 inspected public tables. Effective table privileges show no `anon` access. `authenticated` has SELECT only on the six intended read surfaces; it has no write privileges.
+- All 18 inspected public sequences deny `anon` and `authenticated` USAGE/SELECT. The two public financial trigger functions are SECURITY INVOKER, have fixed `search_path=pg_catalog, public`, and deny EXECUTE to `anon` and `authenticated`.
+- Eleven RLS-enabled tables have no policies and are denied direct client privileges; this matches the intended backend-only model and explains the informational advisor notices.
+- **New P0 finding:** schema-specific default privileges for creator role `supabase_admin` in `public` still grant `anon` and `authenticated` access to future tables, sequences and functions. Current existing tables are not thereby exposed, but future objects could inherit client access. Candidate migration `0029_admin_default_acl` revokes those defaults, and the P0 audit now checks both global and schema-specific default ACLs. Production is not changed by this candidate migration.
+- Security Advisor reports one warning: native leaked-password protection disabled; 11 informational RLS-enabled/no-policy notices. Health Advisor reports no findings. Performance Advisor reports 24 unused-index INFO notices; do not drop these automatically.
+- The SQL inspection connection reports `current_user=postgres`. This is not evidence of the actual Render backend connection role.
 
-These observations are timestamped evidence, not a live guarantee. Refresh them before release. The lack of two separately owned portfolios means a real two-account production isolation test has not been demonstrated.
+The browser-side Pwned Passwords range check remains a mitigation only; it is not equivalent to native server-side leaked-password protection.
+
 
 ## Migration and database controls
 
@@ -86,6 +90,7 @@ Record redacted request/result evidence, account labels (A/B, never email/passwo
 ## Remaining P0 work
 
 - [ ] Refresh live Supabase schema, grants, RLS, functions and migration revision evidence.
+- [ ] Apply candidate migration `0029_admin_default_acl` only after CI, Render role and backup/restore approval; verify no unsafe future-object default ACLs remain.
 - [ ] Verify the actual Render database role and deployed SHA privately.
 - [ ] Confirm the candidate migration chain and production drift have no unexplained differences.
 - [ ] Configure required GitHub Actions secrets without disclosing values.
