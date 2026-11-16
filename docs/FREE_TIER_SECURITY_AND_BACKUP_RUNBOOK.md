@@ -124,6 +124,28 @@ The public Render URL is configured directly in the workflow; it does not need t
 
 The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Therefore, a green operational audit alone does not close the two-account acceptance gate. Close that gate only after two real confirmed accounts each create/read their own representative portfolio and cross-account reads/writes are verified to be denied.
 
+
+
+## 5. Verified project state (2026-11-16)
+
+The linked Supabase organization currently reports the **Free** plan. Supabase's current password-security documentation states that native leaked-password protection is available on Pro and above. Do not claim this native control can be enabled on this Free project. Keep the shared browser-side HIBP range check as a defence-in-depth mitigation, keep the strongest available minimum-length/character requirements in Auth settings, and re-evaluate native protection after an approved plan change. The browser check remains bypassable by direct Auth API callers.
+
+A live read-only database check found one confirmed Auth account, zero rows in `public.portfolios`, zero distinct portfolio owners, and one existing `public.portfolio_goals` row. The portfolio-goal row must be reconciled to a real owner before any multi-user acceptance test; do not delete or reassign it automatically. Two-user isolation is **not verified**: no second real confirmed account or separate owner-owned portfolio exists. A privileged SQL query is not evidence of RLS isolation. The live attempt to run as `authenticated` was denied access to `auth.users`, which is expected; never grant that access to make a test pass.
+
+The Supabase management API confirms the organization plan is Free. The current security advisor continues to report `auth_leaked_password_protection` as WARN and 11 informational RLS-enabled/no-policy findings. Those 11 tables must remain without direct client privileges where intended; do not add permissive policies just to silence the advisor.
+
+GitHub Actions currently exposes empty environment values for the required secrets in the failed P0 and backup jobs. This integration cannot create repository Actions secrets or retrieve the database password, and no credential should be pasted into chat. Until the owner configures the required secrets, no live audit, export, R2 upload, or restore can run. Do not create fake Auth users, synthetic portfolio owners, or claim scheduled jobs are successful based on dispatch alone.
+
+### Current verified P0 disposition
+
+| Gate | Current status | Why |
+|---|---|---|
+| Native leaked-password protection | Blocked by Free plan | Supabase documents this as Pro+; browser HIBP is mitigation only |
+| Two-account isolation | Not verified | 1 confirmed user, 0 portfolios, 0 portfolio owners |
+| Encrypted backup | Not run | Required GitHub Actions secrets are absent |
+| Isolated restore | Not run | No verified encrypted backup exists |
+| Operational monitoring | Installed, not operationally proven | Workflows are on `main` but executions stop at secret validation |
+
 ## 4. Current limits and next P0 gate
 
 - Browser HIBP screening cannot stop direct Supabase Auth API callers. Native server-side leaked-password protection depends on Supabase plan/feature availability; verify the current project dashboard rather than assuming the browser mitigation is equivalent.
