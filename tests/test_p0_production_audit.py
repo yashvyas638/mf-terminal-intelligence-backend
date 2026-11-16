@@ -239,7 +239,7 @@ def test_render_build_commit_requires_a_valid_sha():
 
 
 def test_render_build_commit_rejects_missing_or_malformed_values():
-    for value in (None, "", "not-a-sha-secret", "g" * 40, "a" * 6, "a" * 41):
+    for value in (None, "", "not-a-sha-secret", "g" * 40, "a" * 7, "a" * 6, "a" * 41):
         evidence, failures = audit.evaluate_render_build_commit(value)
         assert evidence == {"build_commit": None, "verified": False}
         assert failures == ["Render health endpoint does not expose a valid deployment commit SHA."]
