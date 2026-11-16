@@ -127,7 +127,7 @@ The current NAV table stores one effective value per scheme/date. If AMFI republ
 
 ## Authentication and tenancy boundary
 
-- Browser users authenticate with Supabase email/password and send a verified Supabase access token as a bearer token. The API resolves the token through Supabase Auth and scopes portfolio operations to the authenticated user.
+- Browser users authenticate with Supabase email/password and send a verified Supabase access token as a bearer token. The API resolves the token through Supabase Auth, rejects users without `email_confirmed_at`, and scopes portfolio operations to the authenticated user.
 - Portfolio ownership checks cover portfolio reads/writes, transaction history, imports, audit history, valuation, goals and rebalance previews. PostgreSQL RLS and grants are intended as defence in depth; their live production posture must be checked against the current migration chain and actual Render database role before release.
 - Runtime PostgreSQL access uses `DATABASE_URL`; production Alembic migrations require a separate privileged `MIGRATION_DATABASE_URL` which is not used by the API process.
 - The server-side operator API key remains restricted to trusted automation and operator endpoints such as NAV refresh. It is never a browser-user identity and must not be embedded in frontend assets.
