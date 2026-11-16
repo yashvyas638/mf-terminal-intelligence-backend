@@ -64,9 +64,9 @@ Before release, re-read the migration tree and confirm the candidate head is `00
 - [ ] Confirm Render uses a direct server-side PostgreSQL connection as a trusted backend role, not `anon`, `authenticated`, or an untrusted Data API path.
 - [ ] Verify all public-schema object creators and their effective global plus schema-specific defaults. Candidate migration `0029_admin_default_acl` removes client defaults and global PUBLIC function execution for every role able to CREATE in `public`; the migration connection must be authorised for each creator role.
 - [ ] Confirm the candidate's Supabase bearer-token authentication and owner-scoped API checks match the live grants/RLS design. Do not assume candidate migrations or simulated tenancy tests have been applied or verified in production; prove the Render role, schema revision and two-account isolation first.
-- [ ] Confirm Render blueprint settings and cost tier before any sync/deploy. The repository blueprint defines one web service on the `starter` plan and no Cron service; verify live service configuration rather than assuming it synced.
+- [ ] Reconcile the Render blueprint before any sync/deploy. `main/render.yaml` declares `mf-terminal-nav-api` on Starter with Uvicorn-only startup; candidate `render.yaml` declares `mf-terminal-intelligence-backend` on Free and runs `alembic upgrade head` before Uvicorn. The actual Render service, plan, deployed branch and start command are not verified. Do not sync until the intended service identity, plan, environment and migration role are confirmed; avoid accidental service creation, rename or plan downgrade.
 
-- [ ] Confirm a NAV refresh scheduler is active on default `main` or as an approved Render Cron service. The candidate `nav-refresh.yml` and `amfi-live-source-check.yml` files are not active while they exist only on `audit/production-foundation`.
+- [ ] Confirm a NAV refresh scheduler is active on default `main` or as an approved Render Cron service. The candidate `nav-refresh.yml` and `amfi-live-source-check.yml` files are not active while they exist only on `audit/production-foundation`; neither branch's `render.yaml` defines a Cron service.
 - [ ] Confirm scheduler secrets, endpoint URL, cadence, last successful run and alerting. NAV retrieval freshness must be under 36 hours and effective NAV age within the configured maximum.
 
 ## Secret rotation
@@ -82,7 +82,7 @@ Also verify GitHub Actions secret `MF_TERMINAL_API_URL` contains the service bas
 Only after all pre-deployment checks and explicit release approval:
 1. Confirm the intended Render service is connected to the authorised branch/commit.
 2. Deploy the exact candidate SHA.
-3. Confirm Render's start command runs `alembic upgrade head` before Uvicorn.
+3. Confirm the approved Render start command runs `alembic upgrade head` before Uvicorn, or record the separately approved migration execution path. The current `main` blueprint does not run Alembic at startup; the candidate blueprint does. Do not assume the live service matches either file.
 4. Inspect deploy logs for migration success; redact secrets from any evidence.
 5. Query the database privately and verify `alembic_version.version_num` matches the exact approved candidate migration head; never hard-code a historical revision when the candidate chain has advanced.
 6. Verify `anon` and `authenticated` have no unintended table/sequence/function access, including inherited PUBLIC grants.
