@@ -277,7 +277,7 @@ def test_supabase_session_revocation_is_checked_on_every_request(monkeypatch):
     def verify_user(url, headers, timeout):
         if not active["value"]:
             return SimpleNamespace(status_code=401, json=lambda: {})
-        return SimpleNamespace(status_code=200, json=lambda: {"id": user_id})
+        return SimpleNamespace(status_code=200, json=lambda: {"id": user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"})
 
     monkeypatch.setattr(main.requests, "get", verify_user)
     client = TestClient(main.app)
