@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 
 import app.main as main
 from app.db import FundWatchlistItem, PortfolioReportSnapshot, Scheme, SessionLocal, init_db
