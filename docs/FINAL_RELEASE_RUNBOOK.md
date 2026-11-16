@@ -85,7 +85,7 @@ Also verify GitHub Actions secret `MF_TERMINAL_API_URL` contains the service bas
 Only after all pre-deployment checks and explicit release approval:
 1. Confirm the intended Render service is connected to the authorised branch/commit.
 2. Deploy the exact candidate SHA.
-3. Confirm the approved Render start command runs `alembic upgrade head` before Uvicorn, or record the separately approved migration execution path. The current `main` blueprint does not run Alembic at startup; the candidate blueprint does. Do not assume the live service matches either file.
+3. Confirm the approved Render start command runs Alembic with `MIGRATION_DATABASE_URL`, unsets that variable, then starts Uvicorn. The current `main` blueprint does not run Alembic at startup; the candidate blueprint does. Do not assume the live service matches either file.
 4. Inspect deploy logs for migration success; redact secrets from any evidence.
 5. Query the database privately and verify `alembic_version.version_num` matches the exact approved candidate migration head; never hard-code a historical revision when the candidate chain has advanced.
 6. Verify `anon` and `authenticated` have no unintended table/sequence/function access, including inherited PUBLIC grants.
