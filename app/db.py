@@ -22,9 +22,19 @@ def database_url() -> str:
 def migration_database_url() -> str:
     """Require a separate privileged connection for production Alembic migrations."""
     configured = os.getenv("MIGRATION_DATABASE_URL")
+    production = os.getenv("ENVIRONMENT", "").lower() == "production"
     if configured and configured.strip():
-        return _normalize_database_url(configured.strip())
-    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        migration_url = _normalize_database_url(configured.strip())
+        if (
+            production
+            and migration_url == database_url()
+            and os.getenv("CI", "").lower() not in {"true", "1"}
+        ):
+            raise RuntimeError(
+                "MIGRATION_DATABASE_URL must use a separate privileged connection from runtime DATABASE_URL"
+            )
+        return migration_url
+    if production:
         raise RuntimeError(
             "MIGRATION_DATABASE_URL must be configured separately from runtime DATABASE_URL "
             "for production schema migrations"
