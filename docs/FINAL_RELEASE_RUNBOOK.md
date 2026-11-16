@@ -14,17 +14,42 @@ This runbook is intentionally prepared during development and executed only at t
 
 ## Candidate migration chain
 
-The candidate code migration head is `0007_append_only_audit`.
+The candidate branch has advanced to Alembic revision `0028_restrictive_private_access` (verified from the migration file tree at candidate SHA `357aeeb82eca834cd8aec8a909cfa4d4a86966ee`). The last production revision observed in the read-only Supabase audit was `0007_append_only_audit`. This is a substantial schema/security gap: do not deploy or apply the later migrations until the entire chain is reviewed against live schema, actual Render database role, backup and isolated restore evidence.
 
-1. `0001_schema_baseline` — adopts/creates the original application schema.
-2. `0002_portfolio_ledger_audit` — portfolio audit and void fields.
-3. `0003_nav_correction_history` — append-only NAV correction provenance.
-4. `0004_supabase_role_lockdown` — revokes table/sequence/function grants from Supabase `anon` and `authenticated` roles; no production execution until the Render DB role is verified.
-5. `0005_portfolio_import_dedup` — per-portfolio normalized statement fingerprints.
-6. `0006_ledger_db_constraints` — preflights existing rows, then adds financial CHECK constraints.
-7. `0007_append_only_audit` — prevents UPDATE/DELETE on portfolio audit and NAV correction history.
+| Order | Revision | Purpose |
+|---:|---|---|
+| 1 | `0001_schema_baseline` | Original application schema baseline |
+| 2 | `0002_portfolio_ledger_audit` | Portfolio ledger audit and void fields |
+| 3 | `0003_nav_correction_history` | Append-only NAV correction provenance |
+| 4 | `0004_restrict_supabase_client_roles` | Revoke direct client-role table/sequence/function privileges |
+| 5 | `0005_portfolio_import_dedup` | Per-portfolio normalized statement fingerprints |
+| 6 | `0006_ledger_db_constraints` | Financial database CHECK constraints |
+| 7 | `0007_append_only_audit` | Protect portfolio audit and NAV correction history from mutation |
+| 8 | `0008_scheme_classification` | Canonical scheme classification fields |
+| 9 | `0009_audit_function_search_path` | Harden audit function search path |
+| 10 | `0010_user_auth_rls` | Authenticated portfolio ownership and database RLS |
+| 11 | `0011_research_security_tuning` | Tune RLS evaluation and foreign-key indexes |
+| 12 | `0012_nav_backfill_checkpoints` | Durable historical NAV backfill checkpoints |
+| 13 | `0013_user_fund_watchlists` | Per-user fund watchlists |
+| 14 | `0014_fund_research_snapshots` | Precomputed research snapshots for screener rankings |
+| 15 | `0015_benchmark_tri_foundation` | Source-provenanced benchmark TRI observations and mappings |
+| 16 | `0016_fund_holdings_disclosures` | Immutable source-provenanced holdings disclosures |
+| 17 | `0017_portfolio_goals` | Owner-isolated financial goals |
+| 18 | `0018_portfolio_report_snapshots` | Immutable owner-scoped portfolio reports |
+| 19 | `0019_goal_portfolio_link` | Link goals to owner-scoped portfolios |
+| 20 | `0020_foreign_key_lookup_indexes` | Index foreign-key lookup paths |
+| 21 | `0021_expand_scheme_option_type` | Widen scheme option text for AMFI descriptions |
+| 22 | `0022_nav_history_sampling_mode` | Historical NAV checkpoint sampling mode |
+| 23 | `0023_screener_period_returns` | Persist displayed trailing-period screener returns |
+| 24 | `0024_research_windows` | Align research snapshots to 1M, 1Y, 3Y and 5Y |
+| 25 | `0025_portfolio_txn_idempotency` | Durable transaction-creation idempotency |
+| 26 | `0026_api_rate_limit_buckets` | Shared database-backed API rate-limit buckets |
+| 27 | `0027_private_access` | Deny direct Supabase client access to private user tables |
+| 28 | `0028_restrictive_private_access` | Make private-table denial policies restrictive |
 
-The migrations are forward-only for financial evidence: downgrades deliberately do not remove audit/provenance or restore broad client privileges. Rollback is normally an application-code redeploy plus forward-fix, not an Alembic downgrade.
+The migrations are forward-only where they protect financial evidence or security posture. Downgrades must not remove audit/provenance or restore broad client privileges. Rollback is normally an application-code redeploy plus a reviewed forward-fix, not an Alembic downgrade.
+
+Before release, re-read the migration tree and confirm the head has not advanced beyond `0028_restrictive_private_access`; this runbook is a snapshot, not a substitute for inspecting the exact SHA.
 
 ## Pre-deployment checks
 
