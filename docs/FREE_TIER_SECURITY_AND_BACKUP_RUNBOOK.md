@@ -124,10 +124,53 @@ The public Render URL is configured directly in the workflow; it does not need t
 
 The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
 
-## 4. Current limits and next P0 gate
+## 4. Verified project state (2026-11-16)
 
-- The native Supabase Pro-only leaked-password feature and managed daily backups remain unavailable on Free. The controls above are independent workarounds.
-- GitHub Actions database, encryption and R2 secrets must be configured; no credentials are committed.
-- The first successful encrypted backup and a successful isolated restore are required before the backup/restore gate can be marked complete.
-- Two-account production isolation, full live AMFI ingestion evidence and endpoint smoke checks remain separate P0 acceptance gates.
+The linked Supabase organization reports the **Free** plan. Native leaked-password protection is documented as Pro+; do not claim the browser-side HIBP range check is equivalent. Keep the browser check as defence-in-depth, retain the strongest available Auth minimum-length/complexity controls, and record the native-control limitation until an approved plan change.
+
+The latest live read-only database audit found one confirmed Auth account, zero rows in `public.portfolios`, zero distinct portfolio owners, and one existing `public.portfolio_goals` row. The goal belongs to the existing confirmed Auth account but is not linked to a portfolio. Preserve it; do not delete or reassign it. No second real confirmed account or separately owned portfolio exists, so production two-account isolation is **not verified**. Code-level simulated two-user tests and PostgreSQL RLS tests are useful evidence, but they are not a substitute for two real Auth accounts and deployed API tests.
+
+The security advisor reports `auth_leaked_password_protection` as WARN and 11 informational RLS-enabled/no-policy findings. Those deny-all internal tables must remain inaccessible to direct clients; do not add permissive policies to silence informational findings. Effective default privileges also expose a future-object risk: `postgres`, `pg_database_owner` and `supabase_admin` have built-in `PUBLIC EXECUTE` defaults, and `supabase_admin` has explicit `anon`/`authenticated` defaults for public tables, sequences and functions. Candidate migration `0029_admin_default_acl` closes these defaults; production remains at `0028_restrictive_private_access` until an authorised migration run.
+
+The latest daily-feed snapshot was retrieved at `2026-11-12 02:53 UTC` with maximum NAV date `2026-11-11`. The 1M/1Y/3Y/5Y research snapshots each contain 8,713 schemes but are also as-of 2026-11-11. The hybrid historical backfill has 168 completed daily and 144 completed month-end checkpoints; 780 paused daily checkpoints are deliberately superseded by `StorageOptimizedHybridPlan`, not failed requests. The live AMFI performance/taxonomy audit checked 43 categories, 86 requests and 2,140 rows (2,073 current allowlisted identifiers; 67 legacy/rejected diagnostic-only rows) with zero database writes.
+
+The P0 audit and encrypted-backup workflows exist on default `main`, but the latest Actions secret preflight blocks execution. The default-branch backup workflow also has an undefined `$STAMP` reference in its R2 verification step; the candidate workflow now fixes archive lifecycle and performs remote size/SHA-256 verification. The NAV refresh and AMFI live-source-monitor workflows are only on the candidate branch, not default `main`; therefore no active production NAV scheduler is evidenced. The candidate and default-branch Render blueprints disagree on service name, plan and startup command; the actual Render service, deployed branch, plan and DB role remain unverified.
+
+### Current verified P0 disposition
+
+| Gate | Current status | Why |
+|---|---|---|
+| Native leaked-password protection | Blocked by Free plan | Browser HIBP screening is mitigation only |
+| Auth provider and browser E2E | Not verified | Confirm-email/SMTP/redirect settings and real signup/reset flows remain untested |
+| Two-account isolation | Not verified | 1 confirmed user, 0 portfolios, 0 portfolio owners |
+| Default ACL lockdown | Candidate code and CI pass; production not migrated | Migration 0029 requires a separate authorised migration connection |
+| Encrypted backup | Not run | Required GitHub Actions secrets are absent; default-branch R2 verification bug must be integrated |
+| Isolated restore | Not run | No verified encrypted backup exists |
+| NAV freshness/scheduler | Blocked | Latest stored NAV date 2026-11-11; refresh workflow is candidate-only |
+| Render deployment mapping | Not verified | Blueprint identity/plan/startup mismatch; actual service not inspected |
+| Branch integration | Blocked | PR #1 is 566 commits ahead, 51 behind, 144 changed files and currently not mergeable |
+
+## 5. Current limits and next P0 gate
+
+- Browser HIBP screening cannot stop direct Supabase Auth API callers. Native leaked-password protection depends on Supabase plan/feature availability; verify the project dashboard rather than assuming the browser mitigation is equivalent.
+- GitHub Actions database, encryption and R2 secrets must be configured privately; no credentials are committed or pasted into chat.
+- The first successful encrypted backup, verified R2 object size and remote SHA-256, successful decryption/checksum validation, and a successful isolated restore are required before the backup/restore gate can be marked complete.
+- The candidate Render blueprint requires separate runtime `DATABASE_URL` and privileged direct-session `MIGRATION_DATABASE_URL`. The migration URL is used only for Alembic and is unset before Uvicorn starts. Do not sync the blueprint until the live service identity, plan, branch and DB roles are confirmed.
+- The NAV refresh and AMFI monitor must be activated on default `main` or through an explicitly approved Render Cron service. Then observe a successful scheduled run and confirm retrieval freshness under 36 hours plus effective NAV age within the configured maximum.
+- Two-account production isolation, live Auth browser E2E, full AMFI ingestion evidence, endpoint smoke checks and a review of backup exclusions remain separate P0 acceptance gates.
 - P1 research implementation must not be represented as complete until P0 exit criteria are met.
+
+### Exact P0 closure evidence
+
+| Gate | Evidence required to close |
+|---|---|
+| Native password control | Supabase Auth dashboard confirms the strongest available native policy; native leaked-password protection is enabled after an approved plan change or the limitation is formally accepted. |
+| Auth and email confirmation | Confirm-email, Site URL, redirect allow-list and SMTP are verified; real signup, confirmation, login, session expiry, password reset and sign-out pass in a browser. |
+| Two-account isolation | Two real confirmed accounts; one separately owned portfolio per account; positive owner reads and negative cross-owner read/write tests through the deployed API. |
+| Default ACL lockdown | Apply migration 0029 through an authorised direct-session migration URL; effective defaults show no PUBLIC/anon/authenticated grants on future public tables, sequences or functions; managed-schema explicit grants remain intact. |
+| Encrypted backup | Successful default-branch run; encrypted artifact retained; R2 object downloaded back and both size and SHA-256 verified; no plaintext dump retained on runner. |
+| Restore drill | Decrypt with offline identity; SHA-256 verification; restore into a separate isolated Supabase project; schema/data counts and application smoke tests reconciled. |
+| NAV schedule and freshness | Refresh workflow active on default branch or approved Render Cron; observe a successful scheduled run; verify current NAV date, retrieval freshness and reproducible 1M/1Y/3Y/5Y snapshots. |
+| Render release | Confirm existing service identity, plan, deployed branch/SHA, runtime role, migration role, required environment and start command; no accidental service creation, rename or plan change. |
+| Branch integration | Reconcile the 51 commits on main, review the full 144-file PR diff, resolve add/add conflicts in the P0 audit/backup workflow, runbook and audit script, then verify a mergeable PR. |
+| Operational audit | A successful default-branch P0 audit completes all checks with two real confirmed users and separate portfolio owners; no configuration-only pass is accepted. |
