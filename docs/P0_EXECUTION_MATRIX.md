@@ -21,8 +21,8 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 | Tenancy | Read-only SQL at 2026-11-16 09:51 UTC found 1 confirmed user, 0 portfolios, 0 portfolio owners, 1 goal, no unconfirmed goal owner and no cross-owner goal link | BLOCKED: no demonstrated two-account production isolation |
 | Backups | Encrypted backup workflow requires database, age recipient and S3/R2 credentials; earlier run stopped at configuration preflight | BLOCKED: no successful off-site backup or isolated restore evidence |
 | P0 audit workflow | Read-only audit workflow and expanded ownership/default-ACL checks exist; earlier run stopped because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` were absent | BLOCKED: required GitHub Actions secrets not verified |
-| NAV | AMFI latest-feed pipeline, validation, idempotency and correction provenance are implemented; actual scheduled run and current production freshness require live evidence | BLOCKED pending fresh live refresh evidence |
-| Historical NAV | Planner/checkpoint/retry foundations exist; official AMFI history form request/response contract is not live-verified | Execution remains disabled until contract fixture is verified |
+| NAV | Latest production feed snapshot was retrieved 2026-11-12 02:53 UTC with max NAV date 2026-11-11. The scheduled NAV-refresh and AMFI-monitor workflows exist only on the candidate branch; default `main` has neither, and its `render.yaml` has no Cron service | BLOCKED: production refresh scheduler is not active/evidenced |
+| Historical NAV | Official AMFI history response contract checks passed in CI. Live checkpoint inventory: 168 completed daily + 144 completed month-end checkpoints; 780 paused daily checkpoints are intentionally superseded by the hybrid plan, not failures | Hybrid history plan is populated; execution remains operator-gated and coverage must be reconciled by scheme/window |
 | Render | Service URL is known; deployed SHA and actual Render database role have not been independently confirmed. Supabase SQL inspection ran as `postgres`, which is not proof of Render's connection role | BLOCKED |
 | Browser workflow | API/UI flows exist, but complete real-browser end-to-end evidence is pending | BLOCKED |
 
@@ -44,6 +44,10 @@ Project: `zgfdvhzhvccsfmpoaqah`. No DDL or data writes were performed.
 - SQL inspection reported `current_user=postgres`; this is the Supabase inspection role, not proof of the Render backend connection role.
 
 The native Supabase leaked-password protection warning is separate from the future-object ACL issue. The browser-side Pwned Passwords mitigation is not equivalent to server-side Auth enforcement.
+
+- NAV freshness: the latest daily-feed snapshot was retrieved at `2026-11-12 02:53 UTC`, with maximum effective NAV date `2026-11-11`. No later accepted daily-feed snapshot was present at audit time.
+- Historical backfill checkpoints: 168 daily complete, 144 month-end complete, and 780 daily paused. The paused rows carry `StorageOptimizedHybridPlan` because the hybrid planner deliberately superseded the original all-daily plan. They are not failed requests. No pending or running checkpoints were present.
+- Workflow activation: candidate `nav-refresh.yml` and `amfi-live-source-check.yml` are not present on default `main`. The current default-branch `render.yaml` contains one web service and no Cron service. A schedule on a non-default branch is not an active GitHub scheduled workflow.
 
 ## Gate register
 
@@ -149,7 +153,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 - Enforce minimum valid records and reject malformed, empty, stale, future-dated or unexpectedly small source responses without replacing accepted data.
 - Verify exact replay idempotency and correction provenance.
 - Verify missing ISIN values never erase known identifiers or get fabricated.
-- Confirm scheduled GitHub Actions run is configured, has required secrets and succeeds on its intended cadence.
+- Confirm the scheduled refresh workflow is present on default `main` or a production Cron service is configured, has required secrets and succeeds on its intended cadence. A workflow present only on the candidate branch is not an active production schedule.
 - Expose ingestion freshness, effective-date freshness, snapshot quality and accepted/rejected counts to operators.
 
 **Acceptance evidence**
@@ -158,7 +162,8 @@ The native Supabase leaked-password protection warning is separate from the futu
 - [ ] Exact replay creates no duplicate NAV observations or false revisions.
 - [ ] Controlled correction fixture creates append-only prior/replacement provenance.
 - [ ] Bad-source fixtures fail closed and preserve the last accepted snapshot.
-- [ ] Scheduled refresh has at least one successful observed run.
+- [ ] Production refresh scheduler is active on the deployed/default branch or an approved Render Cron service.
+- [ ] Scheduled refresh has at least one successful observed run after activation.
 - [ ] Freshness and effective-date status are visible and alertable.
 
 ### P0-6 — Historical NAV contract and coverage
@@ -176,6 +181,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 - [ ] Parser fixture tests pass and date/value reconciliation is documented.
 - [ ] A bounded historical backfill is run only after explicit operator enablement.
 - [ ] Coverage report shows scheme count, date span, gaps and last successful backfill.
+- [ ] Superseded paused checkpoints are distinguished from failed/pending work; hybrid coverage is reconciled by sampling mode.
 - [ ] Ranking windows with insufficient baseline data are withheld, not fabricated.
 
 ### P0-7 — Portfolio workflow and ledger correctness
