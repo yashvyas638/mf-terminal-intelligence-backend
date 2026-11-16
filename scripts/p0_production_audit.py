@@ -69,7 +69,7 @@ def require_env(name: str) -> str:
 
 def evaluate_render_build_commit(commit: object) -> tuple[dict, list[str]]:
     """Require a safe, machine-readable Render deployment fingerprint."""
-    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-fA-F]{7,40}", commit) is None:
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-fA-F]{40}", commit) is None:
         return {"build_commit": None, "verified": False}, [
             "Render health endpoint does not expose a valid deployment commit SHA."
         ]
