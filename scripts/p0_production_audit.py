@@ -287,8 +287,8 @@ def main() -> int:
                 "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
             }
             if confirmed_users < 2 or portfolio_owners < 2:
-                report["warnings"].append(
-                    "Live two-account isolation is not evidenced: two confirmed accounts and separately owned portfolios are required."
+                report["failures"].append(
+                    "P0 tenancy gate failed: two real confirmed accounts and at least two separately owned portfolios are required before operational readiness can pass."
                 )
 
         private_results = {}
