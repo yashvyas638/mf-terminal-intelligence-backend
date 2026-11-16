@@ -16,17 +16,34 @@ Each gate closes only when its acceptance evidence is attached or linked, the ex
 | Area | Known evidence | Current disposition |
 |---|---|---|
 | Candidate application | Supabase bearer-token validation, user ownership checks, portfolio workflows, migrations and simulated tenancy tests are present on this candidate branch | Implemented in code; live verification pending |
-| Production database | Prior read-only Supabase inspection found application data and migration revision `0007_append_only_audit`; candidate migrations are ahead of that observed production revision | Do not deploy until full diff, Render role and backup/restore are verified |
+| Production database | Read-only SQL at 2026-11-16 09:51 UTC reports Alembic revision `0028_restrictive_private_access`; candidate now adds `0029_admin_default_acl` | Candidate 0029 is not yet deployed; verify CI, Render role and backup/restore before applying |
 | Auth | Supabase Auth integration and browser flows exist; provider, redirect, SMTP delivery and real browser confirmation/reset are not evidenced | BLOCKED |
-| Tenancy | Prior live inspection found only one confirmed user and no portfolio rows/owners at that checkpoint; refresh read-only evidence before making current claims | BLOCKED: no demonstrated two-account production isolation |
+| Tenancy | Read-only SQL at 2026-11-16 09:51 UTC found 1 confirmed user, 0 portfolios, 0 portfolio owners, 1 goal, no unconfirmed goal owner and no cross-owner goal link | BLOCKED: no demonstrated two-account production isolation |
 | Backups | Encrypted backup workflow requires database, age recipient and S3/R2 credentials; earlier run stopped at configuration preflight | BLOCKED: no successful off-site backup or isolated restore evidence |
-| P0 audit workflow | Read-only audit workflow exists; earlier run stopped because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` were absent | BLOCKED: required GitHub Actions secrets not verified |
+| P0 audit workflow | Read-only audit workflow and expanded ownership/default-ACL checks exist; earlier run stopped because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` were absent | BLOCKED: required GitHub Actions secrets not verified |
 | NAV | AMFI latest-feed pipeline, validation, idempotency and correction provenance are implemented; actual scheduled run and current production freshness require live evidence | BLOCKED pending fresh live refresh evidence |
 | Historical NAV | Planner/checkpoint/retry foundations exist; official AMFI history form request/response contract is not live-verified | Execution remains disabled until contract fixture is verified |
-| Render | Service URL is known; deployed SHA and actual database role have not been independently confirmed in this execution | BLOCKED |
+| Render | Service URL is known; deployed SHA and actual Render database role have not been independently confirmed. Supabase SQL inspection ran as `postgres`, which is not proof of Render's connection role | BLOCKED |
 | Browser workflow | API/UI flows exist, but complete real-browser end-to-end evidence is pending | BLOCKED |
 
 This baseline is historical evidence, not a claim that the values remain current. Re-run read-only checks before release and record timestamps.
+
+## Latest live Supabase read-only audit — 2026-11-16 09:51 UTC
+
+Project: `zgfdvhzhvccsfmpoaqah`. No DDL or data writes were performed.
+
+- Alembic revision: `0028_restrictive_private_access`. The Supabase MCP migration-list endpoint returned an empty list; this application uses Alembic, so `public.alembic_version` is the authoritative application migration record.
+- Data counts: 16,143 schemes; 2,664,820 NAV observations; 317 ingestion snapshots; 34,852 research snapshots; 1,092 historical backfill checkpoints; 0 portfolios; 0 portfolio transactions; 1 portfolio goal.
+- Auth/ownership: 1 confirmed Auth user; the single goal belongs to a confirmed Auth user; no cross-owner goal link was found. No portfolio rows exist, so a two-account isolation test is not yet possible.
+- RLS: enabled on all 21 inspected public tables. Effective privileges for `anon` are denied on all inspected tables. `authenticated` has SELECT only on the intended six read surfaces (`schemes`, `nav_observations`, `portfolios`, `portfolio_transactions`, `portfolio_transaction_audit`, `portfolio_import_batches`) and no INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER privileges.
+- Private-table posture: restrictive deny-all policies are present for the private user/internal tables. Eleven RLS-enabled tables have no policies; the advisor notices are informational because direct client grants are denied.
+- Sequences: no `anon` or `authenticated` USAGE/SELECT privileges were found across the 18 public sequences.
+- Functions: the two public financial guard trigger functions are SECURITY INVOKER, pin `search_path=pg_catalog, public`, and are executable by `service_role` but not by `anon` or `authenticated`.
+- Default privileges: `postgres` defaults in `public` are restricted, but `supabase_admin` defaults still grant `anon` and `authenticated` privileges on future tables, sequences and functions. Candidate migration `0029_admin_default_acl` now revokes these grants; production remains at 0028 until approved.
+- Security Advisor: one warning for native leaked-password protection disabled; 11 informational RLS-enabled/no-policy findings on deny-all tables. Health Advisor: no findings. Performance Advisor: 24 unused-index INFO notices; do not drop indexes without workload evidence.
+- SQL inspection reported `current_user=postgres`; this is the Supabase inspection role, not proof of the Render backend connection role.
+
+The native Supabase leaked-password protection warning is separate from the future-object ACL issue. The browser-side Pwned Passwords mitigation is not equivalent to server-side Auth enforcement.
 
 ## Gate register
 
@@ -88,14 +105,16 @@ This baseline is historical evidence, not a claim that the values remain current
 - Verify every query is scoped to the authenticated owner; never trust a user-supplied owner ID.
 - Compare the complete candidate Alembic migration chain with live Supabase schema, indexes, constraints, triggers, grants, RLS and functions.
 - Verify Render uses a trusted server-side PostgreSQL role, not `anon` or `authenticated`.
-- Verify RLS and grants on every public table, including default privileges, sequences and functions. Confirm intended client-readable allowlist and deny-all internal tables.
+- Verify RLS and grants on every public table, including global and schema-specific default privileges for every object-creating role, sequences and functions. Confirm intended client-readable allowlist and deny-all internal tables.
 - Verify security-definer functions use a fixed safe `search_path` and least-privilege execution grants.
 - Test horizontal privilege escalation using two real accounts.
 
 **Acceptance evidence**
 - [ ] Live schema-to-migration diff reviewed with no unexplained drift.
+- [ ] Migration `0029_admin_default_acl` passes PostgreSQL CI and the live default-ACL audit reports no client/PUBLIC grants before production approval.
 - [ ] Actual Render database role confirmed privately.
 - [ ] Every table, sequence and function privilege is reconciled.
+- [ ] No global or schema-specific default privilege grants future public objects to `PUBLIC`, `anon` or `authenticated` for any creator role.
 - [ ] RLS enabled and intended policies verified for each relevant table.
 - [ ] Account A cannot read, update, void, import into or infer Account B's records; reverse test also passes.
 - [ ] Goal-to-portfolio owner mismatch and orphan-link cases are rejected.
