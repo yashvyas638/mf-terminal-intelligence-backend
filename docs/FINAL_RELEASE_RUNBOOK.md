@@ -91,7 +91,7 @@ The latest secret preflight reported these names missing; secret values were not
 - `BACKUP_S3_ACCESS_KEY_ID`
 - `BACKUP_S3_SECRET_ACCESS_KEY`
 
-Configure them privately in [GitHub Actions secrets](https://github.com/yashvyas638/mf-terminal-intelligence-backend-backend/settings/secrets/actions) before expecting the P0 audit or encrypted offsite backup workflow to complete. Do not paste values into chat, commit them, or add them to this runbook.
+Configure them privately in [GitHub Actions secrets](https://github.com/yashvyas638/mf-terminal-intelligence-backend/settings/secrets/actions) before expecting the P0 audit or encrypted offsite backup workflow to complete. Do not paste values into chat, commit them, or add them to this runbook.
 
 ## Database migration execution
 
