@@ -31,9 +31,9 @@ This baseline is historical evidence, not a claim that the values remain current
 ## Branch integration status
 
 - Existing PR [#1](https://github.com/yashvyas638/mf-terminal-intelligence-backend/pull/1) targets `main` from `audit/production-foundation`.
-- GitHub compare reports the branch as diverged: **613 commits ahead, 55 behind**, with 145 changed files (133 added, 12 modified). The diff includes the application, migrations, UI, CI/operations workflows and product documentation—not just the P0 hardening changes.
+- GitHub compare reports the branch as diverged: **617 commits ahead, 57 behind**, with 145 changed files (133 added, 12 modified). The diff includes the application, migrations, UI, CI/operations workflows and product documentation—not just the P0 hardening changes.
 - The latest PR metadata returned `mergeable=null` / `mergeable_state=unknown`; the compare remains `diverged`. No merge, rebase, force-push or branch reset has been attempted.
-- P0 closure requires a reviewed integration plan: reconcile the 55 commits on `main`, review the full 145-file diff, identify conflicts, and confirm the intended application release before merge.
+- P0 closure requires a reviewed integration plan: reconcile the 57 commits on `main`, review the full 145-file diff, identify conflicts, and confirm the intended application release before merge.
 - Candidate-side content reconciliation is now complete for the four P0 overlap files: the audit script combines goal/portfolio ownership checks with effective default-ACL and backfill checks; the backup workflow preserves the encrypted archive, verifies downloaded R2 size/SHA-256 and cleans up with `always()`; the P0 workflow retains redacted blocked-configuration evidence; and the runbook includes the latest verified project state and closure evidence. This does **not** resolve Git history conflicts; GitHub still reports the PR as not mergeable.
 
 ## External configuration blockers
@@ -47,7 +47,7 @@ Latest GitHub Actions secret preflight reported these names missing (values were
 - `BACKUP_S3_ACCESS_KEY_ID`
 - `BACKUP_S3_SECRET_ACCESS_KEY`
 
-Latest P0 audit run evidence: [GitHub Actions run #43851199924](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43851199924) passed Python audit syntax validation, failed configuration preflight because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` remain absent, and skipped all database/API checks. Its redacted diagnostic artifact is `14218160542` (359 bytes; SHA-256 `a0aa29a069916741db3671444de1e3f763d35b4617e514661cc4d883dba8b57c`; expires 2026-12-16). The P0 audit now also requires a valid deployment fingerprint from `/health`; the candidate API exposes Render's built-in `RENDER_GIT_COMMIT`, but this candidate change has not been deployed.
+Latest P0 audit run evidence: [GitHub Actions run #43851785403](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43851785403) passed Python audit syntax validation, failed configuration preflight because `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY` remain absent, and skipped all database/API checks. Its redacted diagnostic artifact is `14217937064` (357 bytes; SHA-256 `e0d994ff42de3321c5d00c6a48a57a037ef8fa99391722c14188a30d3fe93f37`; expires 2026-12-16). The P0 audit now also requires a full 40-character deployment SHA from `/health`; the candidate API exposes Render's built-in `RENDER_GIT_COMMIT`, but this candidate change has not been deployed.
 
 Default-branch backup workflow defect: fixed on `main` in commit `8a32616511c88a109e41ae4c782bb25e2b2bb82b`. The R2 step now imports `STAMP` from `steps.backup.outputs.stamp`, downloads the uploaded object and verifies size plus SHA-256 for daily and monthly copies. The push-triggered run stopped at configuration preflight because required secrets are absent; no database export or production connection was attempted. The candidate validator now rejects a cross-step `$STAMP` reference unless it is explicitly imported from the prior step output.
 
@@ -55,11 +55,11 @@ The backup workflow cannot produce/verify an offsite encrypted backup until the 
 
 ## Candidate CI evidence
 
-- Candidate code-verification commit: `8ced9a2b2c99c5ebba79416488123701dde0c223`; subsequent changes through this matrix update are documentation-only.
-- Latest candidate run [#43851254469](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43851254469): **all three jobs passed** (SQLite, PostgreSQL, live AMFI source validation).
+- Candidate code-verification commit: `25d398ba86c345157c4c3c6c4bc8619c3429bcc1`; subsequent changes through this matrix update are documentation-only.
+- Latest candidate run [#43851770283](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43851770283): **all three jobs passed** (SQLite, PostgreSQL, live AMFI source validation).
 - PostgreSQL CI: **362 passed**, 1 non-blocking warning; migration chain reached `0029_admin_default_acl`.
 - SQLite CI: **348 passed, 14 skipped**, 58 warnings; lint, dashboard/research/fund-detail/password-screening JavaScript checks, Node URL-safety tests, operational workflow/Render/backup/P0 validator, and authentication/portfolio DOM contracts passed.
-- Live AMFI historical response contract checks for scheme types 1, 2 and 3, Fund Performance taxonomy contract, and 43-category read-only coverage audit passed with zero database writes. The optional scheme-summary metadata probe encountered a transient remote disconnect in this run; the step is explicitly `continue-on-error`, so treat this probe as informational and rerun it before relying on the sampled enrichment fields.
+- Live AMFI historical response contract checks for scheme types 1, 2 and 3, Fund Performance taxonomy contract, 43-category read-only coverage audit, and optional official scheme-summary metadata probe passed with zero database writes. The optional metadata probe is informational and remains non-blocking.
 
 ## Code-level tenancy evidence
 
