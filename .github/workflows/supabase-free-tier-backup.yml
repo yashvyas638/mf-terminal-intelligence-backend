@@ -89,7 +89,7 @@ jobs:
           mkdir -p "$WORK"
           STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
           ARCHIVE="$RUNNER_TEMP/mf-terminal-intelligence-$STAMP.tar.gz"
-          trap 'rm -rf "$WORK"; rm -f "$ARCHIVE" "$ARCHIVE.age"' EXIT
+          trap 'rm -rf "$WORK"; rm -f "$ARCHIVE"' EXIT
           supabase --version
           supabase db dump --remote="$SUPABASE_DB_URL" --role-only --file "$WORK/roles.sql"
           supabase db dump --remote="$SUPABASE_DB_URL" --file "$WORK/schema.sql"
@@ -138,19 +138,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          LOCAL_ARCHIVE="${{ steps.backup.outputs.archive }}"
           DAILY_KEY="mf-terminal-intelligence/daily/${{ steps.backup.outputs.stamp }}.tar.gz.age"
-          aws s3 cp "${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" \
+          aws s3 cp "$LOCAL_ARCHIVE" "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
-          LOCAL_SIZE="$(stat -c%s "${{ steps.backup.outputs.archive }}")"
+          LOCAL_SIZE="$(stat -c%s "$LOCAL_ARCHIVE")"
           REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$DAILY_KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --query ContentLength --output text)"
           [[ "$LOCAL_SIZE" == "$REMOTE_SIZE" ]] || { echo "::error::Daily R2 backup size verification failed."; exit 1; }
+
+          REMOTE_COPY="$RUNNER_TEMP/r2-verified-${{ steps.backup.outputs.stamp }}.tar.gz.age"
+          REMOTE_COPY_MONTHLY=""
+          trap 'rm -f "$REMOTE_COPY" "$REMOTE_COPY_MONTHLY"' EXIT
+          aws s3 cp "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" "$REMOTE_COPY" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
+          LOCAL_SHA256="$(sha256sum "$LOCAL_ARCHIVE" | awk '{print $1}')"
+          REMOTE_SHA256="$(sha256sum "$REMOTE_COPY" | awk '{print $1}')"
+          [[ "$LOCAL_SHA256" == "$REMOTE_SHA256" ]] || { echo "::error::Daily R2 backup SHA-256 verification failed."; exit 1; }
+
           if [[ "$(date -u +%d)" == "01" ]]; then
             MONTHLY_KEY="mf-terminal-intelligence/monthly/$(date -u +%Y-%m).tar.gz.age"
-            aws s3 cp "${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" \
+            aws s3 cp "$LOCAL_ARCHIVE" "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" \
               --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
             MONTHLY_REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$MONTHLY_KEY" \
               --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --query ContentLength --output text)"
             [[ "$LOCAL_SIZE" == "$MONTHLY_REMOTE_SIZE" ]] || { echo "::error::Monthly R2 backup size verification failed."; exit 1; }
+            REMOTE_COPY_MONTHLY="$RUNNER_TEMP/r2-verified-monthly-${{ steps.backup.outputs.stamp }}.tar.gz.age"
+            aws s3 cp "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" "$REMOTE_COPY_MONTHLY" \
+              --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
+            MONTHLY_REMOTE_SHA256="$(sha256sum "$REMOTE_COPY_MONTHLY" | awk '{print $1}')"
+            [[ "$LOCAL_SHA256" == "$MONTHLY_REMOTE_SHA256" ]] || { echo "::error::Monthly R2 backup SHA-256 verification failed."; exit 1; }
           fi
-          echo "Encrypted daily off-site copy uploaded and verified: s3://$BACKUP_S3_BUCKET/$DAILY_KEY"
+          echo "Encrypted daily off-site copy uploaded, downloaded, size-verified and SHA-256 verified: s3://$BACKUP_S3_BUCKET/$DAILY_KEY"
+
+
+      - name: Remove encrypted runner copy
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP"/mf-terminal-intelligence-*.tar.gz.age "$RUNNER_TEMP"/r2-verified-*.tar.gz.age*
