@@ -710,9 +710,16 @@ async def supabase_user_authentication(request, call_next):
         )
         if response.status_code != 200:
             return JSONResponse({"detail": "Your session has expired. Please sign in again."}, status_code=401)
-        user_id = str(response.json().get("id", "")).strip()
+        verified_user = response.json()
+        user_id = str(verified_user.get("id", "")).strip()
         if not user_id:
             return JSONResponse({"detail": "Unable to verify your account. Please sign in again."}, status_code=401)
+        if not verified_user.get("email_confirmed_at"):
+            logger.info("supabase_email_unconfirmed")
+            return JSONResponse(
+                {"detail": "Please confirm your email address before signing in."},
+                status_code=403,
+            )
     except requests.RequestException:
         logger.warning("supabase_auth_verification_unavailable", exc_info=True)
         return JSONResponse({"detail": "Sign-in verification is temporarily unavailable. Please retry."}, status_code=503)
