@@ -127,7 +127,7 @@ def test_portfolio_rls_hides_other_users_rows():
 
 
 @pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
-def test_supabase_admin_default_public_privileges_do_not_expose_future_objects():
+def test_public_default_privileges_do_not_expose_future_objects_for_any_creator():
     with engine.connect() as connection:
         role_exists = connection.execute(text(
             "SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin'"
@@ -137,15 +137,40 @@ def test_supabase_admin_default_public_privileges_do_not_expose_future_objects()
 
         grants = connection.execute(text(
             """
-            SELECT d.defaclobjtype,
+            WITH creators AS (
+                SELECT oid, rolname
+                  FROM pg_roles
+                 WHERE has_schema_privilege(oid, 'public', 'CREATE')
+            ),
+            object_types AS (
+                SELECT unnest(ARRAY['r'::"char", 'S'::"char", 'f'::"char"]) AS object_type
+            ),
+            effective_defaults AS (
+                SELECT creators.rolname AS creator_role,
+                       object_types.object_type,
+                       array_cat(
+                           COALESCE(global_acl.defaclacl, acldefault(object_types.object_type, creators.oid)),
+                           COALESCE(schema_acl.defaclacl, '{}'::aclitem[])
+                       ) AS effective_acl
+                  FROM creators
+                  CROSS JOIN object_types
+                  LEFT JOIN pg_default_acl global_acl
+                    ON global_acl.defaclrole = creators.oid
+                   AND global_acl.defaclnamespace = 0
+                   AND global_acl.defaclobjtype = object_types.object_type
+                  LEFT JOIN pg_default_acl schema_acl
+                    ON schema_acl.defaclrole = creators.oid
+                   AND schema_acl.defaclnamespace = 'public'::regnamespace
+                   AND schema_acl.defaclobjtype = object_types.object_type
+            )
+            SELECT effective_defaults.creator_role,
+                   effective_defaults.object_type,
                    CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE grantee.rolname END AS grantee,
                    acl.privilege_type
-              FROM pg_default_acl d
-              CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+              FROM effective_defaults
+              CROSS JOIN LATERAL aclexplode(effective_defaults.effective_acl) acl
               LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
-             WHERE d.defaclrole = 'supabase_admin'::regrole
-               AND d.defaclnamespace = 'public'::regnamespace
-               AND (acl.grantee = 0 OR grantee.rolname IN ('anon', 'authenticated'))
+             WHERE acl.grantee = 0 OR grantee.rolname IN ('anon', 'authenticated')
             """
         )).all()
     assert grants == [], f"Unsafe future-object grants remain for supabase_admin: {grants}"
