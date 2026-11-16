@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SUPABASE_DB_URL: \${{ secrets.SUPABASE_DB_URL }}
-      MF_TERMINAL_API_URL: \${{ secrets.MF_TERMINAL_API_URL }}
-      MF_TERMINAL_API_KEY: \${{ secrets.MF_TERMINAL_API_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      MF_TERMINAL_API_URL: ${{ secrets.MF_TERMINAL_API_URL }}
+      MF_TERMINAL_API_KEY: ${{ secrets.MF_TERMINAL_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -43,7 +43,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p0-production-audit-\${{ github.run_id }}
+          name: p0-production-audit-${{ github.run_id }}
           path: p0-audit-report.json
           if-no-files-found: warn
           retention-days: 30
