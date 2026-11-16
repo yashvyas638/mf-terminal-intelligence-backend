@@ -104,7 +104,7 @@ Add these repository Actions secrets:
 | `MF_TERMINAL_API_URL` | `https://mf-terminal-intelligence-backend.onrender.com` |
 | `MF_TERMINAL_API_KEY` | Existing operator API key stored in Render. |
 
-The audit runs daily at 23:00 UTC (05:00 IST) and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
+The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
 
 ## 4. Current limits and next P0 gate
 
