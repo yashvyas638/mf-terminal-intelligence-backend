@@ -22,7 +22,10 @@ def test_supabase_users_get_isolated_portfolios(monkeypatch):
         token = headers["Authorization"].removeprefix("Bearer ")
         return SimpleNamespace(
             status_code=200,
-            json=lambda: {"id": user_a if token == "user-a-token" else user_b},
+            json=lambda: {
+                "id": user_a if token == "user-a-token" else user_b,
+                "email_confirmed_at": "2026-11-16T00:00:00Z",
+            },
         )
 
     monkeypatch.setattr(main.requests, "get", verify_user)
@@ -365,3 +368,22 @@ def test_private_api_route_matrix_rejects_requests_without_a_personal_session(mo
             f"{method} {path} bypassed the personal-session gate: "
             f"{response.status_code} {response.text}"
         )
+
+
+def test_unconfirmed_supabase_email_cannot_access_private_api(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    monkeypatch.setattr(
+        main.requests,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(
+            status_code=200,
+            json=lambda: {"id": str(uuid4()), "email_confirmed_at": None},
+        ),
+    )
+    response = TestClient(main.app).get(
+        "/v1/portfolios",
+        headers={"Authorization": "Bearer unconfirmed-user-token"},
+    )
+    assert response.status_code == 403
+    assert "confirm your email" in response.json()["detail"].lower()
