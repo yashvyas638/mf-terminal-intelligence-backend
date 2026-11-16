@@ -47,8 +47,8 @@ jobs:
           missing=()
           [[ -n "$SUPABASE_DB_URL" ]] || missing+=("SUPABASE_DB_URL")
           [[ -n "$MF_TERMINAL_API_KEY" ]] || missing+=("MF_TERMINAL_API_KEY")
-          if (( \${#missing[@]} )); then
-            MISSING_SECRETS="\${missing[*]}" python - <<'PY'
+          if (( ${#missing[@]} )); then
+            MISSING_SECRETS="${missing[*]}" python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           with open("p0-audit-report.json", "w", encoding="utf-8") as report:
@@ -59,7 +59,7 @@ jobs:
                   "note": "No production endpoint or database checks were attempted."
               }, report, indent=2)
           PY
-            printf '::error::Missing required GitHub Actions secrets: %s\n' "\${missing[*]}"
+            printf '::error::Missing required GitHub Actions secrets: %s\n' "${missing[*]}"
             exit 1
           fi
           [[ "$SUPABASE_DB_URL" == postgres://* || "$SUPABASE_DB_URL" == postgresql://* ]] || {
