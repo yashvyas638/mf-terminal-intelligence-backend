@@ -1,4 +1,4 @@
-"""Remove Supabase-managed creator defaults that expose future public objects.
+"""Restrict future public-object privileges for every public-schema creator.
 
 Revision ID: 0029_admin_default_acl
 Revises: 0028_restrictive_private_access
@@ -17,29 +17,40 @@ def upgrade() -> None:
     if bind.dialect.name != "postgresql":
         return
 
-    # Supabase-managed supabase_admin defaults may grant anon/authenticated
-    # privileges to new public objects. Existing objects are separately audited;
-    # this migration closes the future-object path without changing current data.
-    role_exists = bind.execute(
-        text("SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin'")
-    ).scalar_one_or_none()
-    if role_exists is None:
-        return
+    # PostgreSQL's built-in default for new functions is EXECUTE for PUBLIC.
+    # A schema-specific REVOKE cannot subtract that global default, so revoke
+    # PUBLIC EXECUTE globally for every role that can CREATE in public. Existing
+    # functions are unchanged; explicit schema-specific grants remain in force.
+    creators = bind.execute(
+        text(
+            """
+            SELECT quote_ident(rolname)
+              FROM pg_roles
+             WHERE has_schema_privilege(oid, 'public', 'CREATE')
+             ORDER BY rolname
+            """
+        )
+    ).scalars().all()
 
-    op.execute(
-        "ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public "
-        "REVOKE ALL ON TABLES FROM anon, authenticated"
-    )
-    op.execute(
-        "ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public "
-        "REVOKE ALL ON SEQUENCES FROM anon, authenticated"
-    )
-    op.execute(
-        "ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public "
-        "REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated"
-    )
+    for creator in creators:
+        op.execute(
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} "
+            "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"
+        )
+        op.execute(
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} IN SCHEMA public "
+            "REVOKE ALL ON TABLES FROM anon, authenticated"
+        )
+        op.execute(
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} IN SCHEMA public "
+            "REVOKE ALL ON SEQUENCES FROM anon, authenticated"
+        )
+        op.execute(
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} IN SCHEMA public "
+            "REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated"
+        )
 
 
 def downgrade() -> None:
-    # Never reintroduce broad client privileges during a rollback.
+    # Never reintroduce broad client or PUBLIC execution defaults on rollback.
     pass
