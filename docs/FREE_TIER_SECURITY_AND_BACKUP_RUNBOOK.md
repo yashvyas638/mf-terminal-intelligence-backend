@@ -68,15 +68,16 @@ GitHub artifact retention is only 30 days. The optional R2/S3 copy is the durabl
 
 ## 2. Leaked-password screening on Free tier
 
-The dashboard now checks new signup passwords and password-reset changes against Have I Been Pwned's free Pwned Passwords range API.
+Both the main dashboard and Research Terminal now use the same shared, tested password-screening module before new account creation and password-reset changes against Have I Been Pwned's free Pwned Passwords range API.
 
 - The browser computes the SHA-1 hash locally.
 - Only the first five hash characters are sent to HIBP; the password and full hash are never sent.
 - The response is checked locally, with the API's `Add-Padding: true` option and no-store caching.
+- The response parser validates every returned suffix/count row and rejects malformed, empty, oversized or non-success responses. Network failures and timeouts fail closed.
 - Known compromised passwords are rejected before Supabase Auth is called.
 - If the HIBP request fails or times out, signup/password change fails closed and asks the user to retry.
 
-This is a practical Free-tier mitigation, not identical to Supabase's native server-side leaked-password protection. A user who bypasses this dashboard and calls Supabase Auth directly can bypass the browser check. Supabase's Before User Created hook is available on Free, but its event does not contain the submitted password; the password-verification hook is not available on Free. Keep the native Auth minimum length/complexity controls enabled as well.
+This is a practical Free-tier mitigation, not identical to Supabase's native server-side leaked-password protection. A user who bypasses either browser UI and calls Supabase Auth directly can bypass the browser check. Supabase's Before User Created hook is available on Free, but its event does not contain the submitted password; the password-verification hook is not available on Free. Keep the native Auth minimum length/complexity controls enabled as well.
 
 ## 3. Daily P0 production readiness audit
 
