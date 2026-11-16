@@ -92,7 +92,7 @@ The native Supabase leaked-password protection warning is separate from the futu
 **Required secret inventory**
 - P0 audit: `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`.
 - Encrypted backup: `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`.
-- Render: least-privilege runtime PostgreSQL `DATABASE_URL`, privileged migration-only `MIGRATION_DATABASE_URL`, operator `API_KEY`, Supabase URL and publishable key, plus required provider settings.
+- Render: least-privilege runtime PostgreSQL `DATABASE_URL`, privileged direct-session migration-only `MIGRATION_DATABASE_URL` (not a transaction-pooler URL), operator `API_KEY`, Supabase URL and publishable key, plus required provider settings.
 
 **Acceptance evidence**
 - [ ] Every required secret exists in its correct secret store.
