@@ -32,6 +32,33 @@ INTERNAL_TABLES = (
 )
 PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
 
+CLIENT_READ_ALLOWLIST = {
+    "nav_observations": {
+        "policy": "nav_observations_authenticated_read",
+        "tokens": ("true",),
+    },
+    "schemes": {
+        "policy": "schemes_authenticated_read",
+        "tokens": ("true",),
+    },
+    "portfolios": {
+        "policy": "portfolios_owner_read",
+        "tokens": ("auth.uid", "owner_user_id"),
+    },
+    "portfolio_transactions": {
+        "policy": "portfolio_transactions_owner_read",
+        "tokens": ("auth.uid", "owner_user_id", "portfolio_id"),
+    },
+    "portfolio_transaction_audit": {
+        "policy": "portfolio_transaction_audit_owner_read",
+        "tokens": ("auth.uid", "owner_user_id", "transaction_id"),
+    },
+    "portfolio_import_batches": {
+        "policy": "portfolio_import_batches_owner_read",
+        "tokens": ("auth.uid", "owner_user_id", "portfolio_id"),
+    },
+}
+
 
 def require_env(name: str) -> str:
     value = os.getenv(name, "").strip()
@@ -121,6 +148,78 @@ def check_policy(conn, table: str) -> dict:
         None,
     )
     return {"rls_enabled": rls_enabled, "policies": policies, "restrictive_deny_verified": bool(deny)}
+
+
+
+def check_public_table_surface(conn) -> tuple[dict[str, dict], list[str]]:
+    """Fail closed on any new or widened direct Supabase client table grant."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT c.relname
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public'
+               AND c.relkind IN ('r', 'p')
+             ORDER BY c.relname
+            """
+        )
+        table_names = [row[0] for row in cur.fetchall()]
+
+    if not table_names:
+        raise RuntimeError("No public application tables were found during the client-surface audit.")
+
+    report: dict[str, dict] = {}
+    failures: list[str] = []
+    for table in table_names:
+        posture = check_policy(conn, table)
+        privileges = check_table_privileges(conn, table, ("anon", "authenticated"))
+        granted = {
+            role: {item["privilege"] for item in privileges if item["role"] == role and item["granted"]}
+            for role in ("anon", "authenticated")
+        }
+        expected_auth = {"SELECT"} if table in CLIENT_READ_ALLOWLIST else set()
+        expected = {"anon": set(), "authenticated": expected_auth}
+        grants_match = granted == expected
+        table_result = {
+            "rls_enabled": posture["rls_enabled"],
+            "anon_privileges": sorted(granted["anon"]),
+            "authenticated_privileges": sorted(granted["authenticated"]),
+            "expected_authenticated_privileges": sorted(expected_auth),
+            "client_grants_match_allowlist": grants_match,
+        }
+
+        if not posture["rls_enabled"]:
+            failures.append(f"RLS is not enabled on public.{table}")
+        if not grants_match:
+            failures.append(f"Unexpected anon/authenticated table grants on public.{table}")
+
+        if table in CLIENT_READ_ALLOWLIST:
+            expected_policy = CLIENT_READ_ALLOWLIST[table]
+            matching = [
+                policy for policy in posture["policies"]
+                if policy["command"] in ("r", "*") and policy["permissive"] is True
+            ]
+            selected = next(
+                (policy for policy in matching if policy["name"] == expected_policy["policy"]),
+                None,
+            )
+            policy_ok = (
+                len(matching) == 1
+                and selected is not None
+                and "authenticated" in selected["roles"]
+                and all(token in (selected["using"] or "").lower() for token in expected_policy["tokens"])
+            )
+            table_result["expected_select_policy"] = expected_policy["policy"]
+            table_result["select_policy_verified"] = policy_ok
+            if not policy_ok:
+                failures.append(f"Authenticated SELECT policy is missing, widened or ambiguous on public.{table}")
+        report[table] = table_result
+
+    unexpected_allowlist = sorted(set(CLIENT_READ_ALLOWLIST) - set(table_names))
+    if unexpected_allowlist:
+        failures.append(f"Expected client-readable tables are missing: {unexpected_allowlist}")
+    return report, failures
 
 
 def main() -> int:
@@ -220,6 +319,14 @@ def main() -> int:
             if not posture["rls_enabled"] or not client_denied:
                 report["failures"].append(f"Internal-table client access check failed for public.{table}")
         report["checks"]["internal_tables"] = internal_results
+
+        public_surface, surface_failures = check_public_table_surface(conn)
+        report["checks"]["public_table_surface"] = {
+            "table_count": len(public_surface),
+            "approved_authenticated_read_tables": sorted(CLIENT_READ_ALLOWLIST),
+            "tables": public_surface,
+        }
+        report["failures"].extend(surface_failures)
 
     report["result"] = "FAIL" if report["failures"] else ("PASS_WITH_WARNINGS" if report["warnings"] else "PASS")
     print(json.dumps(report, indent=2, default=str), flush=True)
