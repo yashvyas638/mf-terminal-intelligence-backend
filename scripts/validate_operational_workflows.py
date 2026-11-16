@@ -75,6 +75,48 @@ def main() -> int:
                     "render.yaml: run Alembic with the migration-only URL, unset it, then start Uvicorn"
                 )
 
+    backup_path = Path(".github/workflows/supabase-free-tier-backup.yml")
+    if not backup_path.is_file():
+        errors.append("backup workflow: missing encrypted backup workflow")
+    else:
+        backup_document = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
+        jobs = backup_document.get("jobs", {}) if isinstance(backup_document, dict) else {}
+        backup_job = jobs.get("backup", {}) if isinstance(jobs, dict) else {}
+        steps = backup_job.get("steps", []) if isinstance(backup_job, dict) else []
+        step_by_name = {
+            str(step.get("name", "")): step
+            for step in steps
+            if isinstance(step, dict)
+        }
+        export_step = step_by_name.get("Export, checksum and encrypt database", {})
+        upload_step = step_by_name.get("Upload encrypted GitHub recovery copy", {})
+        remote_step = step_by_name.get("Copy encrypted backup to mandatory off-site storage", {})
+        cleanup_step = step_by_name.get("Remove encrypted runner copy", {})
+        export_script = str(export_step.get("run", ""))
+        upload_path = str(upload_step.get("with", {}).get("path", ""))
+        remote_script = str(remote_step.get("run", ""))
+        cleanup_script = str(cleanup_step.get("run", ""))
+        names = list(step_by_name)
+        required_order = [
+            "Export, checksum and encrypt database",
+            "Upload encrypted GitHub recovery copy",
+            "Copy encrypted backup to mandatory off-site storage",
+            "Remove encrypted runner copy",
+        ]
+        positions = [names.index(name) for name in required_order if name in names]
+        if len(positions) != len(required_order) or positions != sorted(positions):
+            errors.append("backup workflow: encrypted archive export/upload/R2 verification/cleanup order is invalid")
+        if "rm -f \"$ARCHIVE.age\"" in export_script:
+            errors.append("backup workflow: export step deletes the encrypted archive before later upload steps")
+        if "steps.backup.outputs.archive" not in upload_path:
+            errors.append("backup workflow: GitHub recovery artifact must use the encrypted archive output")
+        if "steps.backup.outputs.stamp" not in remote_script:
+            errors.append("backup workflow: R2 object key and verification path must use the step output stamp")
+        if "head-object" not in remote_script or "sha256sum \"$REMOTE_COPY\"" not in remote_script:
+            errors.append("backup workflow: R2 copy must be downloaded and verified by size and SHA-256")
+        if cleanup_step.get("if") != "always()" or "mf-terminal-intelligence-*.tar.gz.age" not in cleanup_script:
+            errors.append("backup workflow: encrypted runner copy must be cleaned in an always() step")
+
     migration_env = Path("migrations/env.py").read_text(encoding="utf-8")
     db_config = Path("app/db.py").read_text(encoding="utf-8")
     if "migration_database_url()" not in migration_env:
