@@ -179,6 +179,14 @@ jobs:
                 GRANT ALL ON SEQUENCES TO anon, authenticated;
               ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
                 GRANT EXECUTE ON FUNCTIONS TO anon, authenticated;
+              CREATE SCHEMA IF NOT EXISTS extensions;
+              CREATE SCHEMA IF NOT EXISTS graphql_public;
+              GRANT USAGE ON SCHEMA extensions TO anon, authenticated;
+              GRANT USAGE ON SCHEMA graphql_public TO anon, authenticated;
+              ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA extensions
+                GRANT EXECUTE ON FUNCTIONS TO anon, authenticated;
+              ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA graphql_public
+                GRANT EXECUTE ON FUNCTIONS TO anon, authenticated;
               CREATE SCHEMA IF NOT EXISTS auth;
               CREATE OR REPLACE FUNCTION auth.uid()
               RETURNS uuid
