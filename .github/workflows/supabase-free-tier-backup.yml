@@ -54,6 +54,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes age
 
+      - name: Validate encryption recipient and off-site bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'backup-recipient-preflight' | age --encrypt --recipient "$BACKUP_AGE_RECIPIENT" >/dev/null
+          aws s3api head-bucket --bucket "$BACKUP_S3_BUCKET" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto
+
       - name: Export, checksum and encrypt database
         id: backup
         shell: bash
