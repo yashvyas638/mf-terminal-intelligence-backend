@@ -212,6 +212,7 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
     user_a, user_b = str(uuid4()), str(uuid4())
     scheme_code = 900_000_000 + (uuid4().int % 90_000_000)
     now = datetime.now(timezone.utc)
+
     with engine.connect() as connection:
         transaction = connection.begin()
         try:
@@ -223,44 +224,43 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
                 ),
                 {"code": scheme_code, "first_seen": now, "last_seen": now},
             )
-
-        portfolio_a = connection.execute(
-            text(
-                "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
-                "VALUES (:owner, 'RLS A', 'INR', :created_at) RETURNING id"
-            ),
-            {"owner": user_a, "created_at": now},
-        ).scalar_one()
-        portfolio_b = connection.execute(
-            text(
-                "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
-                "VALUES (:owner, 'RLS B', 'INR', :created_at) RETURNING id"
-            ),
-            {"owner": user_b, "created_at": now},
-        ).scalar_one()
+            portfolio_a = connection.execute(
+                text(
+                    "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
+                    "VALUES (:owner, 'RLS A', 'INR', :created_at) RETURNING id"
+                ),
+                {"owner": user_a, "created_at": now},
+            ).scalar_one()
+            portfolio_b = connection.execute(
+                text(
+                    "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
+                    "VALUES (:owner, 'RLS B', 'INR', :created_at) RETURNING id"
+                ),
+                {"owner": user_b, "created_at": now},
+            ).scalar_one()
 
             transaction_ids = {}
             import_ids = {}
             for owner, portfolio_id in (("a", portfolio_a), ("b", portfolio_b)):
                 transaction_ids[owner] = connection.execute(
-                text(
-                    """
-                    INSERT INTO public.portfolio_transactions
-                        (portfolio_id, scheme_code, transaction_type, transaction_date,
-                         units, nav, amount, charges, created_at)
-                    VALUES
-                        (:portfolio_id, :scheme_code, 'BUY', :transaction_date,
-                         1, 100, 100, 0, :created_at)
-                    RETURNING id
-                    """
-                ),
-                {
-                    "portfolio_id": portfolio_id,
-                    "scheme_code": scheme_code,
-                    "transaction_date": date(2026, 1, 1),
-                    "created_at": now,
-                },
-            ).scalar_one()
+                    text(
+                        """
+                        INSERT INTO public.portfolio_transactions
+                            (portfolio_id, scheme_code, transaction_type, transaction_date,
+                             units, nav, amount, charges, created_at)
+                        VALUES
+                            (:portfolio_id, :scheme_code, 'BUY', :transaction_date,
+                             1, 100, 100, 0, :created_at)
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "portfolio_id": portfolio_id,
+                        "scheme_code": scheme_code,
+                        "transaction_date": date(2026, 1, 1),
+                        "created_at": now,
+                    },
+                ).scalar_one()
                 connection.execute(
                     text(
                         """
@@ -272,20 +272,20 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
                     {"transaction_id": transaction_ids[owner], "event_at": now},
                 )
                 import_ids[owner] = connection.execute(
-                text(
-                    """
-                    INSERT INTO public.portfolio_import_batches
-                        (portfolio_id, statement_sha256, imported_at, imported_count)
-                    VALUES (:portfolio_id, :fingerprint, :imported_at, 1)
-                    RETURNING id
-                    """
-                ),
-                {
-                    "portfolio_id": portfolio_id,
-                    "fingerprint": sha256(uuid4().bytes).hexdigest(),
-                    "imported_at": now,
-                },
-            ).scalar_one()
+                    text(
+                        """
+                        INSERT INTO public.portfolio_import_batches
+                            (portfolio_id, statement_sha256, imported_at, imported_count)
+                        VALUES (:portfolio_id, :fingerprint, :imported_at, 1)
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "portfolio_id": portfolio_id,
+                        "fingerprint": sha256(uuid4().bytes).hexdigest(),
+                        "imported_at": now,
+                    },
+                ).scalar_one()
 
             connection.exec_driver_sql("SET LOCAL ROLE authenticated")
             for owner, subject in (("a", user_a), ("b", user_b)):
@@ -293,9 +293,10 @@ def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
                     text("SELECT set_config('request.jwt.claim.sub', :subject, true)"),
                     {"subject": subject},
                 )
+                expected_portfolio = portfolio_a if owner == "a" else portfolio_b
                 assert connection.execute(
                     text("SELECT id FROM public.portfolios ORDER BY id")
-                ).scalars().all() == [portfolio_a if owner == "a" else portfolio_b]
+                ).scalars().all() == [expected_portfolio]
                 assert connection.execute(
                     text("SELECT id FROM public.portfolio_transactions ORDER BY id")
                 ).scalars().all() == [transaction_ids[owner]]
