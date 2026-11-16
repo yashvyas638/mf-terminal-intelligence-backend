@@ -24,15 +24,25 @@ def upgrade() -> None:
     creators = bind.execute(
         text(
             """
-            SELECT quote_ident(rolname)
+            SELECT quote_ident(rolname),
+                   rolname,
+                   pg_has_role(current_user, oid, 'MEMBER') AS can_alter_defaults
               FROM pg_roles
              WHERE has_schema_privilege(oid, 'public', 'CREATE')
              ORDER BY rolname
             """
         )
-    ).scalars().all()
+    ).all()
 
-    for creator in creators:
+    unauthorized = [row[1] for row in creators if not row[2]]
+    if unauthorized:
+        raise RuntimeError(
+            "Migration requires a database role able to alter default privileges for "
+            f"all public-schema creators; current role cannot alter: {unauthorized}"
+        )
+
+    for quoted_creator, _creator_name, _can_alter in creators:
+        creator = quoted_creator
         op.execute(
             f"ALTER DEFAULT PRIVILEGES FOR ROLE {creator} "
             "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"
