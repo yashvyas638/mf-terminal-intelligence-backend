@@ -200,3 +200,102 @@ def test_global_function_default_lockdown_preserves_managed_schema_grants():
         ("graphql_public", "anon", "EXECUTE"),
         ("graphql_public", "authenticated", "EXECUTE"),
     }.issubset(set(rows))
+
+
+
+@pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
+def test_rls_isolates_portfolios_transactions_audit_and_imports_between_users():
+    from datetime import date, datetime, timezone
+    from hashlib import sha256
+    from uuid import uuid4
+
+    user_a, user_b = str(uuid4()), str(uuid4())
+    now = datetime.now(timezone.utc)
+    with engine.begin() as connection:
+        scheme_code = connection.execute(
+            text("SELECT scheme_code FROM public.schemes ORDER BY scheme_code LIMIT 1")
+        ).scalar_one()
+
+        portfolio_a = connection.execute(
+            text(
+                "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
+                "VALUES (:owner, 'RLS A', 'INR', :created_at) RETURNING id"
+            ),
+            {"owner": user_a, "created_at": now},
+        ).scalar_one()
+        portfolio_b = connection.execute(
+            text(
+                "INSERT INTO public.portfolios (owner_user_id, name, currency, created_at) "
+                "VALUES (:owner, 'RLS B', 'INR', :created_at) RETURNING id"
+            ),
+            {"owner": user_b, "created_at": now},
+        ).scalar_one()
+
+        transaction_ids = {}
+        audit_ids = {}
+        import_ids = {}
+        for owner, portfolio_id in (("a", portfolio_a), ("b", portfolio_b)):
+            transaction_ids[owner] = connection.execute(
+                text(
+                    """
+                    INSERT INTO public.portfolio_transactions
+                        (portfolio_id, scheme_code, transaction_type, transaction_date,
+                         units, nav, amount, charges, created_at)
+                    VALUES
+                        (:portfolio_id, :scheme_code, 'BUY', :transaction_date,
+                         1, 100, 100, 0, :created_at)
+                    RETURNING id
+                    """
+                ),
+                {
+                    "portfolio_id": portfolio_id,
+                    "scheme_code": scheme_code,
+                    "transaction_date": date(2026, 1, 1),
+                    "created_at": now,
+                },
+            ).scalar_one()
+            audit_ids[owner] = connection.execute(
+                text(
+                    """
+                    INSERT INTO public.portfolio_transaction_audit
+                        (transaction_id, event_type, event_at, details_json)
+                    VALUES (:transaction_id, 'CREATED', :event_at, '{}')
+                    RETURNING id
+                    """
+                ),
+                {"transaction_id": transaction_ids[owner], "event_at": now},
+            ).scalar_one()
+            import_ids[owner] = connection.execute(
+                text(
+                    """
+                    INSERT INTO public.portfolio_import_batches
+                        (portfolio_id, statement_sha256, imported_at, imported_count)
+                    VALUES (:portfolio_id, :fingerprint, :imported_at, 1)
+                    RETURNING id
+                    """
+                ),
+                {
+                    "portfolio_id": portfolio_id,
+                    "fingerprint": sha256(uuid4().bytes).hexdigest(),
+                    "imported_at": now,
+                },
+            ).scalar_one()
+
+        connection.exec_driver_sql("SET LOCAL ROLE authenticated")
+        for owner, subject in (("a", user_a), ("b", user_b)):
+            connection.execute(
+                text("SELECT set_config('request.jwt.claim.sub', :subject, true)"),
+                {"subject": subject},
+            )
+            assert connection.execute(
+                text("SELECT id FROM public.portfolios ORDER BY id")
+            ).scalars().all() == [portfolio_a if owner == "a" else portfolio_b]
+            assert connection.execute(
+                text("SELECT id FROM public.portfolio_transactions ORDER BY id")
+            ).scalars().all() == [transaction_ids[owner]]
+            assert connection.execute(
+                text("SELECT transaction_id FROM public.portfolio_transaction_audit ORDER BY id")
+            ).scalars().all() == [transaction_ids[owner]]
+            assert connection.execute(
+                text("SELECT id FROM public.portfolio_import_batches ORDER BY id")
+            ).scalars().all() == [import_ids[owner]]
