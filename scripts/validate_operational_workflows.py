@@ -118,6 +118,8 @@ def main() -> int:
             errors.append("backup workflow: R2 step references $STAMP without importing steps.backup.outputs.stamp")
         if "head-object" not in remote_script or "sha256sum \"$REMOTE_COPY\"" not in remote_script:
             errors.append("backup workflow: R2 copy must be downloaded and verified by size and SHA-256")
+        if "MONTHLY_REMOTE_SIZE" not in remote_script or "sha256sum \"$REMOTE_COPY_MONTHLY\"" not in remote_script:
+            errors.append("backup workflow: monthly R2 copy must also be verified by size and SHA-256")
         if cleanup_step.get("if") != "always()" or "mf-terminal-intelligence-*.tar.gz.age" not in cleanup_script:
             errors.append("backup workflow: encrypted runner copy must be cleaned in an always() step")
 
