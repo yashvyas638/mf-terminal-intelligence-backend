@@ -17,7 +17,7 @@ Workflow: `.github/workflows/supabase-free-tier-backup.yml`
 
 The operational backup and P0 audit workflows, plus the read-only audit script, are installed on the repository's default branch (`main`). Their daily schedules and manual dispatch entry points are therefore active. The application source remains on `audit/production-foundation`; these standalone operational files were installed on `main` without merging the unrelated application history.
 
-The first default-branch executions were triggered and stopped at configuration validation because the required Actions secrets were absent. No database export, Auth operation, or production mutation was attempted. The currently confirmed missing values were: backup — `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`; P0 audit — `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`. The Render URL is configured directly in the workflow. No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
+The first default-branch executions were triggered and stopped at configuration validation because the required Actions secrets were absent. No database export, Auth operation, or production mutation was attempted. The currently confirmed missing values were: backup — `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`; P0 audit — `SUPABASE_DB_URL`, `MF_TERMINAL_API_KEY`. The Render URL is configured directly in the workflow. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
 
 ### One-time GitHub configuration
 
@@ -42,7 +42,7 @@ Add these repository Actions secrets under GitHub → Settings → Secrets and v
 
 All six backup secrets are required. The workflow fails before connecting to production unless both the database/encryption configuration and the durable R2/S3 destination are present. Daily encrypted copies use the `mf-terminal-intelligence/daily/` prefix; the first run of each month also writes a monthly copy under `mf-terminal-intelligence/monthly/`. Configure R2 lifecycle rules to expire daily objects after 45 days and monthly objects after 400 days. Keep the bucket private and scope the access key to this bucket only.
 
-After adding the required secrets, open Actions → Supabase Free-Tier Encrypted Backup → Run workflow. A successful run must show export, checksum verification, encryption, GitHub artifact upload, R2 upload and R2 `head-object` verification as green. Until that first run succeeds, there is no completed automated backup.
+After adding the required secrets, open Actions → Supabase Free-Tier Encrypted Backup → Run workflow. A successful run must show export, checksum verification, encryption, GitHub artifact upload, R2 upload and R2 `head-object` verification, remote download and encrypted-object SHA-256 verification as green. The encrypted archive must survive the export step and be removed only by final cleanup. Until that first run succeeds, there is no completed automated backup.
 
 ### Restore procedure
 
@@ -109,7 +109,7 @@ The read-only audit checks:
 - No direct anon/authenticated table privileges and retained `service_role` read access.
 - RLS and client privilege posture on the additional internal tables.
 - Every public table is checked against a strict allowlist: only six intended authenticated read surfaces are allowed, with owner-scoped policies for portfolio data; every other public table must deny all direct anon/authenticated privileges.
-- Confirmed Auth user count and portfolio-owner count (reported as evidence, not fabricated).
+- Confirmed Auth user count and portfolio-owner count (and fails P0 when fewer than two confirmed users or two portfolio owners exist).
 
 It does not mutate data, create test users, trigger NAV refreshes, or restore backups.
 
@@ -122,7 +122,7 @@ Add these repository Actions secrets:
 
 The public Render URL is configured directly in the workflow; it does not need to be stored as a secret.
 
-The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Therefore, a green operational audit alone does not close the two-account acceptance gate. Close that gate only after two real confirmed accounts each create/read their own representative portfolio and cross-account reads/writes are verified to be denied.
+The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It fails the P0 gate when fewer than two confirmed accounts or separately owned portfolios exist. Therefore, a green operational audit alone does not close the two-account acceptance gate. Close that gate only after two real confirmed accounts each create/read their own representative portfolio and cross-account reads/writes are verified to be denied.
 
 
 
@@ -150,7 +150,7 @@ GitHub Actions currently exposes empty environment values for the required secre
 
 - Browser HIBP screening cannot stop direct Supabase Auth API callers. Native server-side leaked-password protection depends on Supabase plan/feature availability; verify the current project dashboard rather than assuming the browser mitigation is equivalent.
 - GitHub Actions database, encryption and R2 secrets must be configured; no credentials are committed. Do not paste any of these values into chat or commit them to the repository.
-- The first successful encrypted backup, verified R2 object size, successful decryption/checksum validation, and a successful isolated restore are required before the backup/restore gate can be marked complete.
+- The first successful encrypted backup, verified R2 object size and remote SHA-256, successful decryption/checksum validation, and a successful isolated restore are required before the backup/restore gate can be marked complete.
 - Two-account production isolation, full live AMFI ingestion evidence, endpoint smoke checks, and a review of the backup's documented exclusions remain separate P0 acceptance gates.
 - P1 research implementation must not be represented as complete until P0 exit criteria are met.
 
