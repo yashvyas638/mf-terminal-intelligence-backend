@@ -10,7 +10,7 @@ Workflow: `.github/workflows/supabase-free-tier-backup.yml`
 - Uses the supported Supabase CLI logical export for roles, schema and data.
 - Encrypts the compressed archive with `age` before uploading it anywhere.
 - Keeps a 30-day encrypted GitHub Actions artifact as a recovery copy.
-- Can additionally copy the encrypted archive to Cloudflare R2 or another S3-compatible object store.
+- Requires a verified encrypted off-site copy in Cloudflare R2 or another S3-compatible object store; a GitHub artifact alone is not accepted as a durable backup.
 - Never writes database exports into the repository or workflow logs.
 
 ### Activation status
@@ -35,14 +35,14 @@ Add these repository Actions secrets under GitHub → Settings → Secrets and v
 |---|---:|---|
 | `SUPABASE_DB_URL` | Yes | Supabase PostgreSQL connection string. Prefer the Session Pooler URL if the runner cannot connect directly. |
 | `BACKUP_AGE_RECIPIENT` | Yes | Public `age1...` recipient; never the private identity. |
-| `BACKUP_S3_BUCKET` | No | Existing R2/S3 bucket name. |
-| `BACKUP_S3_ENDPOINT` | No | R2 endpoint, e.g. `https://<account-id>.r2.cloudflarestorage.com`. |
-| `BACKUP_S3_ACCESS_KEY_ID` | No | R2/S3 access key with write access only to the backup bucket. |
-| `BACKUP_S3_SECRET_ACCESS_KEY` | No | Matching R2/S3 secret. |
+| `BACKUP_S3_BUCKET` | Yes | Existing private R2/S3 bucket name. |
+| `BACKUP_S3_ENDPOINT` | Yes | R2 endpoint, e.g. `https://<account-id>.r2.cloudflarestorage.com`. |
+| `BACKUP_S3_ACCESS_KEY_ID` | Yes | R2/S3 access key with write access only to the backup bucket. |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | Yes | Matching R2/S3 secret. |
 
-The first two secrets are enough to run the encrypted GitHub artifact backup. Configure all four S3 values to enable the second off-site copy. Use a bucket lifecycle rule (for example, retain 30 daily backups and 12 monthly backups) and enable object versioning if the provider supports it.
+All six backup secrets are required. The workflow fails before connecting to production unless both the database/encryption configuration and the durable R2/S3 destination are present. Daily encrypted copies use the `mf-terminal-intelligence/daily/` prefix; the first run of each month also writes a monthly copy under `mf-terminal-intelligence/monthly/`. Configure R2 lifecycle rules to expire daily objects after 45 days and monthly objects after 400 days. Keep the bucket private and scope the access key to this bucket only.
 
-After adding the required secrets, open Actions → Supabase Free-Tier Encrypted Backup → Run workflow. A successful run must show both the export/encryption and artifact-upload steps as green. If R2 is configured, the R2 upload must also be green. Until that first run succeeds, there is no completed automated backup.
+After adding the required secrets, open Actions → Supabase Free-Tier Encrypted Backup → Run workflow. A successful run must show export, checksum verification, encryption, GitHub artifact upload, R2 upload and R2 `head-object` verification as green. Until that first run succeeds, there is no completed automated backup.
 
 ### Restore procedure
 
@@ -66,7 +66,7 @@ Supabase CLI logical dumps exclude Supabase-managed `auth`, `storage` and extens
 
 Auth accounts cannot be recreated with their original passwords from this export. Preserve account lifecycle through verified email invitations/password resets. Storage objects need their own object-store backup if the application starts storing user files. Do not treat this logical backup as a replacement for Supabase's managed physical backups or PITR.
 
-GitHub artifact retention is only 30 days. The optional R2/S3 copy is the durable off-site layer; apply a lifecycle policy and periodically perform a restore drill.
+GitHub artifact retention is only 30 days and is a secondary recovery copy. R2/S3 is mandatory for durable off-site retention; apply the daily/monthly lifecycle policies and periodically perform a restore drill.
 
 ## 2. Leaked-password screening on Free tier
 
@@ -109,7 +109,7 @@ The audit runs daily at 23:00 UTC (05:00 IST) and can be started manually. It in
 ## 4. Current limits and next P0 gate
 
 - The native Supabase Pro-only leaked-password feature and managed daily backups remain unavailable on Free. The controls above are independent workarounds.
-- GitHub/R2 secrets must be configured by a repository owner; no credentials are committed.
+- GitHub Actions database, encryption and R2 secrets must be configured; no credentials are committed.
 - The first successful encrypted backup and a successful isolated restore are required before the backup/restore gate can be marked complete.
 - Two-account production isolation, full live AMFI ingestion evidence and endpoint smoke checks remain separate P0 acceptance gates.
 - P1 research implementation must not be represented as complete until P0 exit criteria are met.
