@@ -25,3 +25,15 @@ def test_nonproduction_migrations_can_use_runtime_database_url(monkeypatch):
     monkeypatch.delenv("MIGRATION_DATABASE_URL", raising=False)
 
     assert migration_database_url() == "postgresql+psycopg://developer:secret@localhost/app"
+
+
+
+def test_production_migrations_reject_shared_runtime_connection(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("CI", raising=False)
+    shared_url = "postgresql+psycopg://same:secret@db.example/app"
+    monkeypatch.setenv("DATABASE_URL", shared_url)
+    monkeypatch.setenv("MIGRATION_DATABASE_URL", shared_url)
+
+    with pytest.raises(RuntimeError, match="must use a separate privileged connection"):
+        migration_database_url()
