@@ -17,7 +17,7 @@ Workflow: `.github/workflows/supabase-free-tier-backup.yml`
 
 The operational backup and P0 audit workflows, plus the read-only audit script, are installed on the repository's default branch (`main`). Their daily schedules and manual dispatch entry points are therefore active. The application source remains on `audit/production-foundation`; these standalone operational files were installed on `main` without merging the unrelated application history.
 
-The first default-branch executions were triggered and correctly stopped at configuration validation because `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, the four `BACKUP_S3_*`/S3 credential values, `MF_TERMINAL_API_URL`, and `MF_TERMINAL_API_KEY` are not currently configured as GitHub Actions secrets. No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
+The first default-branch executions were triggered and correctly stopped at configuration validation because `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, the four `BACKUP_S3_*`/S3 credential values, `MF_TERMINAL_API_KEY` is not currently configured as a GitHub Actions secret (the Render URL is configured directly in the workflow). No database export or mutation was attempted. Add the secrets described below; subsequent scheduled/manual runs will execute the actual checks and encrypted backup.
 
 ### One-time GitHub configuration
 
@@ -106,7 +106,7 @@ Add these repository Actions secrets:
 | Secret | Value |
 |---|---|
 | `SUPABASE_DB_URL` | Same PostgreSQL connection string used by the backup workflow. |
-| `MF_TERMINAL_API_URL` | `https://mf-terminal-intelligence-backend.onrender.com` |
+| `MF_TERMINAL_API_URL` | Set directly in the workflow to the public Render origin; no secret required. |
 | `MF_TERMINAL_API_KEY` | Existing operator API key stored in Render. |
 
 The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
