@@ -117,6 +117,33 @@ def main() -> int:
         if cleanup_step.get("if") != "always()" or "mf-terminal-intelligence-*.tar.gz.age" not in cleanup_script:
             errors.append("backup workflow: encrypted runner copy must be cleaned in an always() step")
 
+    p0_path = Path(".github/workflows/p0-production-readiness.yml")
+    if not p0_path.is_file():
+        errors.append("P0 audit workflow: missing production readiness workflow")
+    else:
+        p0_document = yaml.safe_load(p0_path.read_text(encoding="utf-8"))
+        p0_jobs = p0_document.get("jobs", {}) if isinstance(p0_document, dict) else {}
+        p0_job = p0_jobs.get("audit", {}) if isinstance(p0_jobs, dict) else {}
+        p0_steps = p0_job.get("steps", []) if isinstance(p0_job, dict) else []
+        p0_by_name = {
+            str(step.get("name", "")): step
+            for step in p0_steps
+            if isinstance(step, dict)
+        }
+        p0_names = list(p0_by_name)
+        syntax_name = "Validate audit script syntax"
+        config_name = "Validate audit configuration"
+        evidence_name = "Retain audit evidence"
+        if syntax_name not in p0_names or config_name not in p0_names or p0_names.index(syntax_name) > p0_names.index(config_name):
+            errors.append("P0 audit workflow: validate Python syntax before checking secrets")
+        config_script = str(p0_by_name.get(config_name, {}).get("run", ""))
+        evidence_step = p0_by_name.get(evidence_name, {})
+        evidence_path = str(evidence_step.get("with", {}).get("path", ""))
+        if "BLOCKED_CONFIGURATION" not in config_script or "p0-audit-report.json" not in config_script:
+            errors.append("P0 audit workflow: write a redacted BLOCKED_CONFIGURATION report before exiting on missing secrets")
+        if evidence_step.get("if") != "always()" or evidence_path != "p0-audit-report.json":
+            errors.append("P0 audit workflow: retain the diagnostic report with an always() artifact step")
+
     migration_env = Path("migrations/env.py").read_text(encoding="utf-8")
     db_config = Path("app/db.py").read_text(encoding="utf-8")
     if "migration_database_url()" not in migration_env:
