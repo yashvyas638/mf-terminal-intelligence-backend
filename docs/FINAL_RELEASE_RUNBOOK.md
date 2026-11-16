@@ -37,7 +37,7 @@ The migrations are forward-only for financial evidence: downgrades deliberately 
 - [ ] Confirm the deployed candidate includes the startup guard that queries `current_user` and rejects `anon`/`authenticated`; this guard is a fail-closed defence, not a substitute for private Render role inspection.
 - [ ] Confirm Render uses a direct server-side PostgreSQL connection as a trusted backend role, not `anon`, `authenticated`, or an untrusted Data API path.
 - [ ] Verify all objects requiring least privilege are owned/created by the expected migration role. Migration 0004 default privileges cover future objects created by `postgres`; other object-creating roles need a separate grant audit.
-- [ ] Confirm RLS and API grants intentionally match the single-operator architecture. Do not enable multi-user exposure: portfolio ownership/JWT/RLS is not implemented.
+- [ ] Confirm the candidate's Supabase bearer-token authentication and owner-scoped API checks match the live grants/RLS design. Do not assume candidate migrations or simulated tenancy tests have been applied or verified in production; prove the Render role, schema revision and two-account isolation first.
 - [ ] Confirm Render blueprint settings and cost tier before any sync/deploy. Candidate blueprint is configured for the existing service name and Free plan; verify live service configuration rather than assuming it synced.
 
 ## Secret rotation
@@ -55,7 +55,7 @@ Only after all pre-deployment checks and explicit release approval:
 2. Deploy the exact candidate SHA.
 3. Confirm Render's start command runs `alembic upgrade head` before Uvicorn.
 4. Inspect deploy logs for migration success; redact secrets from any evidence.
-5. Query the database privately and verify `alembic_version.version_num = '0007_append_only_audit'`.
+5. Query the database privately and verify `alembic_version.version_num` matches the exact approved candidate migration head; never hard-code a historical revision when the candidate chain has advanced.
 6. Verify `anon` and `authenticated` have no unintended table/sequence/function access, including inherited PUBLIC grants.
 7. Verify append-only triggers exist on `portfolio_transaction_audit`, `nav_observation_revisions` and `portfolio_import_batches`; verify portfolio transaction fact columns cannot be updated/deleted and a one-time audited void is allowed.
 8. Confirm no portfolio, scheme, snapshot, NAV or correction-history row counts unexpectedly changed.
