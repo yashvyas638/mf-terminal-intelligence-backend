@@ -119,7 +119,7 @@ The refresh pipeline streams the official AMFI file with a 30 MB hard cap, bound
 
 Persistence uses batched scheme and NAV lookups rather than one database round-trip per feed row. The validated snapshot, scheme-master changes, NAV observations and correction history are committed in one transaction. Exact replays remain idempotent; corrections retain their prior-value provenance.
 
-The scheduled refresh runs at 22:45 IST Monday–Saturday to avoid racing AMFI's evening publication, which can include later liquid/overnight NAV updates. Manual refresh remains available. AMFI's official NAVAll.txt remains the sole ingestion authority; third-party mirrors are not silently substituted into the canonical dataset.
+The candidate NAV-refresh workflow is scheduled for 22:45 IST Monday–Saturday to avoid racing AMFI's evening publication. It is not active in production while it exists only on `audit/production-foundation`: GitHub scheduled workflows run from the default branch, and the current `main` branch has no NAV-refresh workflow or Render Cron service. Activate it only through an approved release or a separately approved production scheduler. Manual refresh remains available when the operator key is configured. AMFI's official NAVAll.txt remains the sole ingestion authority; third-party mirrors are not silently substituted into the canonical dataset.
 
 ## NAV correction history
 
