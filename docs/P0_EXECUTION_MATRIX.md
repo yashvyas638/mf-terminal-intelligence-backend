@@ -31,9 +31,9 @@ This baseline is historical evidence, not a claim that the values remain current
 ## Branch integration status
 
 - Existing PR [#1](https://github.com/yashvyas638/mf-terminal-intelligence-backend/pull/1) targets `main` from `audit/production-foundation`.
-- GitHub compare reports the branch as diverged: **566 commits ahead, 51 behind**, with 144 changed files (132 added, 12 modified). The diff includes the application, migrations, UI, CI/operations workflows and product documentation—not just the P0 hardening changes.
+- GitHub compare reports the branch as diverged: **604 commits ahead, 53 behind**, with 145 changed files (133 added, 12 modified). The diff includes the application, migrations, UI, CI/operations workflows and product documentation—not just the P0 hardening changes.
 - GitHub currently reports the PR as `mergeable=false` / `mergeable_state=dirty`. No merge, rebase, force-push or branch reset has been attempted.
-- P0 closure requires a reviewed integration plan: reconcile the 51 commits on `main`, review the full 144-file diff, identify conflicts, and confirm the intended application release before merge.
+- P0 closure requires a reviewed integration plan: reconcile the 53 commits on `main`, review the full 145-file diff, identify conflicts, and confirm the intended application release before merge.
 - Candidate-side content reconciliation is now complete for the four P0 overlap files: the audit script combines goal/portfolio ownership checks with effective default-ACL and backfill checks; the backup workflow preserves the encrypted archive, verifies downloaded R2 size/SHA-256 and cleans up with `always()`; the P0 workflow retains redacted blocked-configuration evidence; and the runbook includes the latest verified project state and closure evidence. This does **not** resolve Git history conflicts; GitHub still reports the PR as not mergeable.
 
 ## External configuration blockers
@@ -49,7 +49,7 @@ Latest GitHub Actions secret preflight reported these names missing (values were
 
 Latest P0 audit run evidence: [GitHub Actions run #43827121017](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43827121017) passed Python audit syntax validation, failed configuration preflight on the missing `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY`, and skipped database execution. Its redacted diagnostic artifact is `14207405856` (358 bytes; SHA-256 `6eadfb410c007d86fc6eed648ffbf391fb687aab91bfbc3b4dbb482e122cbadd`; expires 2026-12-16).
 
-Default-branch backup workflow defect: `main` references shell variable `$STAMP` in the R2 download-verification filename even though that variable is scoped to the previous step. With `set -u`, the workflow will fail at that point. The candidate workflow now uses `${{ steps.backup.outputs.stamp }}`, preserves the encrypted archive until upload, downloads the R2 object and verifies size plus SHA-256, then cleans up in an `if: always()` step. This fix is not active on `main` until reviewed integration.
+Default-branch backup workflow defect: fixed on `main` in commit `8a32616511c88a109e41ae4c782bb25e2b2bb82b`. The R2 step now imports `STAMP` from `steps.backup.outputs.stamp`, downloads the uploaded object and verifies size plus SHA-256 for daily and monthly copies. The push-triggered run stopped at configuration preflight because required secrets are absent; no database export or production connection was attempted. The candidate validator now rejects a cross-step `$STAMP` reference unless it is explicitly imported from the prior step output.
 
 The backup workflow cannot produce/verify an offsite encrypted backup until the backup secrets are configured. The P0 audit cannot complete its authenticated API/database checks until its required secrets are configured. Render environment values and the live service's selected branch/plan remain unverified.
 
