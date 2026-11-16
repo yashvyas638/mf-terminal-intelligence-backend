@@ -231,3 +231,15 @@ def test_backfill_audit_fails_for_failed_or_stale_running_checkpoints() -> None:
     assert evidence["failed_checkpoints"] == 2
     assert evidence["stale_running_checkpoints"] == 1
     assert len(failures) == 2
+
+def test_render_build_commit_requires_a_valid_sha():
+    evidence, failures = audit.evaluate_render_build_commit("A" * 40)
+    assert evidence == {"build_commit": "a" * 40, "verified": True}
+    assert failures == []
+
+
+def test_render_build_commit_rejects_missing_or_malformed_values():
+    for value in (None, "", "not-a-sha-secret", "g" * 40, "a" * 6, "a" * 41):
+        evidence, failures = audit.evaluate_render_build_commit(value)
+        assert evidence == {"build_commit": None, "verified": False}
+        assert failures == ["Render health endpoint does not expose a valid deployment commit SHA."]
