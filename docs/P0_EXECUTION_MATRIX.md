@@ -34,6 +34,7 @@ This baseline is historical evidence, not a claim that the values remain current
 - GitHub compare reports the branch as diverged: **566 commits ahead, 51 behind**, with 144 changed files (132 added, 12 modified). The diff includes the application, migrations, UI, CI/operations workflows and product documentation—not just the P0 hardening changes.
 - GitHub currently reports the PR as `mergeable=false` / `mergeable_state=dirty`. No merge, rebase, force-push or branch reset has been attempted.
 - P0 closure requires a reviewed integration plan: reconcile the 51 commits on `main`, review the full 144-file diff, identify conflicts, and confirm the intended application release before merge.
+- Candidate-side content reconciliation is now complete for the four P0 overlap files: the audit script combines goal/portfolio ownership checks with effective default-ACL and backfill checks; the backup workflow preserves the encrypted archive, verifies downloaded R2 size/SHA-256 and cleans up with `always()`; the P0 workflow retains redacted blocked-configuration evidence; and the runbook includes the latest verified project state and closure evidence. This does **not** resolve Git history conflicts; GitHub still reports the PR as not mergeable.
 
 ## External configuration blockers
 
