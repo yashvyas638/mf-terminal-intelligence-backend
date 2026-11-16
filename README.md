@@ -155,7 +155,7 @@ The product is developed in seven gated phases. Read these documents before chan
 
 ## P0 security remediation
 
-Live Supabase access findings and the containment migration are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md). Migration 0004 passed isolated PostgreSQL CI after its revision identifier was shortened. Migrations 0004–0007 have not been applied to production Supabase; the Render database role and deployment state must be verified before the final release.
+Historical Supabase access findings, current candidate controls and remaining live-verification requirements are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md) and the [P0 Execution and Evidence Matrix](docs/P0_EXECUTION_MATRIX.md). The production database was last observed at revision `0007_append_only_audit`; the candidate branch contains later migrations. Reconcile the complete candidate migration chain with live schema and verify the Render database role, backup/restore and exact deployed SHA before any approved release.
 
 
 ## NAV ingestion diagnostics
