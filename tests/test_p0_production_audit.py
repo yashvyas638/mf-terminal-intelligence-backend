@@ -187,3 +187,24 @@ def test_tenancy_integrity_blocks_single_account_readiness() -> None:
     )
     assert evidence["two_account_test_ready"] is False
     assert any("two real confirmed accounts" in item for item in failures)
+
+
+
+def test_public_default_privileges_pass_when_client_roles_are_not_granted() -> None:
+    report, failures = audit.evaluate_public_default_privileges([])
+    assert report["safe"] is True
+    assert report["findings"] == []
+    assert failures == []
+
+
+def test_public_default_privileges_reject_client_and_public_grants() -> None:
+    report, failures = audit.evaluate_public_default_privileges([
+        ("supabase_admin", "r", "anon", "SELECT"),
+        ("supabase_admin", "S", "authenticated", "USAGE"),
+        ("supabase_admin", "f", "PUBLIC", "EXECUTE"),
+    ])
+    assert report["safe"] is False
+    assert len(failures) == 3
+    assert any("anon" in failure for failure in failures)
+    assert any("authenticated" in failure for failure in failures)
+    assert any("PUBLIC" in failure for failure in failures)
