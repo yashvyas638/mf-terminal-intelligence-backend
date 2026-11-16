@@ -3,12 +3,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { webcrypto } = require("node:crypto");
-globalThis.crypto = webcrypto;
-
 const { screenPasswordAgainstBreachCorpus } = require("../app/static/password-screening.js");
 
+function screen(password, options = {}) {
+  return screen(password, { crypto: webcrypto, ...options });
+}
+
 async function sha1(value) {
-  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(value));
+  const digest = await webcrypto.subtle.digest("SHA-1", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
@@ -20,7 +22,7 @@ test("clean password uses k-anonymity prefix request and validates the complete 
   const password = "a-new-unique-password-that-is-not-in-the-test-range";
   const hash = await sha1(password);
   let request;
-  const result = await screenPasswordAgainstBreachCorpus(password, {
+  const result = await screen(password, {
     fetch: async (url, options) => {
       request = { url, options };
       return response("00000000000000000000000000000000000:0\r\nFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:0\r\n");
@@ -41,7 +43,7 @@ test("known breached password is rejected", async () => {
   const password = "password";
   const hash = await sha1(password);
   await assert.rejects(
-    screenPasswordAgainstBreachCorpus(password, {
+    screen(password, {
       fetch: async () => response(hash.slice(5) + ":42\n")
     }),
     /appears in known data breaches/
@@ -50,7 +52,7 @@ test("known breached password is rejected", async () => {
 
 test("malformed successful response fails closed", async () => {
   await assert.rejects(
-    screenPasswordAgainstBreachCorpus("another-password", {
+    screen("another-password", {
       fetch: async () => response("<html>temporary edge page</html>")
     }),
     /could not be verified/
@@ -59,7 +61,7 @@ test("malformed successful response fails closed", async () => {
 
 test("empty successful response fails closed", async () => {
   await assert.rejects(
-    screenPasswordAgainstBreachCorpus("another-password", {
+    screen("another-password", {
       fetch: async () => response("")
     }),
     /response was invalid/
@@ -68,7 +70,7 @@ test("empty successful response fails closed", async () => {
 
 test("HTTP failure fails closed", async () => {
   await assert.rejects(
-    screenPasswordAgainstBreachCorpus("another-password", {
+    screen("another-password", {
       fetch: async () => response("", false)
     }),
     /temporarily unavailable/
@@ -77,7 +79,7 @@ test("HTTP failure fails closed", async () => {
 
 test("network failure fails closed", async () => {
   await assert.rejects(
-    screenPasswordAgainstBreachCorpus("another-password", {
+    screen("another-password", {
       fetch: async () => { throw new TypeError("network down"); }
     }),
     /could not be reached/
@@ -86,7 +88,7 @@ test("network failure fails closed", async () => {
 
 test("timeout aborts the range request and fails closed", async () => {
   await assert.rejects(
-    screenPasswordAgainstBreachCorpus("another-password", {
+    screen("another-password", {
       timeoutMs: 5,
       fetch: async (_url, options) => new Promise((resolve, reject) => {
         options.signal.addEventListener("abort", () => {
