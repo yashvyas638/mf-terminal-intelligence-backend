@@ -46,7 +46,7 @@ jobs:
           [[ -n "$AWS_ACCESS_KEY_ID" ]] || missing+=("BACKUP_S3_ACCESS_KEY_ID")
           [[ -n "$AWS_SECRET_ACCESS_KEY" ]] || missing+=("BACKUP_S3_SECRET_ACCESS_KEY")
           if (( ${#missing[@]} )); then
-            printf '::error::Missing required GitHub Actions secrets: %s\\n' "${missing[*]}"
+            printf '::error::Missing required GitHub Actions secrets: %s\n' "${missing[*]}"
             exit 1
           fi
           [[ "$SUPABASE_DB_URL" == postgres://* || "$SUPABASE_DB_URL" == postgresql://* ]] || {
@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           printf 'backup-recipient-preflight' | age --encrypt --recipient "$BACKUP_AGE_RECIPIENT" >/dev/null
-          aws s3api head-bucket --bucket "$BACKUP_S3_BUCKET" \\
+          aws s3api head-bucket --bucket "$BACKUP_S3_BUCKET" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto
 
       - name: Export, checksum and encrypt database
@@ -93,9 +93,9 @@ jobs:
           supabase --version
           supabase db dump --remote="$SUPABASE_DB_URL" --role-only --file "$WORK/roles.sql"
           supabase db dump --remote="$SUPABASE_DB_URL" --file "$WORK/schema.sql"
-          supabase db dump --remote="$SUPABASE_DB_URL" --data-only --use-copy \\
-            --exclude "storage.buckets_vectors" \\
-            --exclude "storage.vector_indexes" \\
+          supabase db dump --remote="$SUPABASE_DB_URL" --data-only --use-copy \
+            --exclude "storage.buckets_vectors" \
+            --exclude "storage.vector_indexes" \
             --file "$WORK/data.sql"
           test -s "$WORK/roles.sql"
           test -s "$WORK/schema.sql"
@@ -141,17 +141,17 @@ jobs:
           LOCAL_ARCHIVE="${{ steps.backup.outputs.archive }}"
           STAMP="${{ steps.backup.outputs.stamp }}"
           DAILY_KEY="mf-terminal-intelligence/daily/$STAMP.tar.gz.age"
-          aws s3 cp "$LOCAL_ARCHIVE" "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" \\
+          aws s3 cp "$LOCAL_ARCHIVE" "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
           LOCAL_SIZE="$(stat -c%s "$LOCAL_ARCHIVE")"
-          REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$DAILY_KEY" \\
+          REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$DAILY_KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --query ContentLength --output text)"
           [[ "$LOCAL_SIZE" == "$REMOTE_SIZE" ]] || { echo "::error::Daily R2 backup size verification failed."; exit 1; }
 
           REMOTE_COPY="$RUNNER_TEMP/r2-verified-$STAMP.tar.gz.age"
           REMOTE_COPY_MONTHLY=""
           trap 'rm -f "$REMOTE_COPY" "$REMOTE_COPY_MONTHLY"' EXIT
-          aws s3 cp "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" "$REMOTE_COPY" \\
+          aws s3 cp "s3://$BACKUP_S3_BUCKET/$DAILY_KEY" "$REMOTE_COPY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
           LOCAL_SHA256="$(sha256sum "$LOCAL_ARCHIVE" | awk '{print $1}')"
           REMOTE_SHA256="$(sha256sum "$REMOTE_COPY" | awk '{print $1}')"
@@ -159,13 +159,13 @@ jobs:
 
           if [[ "$(date -u +%d)" == "01" ]]; then
             MONTHLY_KEY="mf-terminal-intelligence/monthly/$(date -u +%Y-%m).tar.gz.age"
-            aws s3 cp "$LOCAL_ARCHIVE" "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" \\
+            aws s3 cp "$LOCAL_ARCHIVE" "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" \
               --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
-            MONTHLY_REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$MONTHLY_KEY" \\
+            MONTHLY_REMOTE_SIZE="$(aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$MONTHLY_KEY" \
               --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --query ContentLength --output text)"
             [[ "$LOCAL_SIZE" == "$MONTHLY_REMOTE_SIZE" ]] || { echo "::error::Monthly R2 backup size verification failed."; exit 1; }
             REMOTE_COPY_MONTHLY="$RUNNER_TEMP/r2-verified-monthly-$STAMP.tar.gz.age"
-            aws s3 cp "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" "$REMOTE_COPY_MONTHLY" \\
+            aws s3 cp "s3://$BACKUP_S3_BUCKET/$MONTHLY_KEY" "$REMOTE_COPY_MONTHLY" \
               --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
             MONTHLY_REMOTE_SHA256="$(sha256sum "$REMOTE_COPY_MONTHLY" | awk '{print $1}')"
             [[ "$LOCAL_SHA256" == "$MONTHLY_REMOTE_SHA256" ]] || { echo "::error::Monthly R2 backup SHA-256 verification failed."; exit 1; }
