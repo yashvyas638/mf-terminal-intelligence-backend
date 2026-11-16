@@ -103,7 +103,7 @@ Workflow: `.github/workflows/p0-production-readiness.yml`
 
 The read-only audit checks:
 
-- Render `/health` and authenticated `/v1/nav/status`.
+- Render `/health` (including the validated `build_commit` fingerprint) and authenticated `/v1/nav/status`.
 - Supabase Alembic revision and production connection.
 - RLS and restrictive deny policies on the five backend-only tables.
 - No direct anon/authenticated table privileges and retained `service_role` read access.
