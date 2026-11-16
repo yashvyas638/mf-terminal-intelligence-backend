@@ -50,7 +50,7 @@ The production database was read-only verified at Alembic revision `0028_restric
 
 The migrations are forward-only where they protect financial evidence or security posture. Downgrades must not remove audit/provenance or restore broad client privileges. Rollback is normally an application-code redeploy plus a reviewed forward-fix, not an Alembic downgrade.
 
-Before release, re-read the migration tree and confirm the candidate head is `0029_admin_default_acl` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires a migration connection authorised to alter default privileges for every role able to CREATE in `public`. The latest Supabase SQL inspection ran as `postgres`, which is not a member of `supabase_admin`; do not assume that connection can apply 0029. The migration preflights this and aborts before changes if authority is insufficient. Use an approved privileged migration process if Render's actual database role lacks the required membership.
+Before release, re-read the migration tree and confirm the candidate head is `0029_admin_default_acl` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires `MIGRATION_DATABASE_URL` authorised to alter default privileges for every role able to CREATE in `public`. The API runtime uses only `DATABASE_URL`; do not reuse the privileged migration URL for normal application queries. The latest Supabase SQL inspection ran as `postgres`, which is not a member of `supabase_admin`; do not assume that connection can apply 0029. The migration preflights this and aborts before changes if authority is insufficient. Use an approved privileged migration process if Render's actual database role lacks the required membership.
 
 ## Pre-deployment checks
 
@@ -61,7 +61,8 @@ Before release, re-read the migration tree and confirm the candidate head is `00
 - [ ] Verify the backup restore in an isolated non-production project.
 - [ ] In a private Render environment inspection, identify the actual PostgreSQL role used by the backend. Do not disclose the connection string.
 - [ ] Confirm the deployed candidate includes the startup guard that queries `current_user` and rejects `anon`/`authenticated`; this guard is a fail-closed defence, not a substitute for private Render role inspection.
-- [ ] Confirm Render uses a direct server-side PostgreSQL connection as a trusted backend role, not `anon`, `authenticated`, or an untrusted Data API path.
+- [ ] Confirm Render runtime `DATABASE_URL` uses a least-privilege trusted backend role, not `anon`, `authenticated`, or an untrusted Data API path.
+- [ ] Configure a separate privileged `MIGRATION_DATABASE_URL` for Alembic only. It must be authorised to alter defaults for every public-schema creator; the API runtime must not inherit this migration credential.
 - [ ] Verify all public-schema object creators and their effective global plus schema-specific defaults. Candidate migration `0029_admin_default_acl` removes global and `public`-schema PUBLIC/client defaults for tables, sequences and functions for every role able to CREATE in `public`; the migration connection must be authorised for each creator role.
 - [ ] Confirm the candidate's Supabase bearer-token authentication and owner-scoped API checks match the live grants/RLS design. Do not assume candidate migrations or simulated tenancy tests have been applied or verified in production; prove the Render role, schema revision and two-account isolation first.
 - [ ] Reconcile the Render blueprint before any sync/deploy. `main/render.yaml` declares `mf-terminal-nav-api` on Starter with Uvicorn-only startup; candidate `render.yaml` declares `mf-terminal-intelligence-backend` on Free and runs `alembic upgrade head` before Uvicorn. The actual Render service, plan, deployed branch and start command are not verified. Do not sync until the intended service identity, plan, environment and migration role are confirmed; avoid accidental service creation, rename or plan downgrade.
@@ -72,6 +73,8 @@ Before release, re-read the migration tree and confirm the candidate head is `00
 ## Secret rotation
 
 Rotate the API key that was previously exposed. Generate a new random value of at least 32 characters in a password manager. Update privately:
+- Render runtime environment variable `DATABASE_URL` (least-privilege app role)
+- Render migration-only secret `MIGRATION_DATABASE_URL` (privileged Alembic role)
 - Render environment variable `API_KEY`
 - GitHub Actions secret `MF_TERMINAL_API_KEY`
 
