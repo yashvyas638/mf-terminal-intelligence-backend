@@ -136,10 +136,12 @@ def test_tenancy_integrity_passes_only_with_two_confirmed_owners() -> None:
         portfolio_owners=2,
         portfolios_without_confirmed_owner=0,
         portfolio_goals=2,
+        goals_with_confirmed_owner=2,
         goals_without_confirmed_owner=0,
         goals_with_cross_owner_portfolio_link=0,
     )
     assert evidence["two_account_test_ready"] is True
+    assert evidence["goals_with_confirmed_auth_owner"] == 2
     assert failures == []
 
 
@@ -150,6 +152,7 @@ def test_tenancy_integrity_rejects_cross_owner_goal_link() -> None:
         portfolio_owners=2,
         portfolios_without_confirmed_owner=0,
         portfolio_goals=1,
+        goals_with_confirmed_owner=1,
         goals_without_confirmed_owner=0,
         goals_with_cross_owner_portfolio_link=1,
     )
@@ -163,6 +166,7 @@ def test_tenancy_integrity_rejects_unconfirmed_owners_and_goals() -> None:
         portfolio_owners=2,
         portfolios_without_confirmed_owner=1,
         portfolio_goals=1,
+        goals_with_confirmed_owner=0,
         goals_without_confirmed_owner=1,
         goals_with_cross_owner_portfolio_link=0,
     )
@@ -177,6 +181,7 @@ def test_tenancy_integrity_blocks_single_account_readiness() -> None:
         portfolio_owners=1,
         portfolios_without_confirmed_owner=0,
         portfolio_goals=0,
+        goals_with_confirmed_owner=0,
         goals_without_confirmed_owner=0,
         goals_with_cross_owner_portfolio_link=0,
     )
