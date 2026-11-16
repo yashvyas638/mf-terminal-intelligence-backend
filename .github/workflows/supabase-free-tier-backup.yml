@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 45
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_YES: "1"
       BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
       BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
       BACKUP_S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
@@ -57,8 +58,9 @@ jobs:
           set -euo pipefail
           WORK="$RUNNER_TEMP/mf-terminal-backup"
           mkdir -p "$WORK"
-          trap 'rm -rf "$WORK"' EXIT
           STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          ARCHIVE="$RUNNER_TEMP/mf-terminal-intelligence-$STAMP.tar.gz"
+          trap 'rm -rf "$WORK"; rm -f "$ARCHIVE" "$ARCHIVE.age"' EXIT
           supabase --version
           supabase db dump --remote="$SUPABASE_DB_URL" --role-only --file "$WORK/roles.sql"
           supabase db dump --remote="$SUPABASE_DB_URL" --file "$WORK/schema.sql"
@@ -66,9 +68,14 @@ jobs:
             --exclude "storage.buckets_vectors" \
             --exclude "storage.vector_indexes" \
             --file "$WORK/data.sql"
+          test -s "$WORK/roles.sql"
+          test -s "$WORK/schema.sql"
+          test -s "$WORK/data.sql"
+          grep -Eq 'CREATE TABLE|CREATE SCHEMA|CREATE TYPE|CREATE FUNCTION' "$WORK/schema.sql"
           (
             cd "$WORK"
             sha256sum roles.sql schema.sql data.sql > SHA256SUMS
+            sha256sum --check SHA256SUMS
           )
           cat > "$WORK/manifest.txt" <<EOF
           backup_created_utc=$STAMP
@@ -79,9 +86,11 @@ jobs:
           exclusions=Supabase-managed auth/storage/extension schemas; storage object bytes
           restore_policy=restore to an isolated target first; never overwrite production as a test
           EOF
-          ARCHIVE="$RUNNER_TEMP/mf-terminal-intelligence-$STAMP.tar.gz"
           tar -czf "$ARCHIVE" -C "$WORK" roles.sql schema.sql data.sql SHA256SUMS manifest.txt
+          tar -tzf "$ARCHIVE" >/dev/null
           age --encrypt --recipient "$BACKUP_AGE_RECIPIENT" --output "$ARCHIVE.age" "$ARCHIVE"
+          test -s "$ARCHIVE.age"
+          head -n 1 "$ARCHIVE.age" | grep -qx 'age-encryption.org/v1'
           rm -f "$ARCHIVE"
           echo "archive=$ARCHIVE.age" >> "$GITHUB_OUTPUT"
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
@@ -104,7 +113,10 @@ jobs:
           KEY="mf-terminal-intelligence/database/${{ steps.backup.outputs.stamp }}.tar.gz.age"
           aws s3 cp "${{ steps.backup.outputs.archive }}" "s3://$BACKUP_S3_BUCKET/$KEY" \
             --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto --no-progress
-          echo "Encrypted off-site copy uploaded: s3://$BACKUP_S3_BUCKET/$KEY"
+          aws s3api head-object --bucket "$BACKUP_S3_BUCKET" --key "$KEY" \
+            --endpoint-url "$BACKUP_S3_ENDPOINT" --region auto \
+            --query '{ContentLength:ContentLength,LastModified:LastModified}' --output json
+          echo "Encrypted off-site copy uploaded and verified: s3://$BACKUP_S3_BUCKET/$KEY"
 
       - name: Report artifact-only retention boundary
         if: env.BACKUP_S3_BUCKET == ''
