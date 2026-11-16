@@ -123,3 +123,29 @@ def test_portfolio_rls_hides_other_users_rows():
             text("SELECT id FROM public.portfolios ORDER BY id")
         ).scalars().all()
         assert visible == [portfolio_a]
+
+
+
+@pytest.mark.skipif(not engine.dialect.name.startswith("postgresql"), reason="PostgreSQL-specific")
+def test_supabase_admin_default_public_privileges_do_not_expose_future_objects():
+    with engine.connect() as connection:
+        role_exists = connection.execute(text(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin'"
+        )).scalar_one_or_none()
+        if role_exists is None:
+            pytest.skip("supabase_admin fixture is not present")
+
+        grants = connection.execute(text(
+            """
+            SELECT d.defaclobjtype,
+                   CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE grantee.rolname END AS grantee,
+                   acl.privilege_type
+              FROM pg_default_acl d
+              CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+              LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+             WHERE d.defaclrole = 'supabase_admin'::regrole
+               AND d.defaclnamespace = 'public'::regnamespace
+               AND (acl.grantee = 0 OR grantee.rolname IN ('anon', 'authenticated'))
+            """
+        )).all()
+    assert grants == [], f"Unsafe future-object grants remain for supabase_admin: {grants}"
