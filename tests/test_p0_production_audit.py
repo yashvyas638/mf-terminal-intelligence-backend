@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from typing import Any
 
-import scripts.p0_production_audit as audit
+audit_path = Path(__file__).resolve().parents[1] / "scripts" / "p0_production_audit.py"
+audit_spec = spec_from_file_location("p0_production_audit", audit_path)
+assert audit_spec is not None and audit_spec.loader is not None
+audit = module_from_spec(audit_spec)
+audit_spec.loader.exec_module(audit)
 
 
 class FakeCursor:
