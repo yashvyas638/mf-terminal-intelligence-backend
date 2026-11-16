@@ -14,7 +14,7 @@ This runbook is intentionally prepared during development and executed only at t
 
 ## Candidate migration chain
 
-The candidate branch has advanced to Alembic revision `0028_restrictive_private_access` (verified from the migration file tree at candidate SHA `357aeeb82eca834cd8aec8a909cfa4d4a86966ee`). The last production revision observed in the read-only Supabase audit was `0007_append_only_audit`. This is a substantial schema/security gap: do not deploy or apply the later migrations until the entire chain is reviewed against live schema, actual Render database role, backup and isolated restore evidence.
+The production database was read-only verified at Alembic revision `0028_restrictive_private_access` on 2026-11-16 09:51 UTC. The candidate branch now adds `0029_admin_default_acl`, which revokes unsafe `supabase_admin` default grants to `anon` and `authenticated` for future public tables, sequences and functions. Production remains at 0028 until an approved deployment. The current SQL inspection ran as `postgres`; this does not identify Render's actual backend role.
 
 | Order | Revision | Purpose |
 |---:|---|---|
@@ -46,10 +46,11 @@ The candidate branch has advanced to Alembic revision `0028_restrictive_private_
 | 26 | `0026_api_rate_limit_buckets` | Shared database-backed API rate-limit buckets |
 | 27 | `0027_private_access` | Deny direct Supabase client access to private user tables |
 | 28 | `0028_restrictive_private_access` | Make private-table denial policies restrictive |
+| 29 | `0029_admin_default_acl` | Revoke `supabase_admin` default client grants for future public objects |
 
 The migrations are forward-only where they protect financial evidence or security posture. Downgrades must not remove audit/provenance or restore broad client privileges. Rollback is normally an application-code redeploy plus a reviewed forward-fix, not an Alembic downgrade.
 
-Before release, re-read the migration tree and confirm the head has not advanced beyond `0028_restrictive_private_access`; this runbook is a snapshot, not a substitute for inspecting the exact SHA.
+Before release, re-read the migration tree and confirm the candidate head is `0029_admin_default_acl` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires a migration connection authorised to alter default privileges for `supabase_admin`.
 
 ## Pre-deployment checks
 
