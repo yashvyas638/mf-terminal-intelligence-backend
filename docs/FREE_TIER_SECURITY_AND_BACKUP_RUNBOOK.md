@@ -134,7 +134,7 @@ The security advisor reports `auth_leaked_password_protection` as WARN and 11 in
 
 The latest daily-feed snapshot was retrieved at `2026-11-12 02:53 UTC` with maximum NAV date `2026-11-11`. The 1M/1Y/3Y/5Y research snapshots each contain 8,713 schemes but are also as-of 2026-11-11. The hybrid historical backfill has 168 completed daily and 144 completed month-end checkpoints; 780 paused daily checkpoints are deliberately superseded by `StorageOptimizedHybridPlan`, not failed requests. The live AMFI performance/taxonomy audit checked 43 categories, 86 requests and 2,140 rows (2,073 current allowlisted identifiers; 67 legacy/rejected diagnostic-only rows) with zero database writes.
 
-The P0 audit and encrypted-backup workflows exist on default `main`, but the latest Actions secret preflight blocks execution. The default-branch backup workflow also has an undefined `$STAMP` reference in its R2 verification step; the candidate workflow now fixes archive lifecycle and performs remote size/SHA-256 verification. The NAV refresh and AMFI live-source-monitor workflows are only on the candidate branch, not default `main`; therefore no active production NAV scheduler is evidenced. The candidate and default-branch Render blueprints disagree on service name, plan and startup command; the actual Render service, deployed branch, plan and DB role remain unverified.
+The P0 audit and encrypted-backup workflows exist on default `main`, but the latest Actions secret preflight blocks execution. The default-branch backup workflow's cross-step `$STAMP` defect was fixed in commit `8a32616511c88a109e41ae4c782bb25e2b2bb82b`; the R2 step now imports the timestamp from the backup step output and verifies daily/monthly remote size and SHA-256. The push-triggered run stopped at configuration preflight because required secrets are absent; no database export or production connection was attempted. The candidate validator now guards against this regression. The NAV refresh and AMFI live-source-monitor workflows are only on the candidate branch, not default `main`; therefore no active production NAV scheduler is evidenced. The candidate and default-branch Render blueprints disagree on service name, plan and startup command; the actual Render service, deployed branch, plan and DB role remain unverified.
 
 ### Current verified P0 disposition
 
@@ -148,7 +148,7 @@ The P0 audit and encrypted-backup workflows exist on default `main`, but the lat
 | Isolated restore | Not run | No verified encrypted backup exists |
 | NAV freshness/scheduler | Blocked | Latest stored NAV date 2026-11-11; refresh workflow is candidate-only |
 | Render deployment mapping | Not verified | Blueprint identity/plan/startup mismatch; actual service not inspected |
-| Branch integration | Blocked | PR #1 is 566 commits ahead, 51 behind, 144 changed files and currently not mergeable |
+| Branch integration | Blocked | PR #1 is 604 commits ahead, 53 behind, 145 changed files and currently not mergeable |
 
 ## 5. Current limits and next P0 gate
 
