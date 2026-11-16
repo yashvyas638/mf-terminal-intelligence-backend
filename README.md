@@ -127,7 +127,12 @@ The current NAV table stores one effective value per scheme/date. If AMFI republ
 
 ## Authentication and tenancy boundary
 
-Fund comparison is now implemented using the stored NAV time series for 2–10 schemes, returning total return, CAGR, volatility, drawdown and underlying coverage counts. The comparison is NAV-derived only: it does not add benchmark TRI, dividend/distribution adjustment or peer/category ranking.\n\nThe current service uses one shared server-side API key and is suitable only for a single trusted operator/private workspace. It is not yet a multi-tenant public SaaS: portfolio records are not bound to authenticated user identities, and the shared API key is not a substitute for per-user JWT authorization and Supabase RLS. Do not expose it to unrelated users until ownership mapping, authorization checks, and RLS have been implemented and verified. Use a random API key of at least 32 characters.
+- Browser users authenticate with Supabase email/password and send a verified Supabase access token as a bearer token. The API resolves the token through Supabase Auth and scopes portfolio operations to the authenticated user.
+- Portfolio ownership checks cover portfolio reads/writes, transaction history, imports, audit history, valuation, goals and rebalance previews. PostgreSQL RLS and grants are intended as defence in depth; their live production posture must be checked against the current migration chain and actual Render database role before release.
+- The server-side operator API key remains restricted to trusted automation and operator endpoints such as NAV refresh. It is never a browser-user identity and must not be embedded in frontend assets.
+- Simulated two-user tests and SQLite/PostgreSQL CI are necessary but do not prove live cross-account isolation. P0 remains blocked until two real confirmed Supabase accounts, separately owned test portfolios and browser/API negative-access tests demonstrate isolation.
+- Fund comparison currently uses stored AMFI NAV series for 2–10 schemes. Its metrics are NAV-derived; it does not by itself provide benchmark TRI, distribution-adjusted total returns or peer/category ranking.
+- Never expose the service as a public multi-user product until live Auth, database-role, grants/RLS, browser workflows and two-account isolation evidence are recorded. Keep all credentials in secret stores; use a strong operator key and rotate any previously exposed value.
 
 ## Database and source CI
 
@@ -145,7 +150,7 @@ The product is developed in seven gated phases. Read these documents before chan
 - [UX and Design System — terminal experience and interaction standards](docs/UX_AND_DESIGN_SYSTEM.md)
 - [Final Release Runbook — Supabase, Render, smoke tests and rollback](docs/FINAL_RELEASE_RUNBOOK.md)
 
-**Current phase: P0 — OPEN / BLOCKED.** P0 security/authentication foundations are implemented and deployed through Alembic revision `0011_research_security_tuning`; automated SQLite/PostgreSQL CI and simulated two-user isolation tests pass. Remaining P0 exit evidence includes real two-account production login/isolation verification, Auth provider/redirect confirmation, backup restore drill, live AMFI refresh/quality verification, and full production endpoint smoke tests. P1 analytics work must not be represented as complete until its benchmark/peer data dependencies and acceptance tests pass. Never merge to `main` without approval. Never perform destructive production database operations without explicit approval and a verified recovery plan.
+**Current phase: P0 — OPEN / BLOCKED.** Application-level Supabase bearer authentication, ownership checks, database hardening migrations and simulated two-user tests exist on this candidate branch. This is not production sign-off: live Auth/browser flows, real two-account isolation, actual Render database role and deployed SHA, production grants/RLS, encrypted off-site backup plus isolated restore, live AMFI ingestion and full endpoint smoke tests remain evidence gates. Track each gate in [P0 Execution and Evidence Matrix](docs/P0_EXECUTION_MATRIX.md). P1 analytics must not be represented as complete until its benchmark/peer dependencies and acceptance tests pass. Do not merge to `main`, deploy or perform destructive production operations without explicit approval and a verified recovery plan.
 
 
 ## P0 security remediation
