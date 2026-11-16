@@ -221,6 +221,48 @@ def check_public_table_surface(conn) -> tuple[dict[str, dict], list[str]]:
     return report, failures
 
 
+
+def evaluate_tenancy_integrity(
+    *,
+    confirmed_users: int,
+    portfolio_count: int,
+    portfolio_owners: int,
+    portfolios_without_confirmed_owner: int,
+    portfolio_goals: int,
+    goals_without_confirmed_owner: int,
+    goals_with_cross_owner_portfolio_link: int,
+) -> tuple[dict, list[str]]:
+    """Evaluate ownership invariants independently of the live database connection."""
+    evidence = {
+        "confirmed_auth_users": confirmed_users,
+        "portfolios": portfolio_count,
+        "distinct_portfolio_owners": portfolio_owners,
+        "portfolios_without_confirmed_auth_owner": portfolios_without_confirmed_owner,
+        "portfolio_goals": portfolio_goals,
+        "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
+        "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
+        "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
+    }
+    failures: list[str] = []
+    if portfolios_without_confirmed_owner:
+        failures.append(
+            "Portfolio ownership integrity failed: one or more portfolios do not belong to a confirmed Auth account."
+        )
+    if goals_without_confirmed_owner:
+        failures.append(
+            "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
+        )
+    if goals_with_cross_owner_portfolio_link:
+        failures.append(
+            "Portfolio-goal linkage integrity failed: one or more goals are linked to a portfolio owned by a different account."
+        )
+    if confirmed_users < 2 or portfolio_owners < 2:
+        failures.append(
+            "P0 tenancy gate failed: two real confirmed accounts and at least two separately owned portfolios are required before operational readiness can pass."
+        )
+    return evidence, failures
+
+
 def main() -> int:
     database_url = require_env("SUPABASE_DB_URL")
     api_url = require_env("MF_TERMINAL_API_URL").rstrip("/")
@@ -299,33 +341,17 @@ def main() -> int:
                 portfolio_goals, goals_with_confirmed_owner, goals_without_confirmed_owner,
                 goals_with_cross_owner_portfolio_link,
             ) = cur.fetchone()
-            report["checks"]["live_tenancy_evidence"] = {
-                "confirmed_auth_users": confirmed_users,
-                "portfolios": portfolio_count,
-                "distinct_portfolio_owners": portfolio_owners,
-                "portfolios_without_confirmed_auth_owner": portfolios_without_confirmed_owner,
-                "portfolio_goals": portfolio_goals,
-                "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
-                "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
-                "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
-                "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
-            }
-            if portfolios_without_confirmed_owner:
-                report["failures"].append(
-                    "Portfolio ownership integrity failed: one or more portfolios do not belong to a confirmed Auth account."
-                )
-            if goals_without_confirmed_owner:
-                report["failures"].append(
-                    "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
-                )
-            if goals_with_cross_owner_portfolio_link:
-                report["failures"].append(
-                    "Portfolio-goal linkage integrity failed: one or more goals are linked to a portfolio owned by a different account."
-                )
-            if confirmed_users < 2 or portfolio_owners < 2:
-                report["failures"].append(
-                    "P0 tenancy gate failed: two real confirmed accounts and at least two separately owned portfolios are required before operational readiness can pass."
-                )
+            tenancy_evidence, tenancy_failures = evaluate_tenancy_integrity(
+                confirmed_users=confirmed_users,
+                portfolio_count=portfolio_count,
+                portfolio_owners=portfolio_owners,
+                portfolios_without_confirmed_owner=portfolios_without_confirmed_owner,
+                portfolio_goals=portfolio_goals,
+                goals_without_confirmed_owner=goals_without_confirmed_owner,
+                goals_with_cross_owner_portfolio_link=goals_with_cross_owner_portfolio_link,
+            )
+            report["checks"]["live_tenancy_evidence"] = tenancy_evidence
+            report["failures"].extend(tenancy_failures)
 
         private_results = {}
         for table in PRIVATE_TABLES:
