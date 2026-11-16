@@ -156,7 +156,7 @@ The product is developed in seven gated phases. Read these documents before chan
 
 ## P0 security remediation
 
-Historical Supabase access findings, current candidate controls and remaining live-verification requirements are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md) and the [P0 Execution and Evidence Matrix](docs/P0_EXECUTION_MATRIX.md). The production database was last observed at revision `0007_append_only_audit`; the candidate branch contains later migrations. Reconcile the complete candidate migration chain with live schema and verify the Render database role, backup/restore and exact deployed SHA before any approved release.
+Historical Supabase access findings, current candidate controls and remaining live-verification requirements are tracked in [P0 Security Remediation](docs/P0_SECURITY_REMEDIATION.md) and the [P0 Execution and Evidence Matrix](docs/P0_EXECUTION_MATRIX.md). The production database was last observed at revision `0028_restrictive_private_access`; the candidate branch adds `0029_admin_default_acl` and separate migration-credential handling. Reconcile the complete candidate migration chain with the live schema and verify the privileged migration role, runtime database role, backup/restore and exact deployed SHA before any approved release.
 
 
 ## NAV ingestion diagnostics
