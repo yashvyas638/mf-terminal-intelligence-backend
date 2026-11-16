@@ -126,3 +126,59 @@ def test_public_table_surface_rejects_missing_allowlisted_relation(monkeypatch) 
     install_mocks(monkeypatch, names)
     _report, failures = audit.check_public_table_surface(FakeConnection(names))
     assert any("Expected client-readable tables are missing" in item for item in failures)
+
+
+
+def test_tenancy_integrity_passes_only_with_two_confirmed_owners() -> None:
+    evidence, failures = audit.evaluate_tenancy_integrity(
+        confirmed_users=2,
+        portfolio_count=2,
+        portfolio_owners=2,
+        portfolios_without_confirmed_owner=0,
+        portfolio_goals=2,
+        goals_without_confirmed_owner=0,
+        goals_with_cross_owner_portfolio_link=0,
+    )
+    assert evidence["two_account_test_ready"] is True
+    assert failures == []
+
+
+def test_tenancy_integrity_rejects_cross_owner_goal_link() -> None:
+    _evidence, failures = audit.evaluate_tenancy_integrity(
+        confirmed_users=2,
+        portfolio_count=2,
+        portfolio_owners=2,
+        portfolios_without_confirmed_owner=0,
+        portfolio_goals=1,
+        goals_without_confirmed_owner=0,
+        goals_with_cross_owner_portfolio_link=1,
+    )
+    assert any("linked to a portfolio owned by a different account" in item for item in failures)
+
+
+def test_tenancy_integrity_rejects_unconfirmed_owners_and_goals() -> None:
+    _evidence, failures = audit.evaluate_tenancy_integrity(
+        confirmed_users=2,
+        portfolio_count=2,
+        portfolio_owners=2,
+        portfolios_without_confirmed_owner=1,
+        portfolio_goals=1,
+        goals_without_confirmed_owner=1,
+        goals_with_cross_owner_portfolio_link=0,
+    )
+    assert any("Portfolio ownership integrity failed" in item for item in failures)
+    assert any("Portfolio-goal ownership integrity failed" in item for item in failures)
+
+
+def test_tenancy_integrity_blocks_single_account_readiness() -> None:
+    evidence, failures = audit.evaluate_tenancy_integrity(
+        confirmed_users=1,
+        portfolio_count=1,
+        portfolio_owners=1,
+        portfolios_without_confirmed_owner=0,
+        portfolio_goals=0,
+        goals_without_confirmed_owner=0,
+        goals_with_cross_owner_portfolio_link=0,
+    )
+    assert evidence["two_account_test_ready"] is False
+    assert any("two real confirmed accounts" in item for item in failures)
