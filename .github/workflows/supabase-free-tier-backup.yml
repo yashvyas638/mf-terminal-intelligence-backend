@@ -46,7 +46,7 @@ jobs:
           [[ -n "$AWS_ACCESS_KEY_ID" ]] || missing+=("BACKUP_S3_ACCESS_KEY_ID")
           [[ -n "$AWS_SECRET_ACCESS_KEY" ]] || missing+=("BACKUP_S3_SECRET_ACCESS_KEY")
           if (( ${#missing[@]} )); then
-            printf '::error::Missing required GitHub Actions secrets: %s\\n' "${missing[*]}"
+            printf '::error::Missing required GitHub Actions secrets: %s\n' "${missing[*]}"
             exit 1
           fi
           [[ "$SUPABASE_DB_URL" == postgres://* || "$SUPABASE_DB_URL" == postgresql://* ]] || {
