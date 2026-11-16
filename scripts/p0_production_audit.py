@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -230,4 +229,4 @@ if __name__ == "__main__":
             "message": str(exc),
             "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         }, indent=2), flush=True)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
