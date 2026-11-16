@@ -62,9 +62,12 @@ Before release, re-read the migration tree and confirm the candidate head is `00
 - [ ] In a private Render environment inspection, identify the actual PostgreSQL role used by the backend. Do not disclose the connection string.
 - [ ] Confirm the deployed candidate includes the startup guard that queries `current_user` and rejects `anon`/`authenticated`; this guard is a fail-closed defence, not a substitute for private Render role inspection.
 - [ ] Confirm Render uses a direct server-side PostgreSQL connection as a trusted backend role, not `anon`, `authenticated`, or an untrusted Data API path.
-- [ ] Verify all objects requiring least privilege are owned/created by the expected migration role. Migration 0004 default privileges cover future objects created by `postgres`; other object-creating roles need a separate grant audit.
+- [ ] Verify all public-schema object creators and their effective global plus schema-specific defaults. Candidate migration `0029_admin_default_acl` removes client defaults and global PUBLIC function execution for every role able to CREATE in `public`; the migration connection must be authorised for each creator role.
 - [ ] Confirm the candidate's Supabase bearer-token authentication and owner-scoped API checks match the live grants/RLS design. Do not assume candidate migrations or simulated tenancy tests have been applied or verified in production; prove the Render role, schema revision and two-account isolation first.
-- [ ] Confirm Render blueprint settings and cost tier before any sync/deploy. Candidate blueprint is configured for the existing service name and Free plan; verify live service configuration rather than assuming it synced.
+- [ ] Confirm Render blueprint settings and cost tier before any sync/deploy. The repository blueprint defines one web service on the `starter` plan and no Cron service; verify live service configuration rather than assuming it synced.
+
+- [ ] Confirm a NAV refresh scheduler is active on default `main` or as an approved Render Cron service. The candidate `nav-refresh.yml` and `amfi-live-source-check.yml` files are not active while they exist only on `audit/production-foundation`.
+- [ ] Confirm scheduler secrets, endpoint URL, cadence, last successful run and alerting. NAV retrieval freshness must be under 36 hours and effective NAV age within the configured maximum.
 
 ## Secret rotation
 
@@ -93,7 +96,8 @@ Run with the rotated API key in a private terminal or authorised test client; do
 - [ ] `GET /health` returns `status=ok` and `database=reachable`.
 - [ ] `GET /v1/nav/status` returns the latest persisted snapshot and freshness.
 - [ ] `GET /v1/nav/schemes` returns a paginated scheme list.
-- [ ] Run the official AMFI live-source validation workflow.
+- [ ] Run the official AMFI live-source validation workflow from the activated production workflow.
+- [ ] Verify the daily refresh workflow is enabled on the default branch or an approved Render Cron service and observe one successful scheduled run.
 - [ ] Trigger one authenticated `POST /v1/nav/refresh`; verify record count, payload hash, NAV effective-date age, quality report and persisted snapshot.
 - [ ] Replay the same source; verify no duplicate scheme/date NAV rows and no false correction events.
 - [ ] Verify a corrected NAV creates a revision preserving previous/replacement values and source snapshot IDs.
