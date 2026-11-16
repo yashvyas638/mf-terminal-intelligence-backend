@@ -14,7 +14,7 @@ The old statements in this document that the service has no authenticated user i
 
 An earlier read-only review reported RLS disabled on the then-inspected public tables. Effective privilege checks at that checkpoint did not confirm direct `anon` or `authenticated` table access; SQL Editor's `current_user = postgres` did not establish the Render service's database role. That report is retained as historical context, not as a current live-state assertion.
 
-The observed production Alembic revision at the later 2026-11-12 checkpoint was `0007_append_only_audit`. The candidate branch has since advanced. Production and candidate schema must therefore be reconciled before any migration or deployment.
+An earlier 2026-11-12 checkpoint recorded production at `0007_append_only_audit`. The newer read-only audit on 2026-11-16 supersedes that observation: production is now at `0028_restrictive_private_access`. The candidate adds `0029_admin_default_acl`; production and candidate schema must still be reconciled before any migration or deployment.
 
 ## Candidate-branch security controls
 
