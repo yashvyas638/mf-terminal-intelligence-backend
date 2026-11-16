@@ -39,6 +39,8 @@ Latest GitHub Actions secret preflight reported these names missing (values were
 - `BACKUP_S3_ACCESS_KEY_ID`
 - `BACKUP_S3_SECRET_ACCESS_KEY`
 
+Latest P0 audit run evidence: [GitHub Actions run #43827121017](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/43827121017) passed Python audit syntax validation, failed configuration preflight on the missing `SUPABASE_DB_URL` and `MF_TERMINAL_API_KEY`, and skipped database execution. Its redacted diagnostic artifact is `14207405856` (358 bytes; SHA-256 `6eadfb410c007d86fc6eed648ffbf391fb687aab91bfbc3b4dbb482e122cbadd`; expires 2026-12-16).
+
 The backup workflow cannot produce/verify an offsite encrypted backup until the backup secrets are configured. The P0 audit cannot complete its authenticated API/database checks until its required secrets are configured. Render environment values and the live service's selected branch/plan remain unverified.
 
 ## Candidate CI evidence
