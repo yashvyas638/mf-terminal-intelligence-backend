@@ -106,8 +106,9 @@ Add these repository Actions secrets:
 | Secret | Value |
 |---|---|
 | `SUPABASE_DB_URL` | Same PostgreSQL connection string used by the backup workflow. |
-| `MF_TERMINAL_API_URL` | Set directly in the workflow to the public Render origin; no secret required. |
 | `MF_TERMINAL_API_KEY` | Existing operator API key stored in Render. |
+
+The public Render URL is configured directly in the workflow; it does not need to be stored as a secret.
 
 The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
 
