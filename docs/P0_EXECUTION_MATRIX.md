@@ -250,14 +250,14 @@ The native Supabase leaked-password protection warning is separate from the futu
 ### P0-8 — Render deployment, API smoke tests and rollback
 
 **Build requirements**
-- Verify deployed service, branch, exact SHA, runtime, environment configuration and startup command.
+- Verify deployed service, branch, exact SHA, runtime, environment configuration and startup command. The public `/health` response now exposes only a validated `RENDER_GIT_COMMIT` fingerprint; the read-only P0 audit fails closed when that SHA is absent or malformed.
 - Verify startup runs the approved Alembic migration process and rejects unsafe DB roles.
 - Run endpoint smoke tests for health, NAV status, scheme search/detail/history, portfolio lifecycle and auth.
 - Record deploy ID, migration head, logs, previous known-good deploy and rollback route.
 - Do not infer deployment state from environment variable presence or a successful health endpoint alone.
 
 **Acceptance evidence**
-- [ ] Actual Render service, service identity, plan and deployed SHA verified.
+- [ ] Actual Render service, service identity, plan and deployed SHA verified; `/health.build_commit` matches the intended deployed GitHub SHA.
 - [ ] Candidate Render blueprint is reconciled with the existing service; no accidental new service, service rename or plan change is introduced.
 - [ ] Actual PostgreSQL connection role verified privately and proven able to run the approved migration chain.
 - [ ] Migration head matches approved candidate.
