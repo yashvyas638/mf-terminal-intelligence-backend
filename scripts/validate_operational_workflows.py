@@ -114,7 +114,7 @@ def main() -> int:
             errors.append("backup workflow: R2 object key and verification path must use the step output stamp")
         # Step-local shell variables do not survive between GitHub Actions run steps.
         # If the R2 step uses $STAMP, it must import the prior step output explicitly.
-        if re.search(r"(?<![\\w])\\$STAMP\\b", remote_script) and 'STAMP="${{ steps.backup.outputs.stamp }}"' not in remote_script:
+        if re.search(r"(?<![\w])\$STAMP\b", remote_script) and 'STAMP="\${{ steps.backup.outputs.stamp }}"' not in remote_script:
             errors.append("backup workflow: R2 step references $STAMP without importing steps.backup.outputs.stamp")
         if "head-object" not in remote_script or "sha256sum \"$REMOTE_COPY\"" not in remote_script:
             errors.append("backup workflow: R2 copy must be downloaded and verified by size and SHA-256")
