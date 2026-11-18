@@ -1585,7 +1585,7 @@ def test_monthly_category_leaderboard_ranks_calendar_month_and_tracks_rank_movem
             db.add(FundResearchSnapshot(
                 scheme_code=code,
                 window_days=365,
-                nav_as_of_date=date(2026, 11, 10),
+                nav_as_of_date=date.today(),
                 refreshed_at=now,
                 observations=250,
                 metrics_json=json.dumps({"monthly_returns": monthly[code]}),
@@ -1930,7 +1930,7 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     portfolio_id = created.json()["id"]
     scheme_code = 87654324
     now = datetime.now(timezone.utc)
-    as_of = date(2026, 11, 10)
+    as_of = date.today()
 
     with SessionLocal() as db:
         db.add(Scheme(
