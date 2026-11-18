@@ -231,7 +231,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
 
     # Target drift is comparable only when the exact same immutable policy
     # version applies in both months. A changed policy is not portfolio drift.
-    def target_drift_rows(report: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[str, str]]] | None:
+    def target_drift_rows(report: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[str, str, tuple[tuple[str, str, str, str], ...]]]] | None:
         policies = (report.get("target_policy_snapshot") or {}).get("dimensions")
         snapshots = report.get("target_drift_snapshot")
         if not isinstance(policies, list) or not isinstance(snapshots, dict):
@@ -263,7 +263,6 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                     or str(policy.get("version")) != str(version)
                     or str(policy.get("effective_from")) != str(effective_from)):
                 return None
-            policy_identity[dimension] = (str(version), str(effective_from))
             targets = drift.get("targets")
             if not isinstance(targets, list) or not targets:
                 return None
@@ -287,6 +286,19 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                 ):
                     return None
             policy_keys = set(policy_by_key)
+            policy_identity[dimension] = (
+                str(version),
+                str(effective_from),
+                tuple(sorted(
+                    (
+                        key,
+                        str(_decimal(item.get("min_pct")).normalize()),
+                        str(_decimal(item.get("target_pct")).normalize()),
+                        str(_decimal(item.get("max_pct")).normalize()),
+                    )
+                    for key, item in policy_by_key.items()
+                )),
+            )
             seen: set[str] = set()
             weight_total = Decimal("0")
             preferred_total = Decimal("0")
