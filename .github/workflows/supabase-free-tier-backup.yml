@@ -91,9 +91,9 @@ jobs:
           ARCHIVE="$RUNNER_TEMP/mf-terminal-intelligence-$STAMP.tar.gz"
           trap 'rm -rf "$WORK"; rm -f "$ARCHIVE"' EXIT
           supabase --version
-          supabase db dump --remote="$SUPABASE_DB_URL" --role-only --file "$WORK/roles.sql"
-          supabase db dump --remote="$SUPABASE_DB_URL" --file "$WORK/schema.sql"
-          supabase db dump --remote="$SUPABASE_DB_URL" --data-only --use-copy \
+          supabase db dump --db-url "$SUPABASE_DB_URL" --role-only --file "$WORK/roles.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" --file "$WORK/schema.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --use-copy \
             --exclude "storage.buckets_vectors" \
             --exclude "storage.vector_indexes" \
             --file "$WORK/data.sql"
