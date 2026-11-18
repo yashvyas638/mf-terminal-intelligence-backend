@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import text
 
-from app.db import Base, NavObservation, engine
+from app.db import NavObservation, engine
 
 
 def test_nav_observation_metadata_does_not_declare_duplicate_index():
