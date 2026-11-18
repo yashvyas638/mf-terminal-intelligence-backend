@@ -295,15 +295,28 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
             "change_inr": None,
         }
 
+    old_risk = old_report.get("risk") or {}
+    new_risk = new_report.get("risk") or {}
+    old_risk_window = old_report.get("lookback_days")
+    new_risk_window = new_report.get("lookback_days")
+    if old_risk_window != new_risk_window or not isinstance(old_risk_window, int) or old_risk_window <= 0:
+        risk_withheld_status = "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
+    elif old_risk.get("status") != "OK" or new_risk.get("status") != "OK":
+        risk_withheld_status = "WITHHELD_RISK_INPUT_STATUS"
+    else:
+        risk_withheld_status = None
+
     risk_changes = {}
     for metric_name in ("annualized_volatility", "max_drawdown", "historical_var_95", "historical_cvar_95"):
-        old_metric = _decimal(((old_report.get("risk") or {}).get("metrics") or {}).get(metric_name))
-        new_metric = _decimal(((new_report.get("risk") or {}).get("metrics") or {}).get(metric_name))
+        old_metric = _decimal((old_risk.get("metrics") or {}).get(metric_name))
+        new_metric = _decimal((new_risk.get("metrics") or {}).get(metric_name))
+        comparable = risk_withheld_status is None and old_metric is not None and new_metric is not None
         risk_changes[metric_name] = {
-            "previous": str(old_metric) if old_metric is not None else None,
-            "current": str(new_metric) if new_metric is not None else None,
-            "change": str(new_metric - old_metric) if old_metric is not None and new_metric is not None else None,
-            "status": "COMPARABLE" if old_metric is not None and new_metric is not None else "WITHHELD_OR_NOT_COMPARABLE",
+            "previous": str(old_metric) if comparable else None,
+            "current": str(new_metric) if comparable else None,
+            "change": str(new_metric - old_metric) if comparable else None,
+            "status": "COMPARABLE" if comparable else risk_withheld_status or "WITHHELD_METRIC_UNAVAILABLE",
+            "lookback_days": old_risk_window if comparable else None,
         }
     return {
         "status": "AVAILABLE",
