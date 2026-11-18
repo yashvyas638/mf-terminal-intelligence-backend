@@ -195,6 +195,47 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         _table(sector_rows, [70 * mm, 50 * mm, 38 * mm]),
     ])
 
+    amc = lookthrough.get("amc_concentration") or {}
+    amc_summary = amc.get("summary") or {}
+    amc_rows = [["Asset management company", "Market value", "Portfolio weight", "Schemes"]]
+    for item in amc.get("items") or []:
+        amc_rows.append([
+            Paragraph(_text(item.get("name")), styles["SmallNote"]),
+            _text(item.get("market_value")),
+            _text(item.get("portfolio_weight_pct")),
+            _text(item.get("scheme_count")),
+        ])
+    if len(amc_rows) == 1:
+        amc_rows.append(["AMC classification unavailable", "—", "—", "—"])
+    story.extend([
+        Paragraph("AMC concentration", styles["SectionHeading"]),
+        Paragraph(
+            "Top 1 / Top 3 AMC share (observed): "
+            + _text(amc_summary.get("top_1_weight_of_observed_pct")) + "% / "
+            + _text(amc_summary.get("top_3_weight_of_observed_pct")) + "% · HHI: "
+            + _text(amc_summary.get("hhi_points")) + " · Effective AMC count: "
+            + _text(amc_summary.get("effective_count")),
+            styles["SmallNote"],
+        ),
+        _table(amc_rows, [68 * mm, 38 * mm, 35 * mm, 24 * mm]),
+    ])
+
+    for title, key in (("Scheme category allocation", "category_allocation"), ("Asset class allocation", "asset_class_allocation")):
+        segment_rows = [["Classification", "Market value", "Portfolio weight", "Schemes"]]
+        for item in lookthrough.get(key) or []:
+            segment_rows.append([
+                Paragraph(_text(item.get("name")), styles["SmallNote"]),
+                _text(item.get("market_value")),
+                _text(item.get("portfolio_weight_pct")),
+                _text(item.get("scheme_count")),
+            ])
+        if len(segment_rows) == 1:
+            segment_rows.append(["Classification unavailable", "—", "—", "—"])
+        story.extend([
+            Paragraph(title, styles["SectionHeading"]),
+            _table(segment_rows, [68 * mm, 38 * mm, 35 * mm, 24 * mm]),
+        ])
+
     tax = report.get("fifo_tax_lots") or {}
     tax_rows = [
         ["FIFO capital gains metric", "Value"],
