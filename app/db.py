@@ -505,6 +505,31 @@ class FundHoldingDisclosure(Base):
     )
 
 
+class SecurityMarketCapClassification(Base):
+    """Immutable, source-hashed effective-dated classification for one ISIN."""
+
+    __tablename__ = "security_market_cap_classifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    security_id: Mapped[str] = mapped_column(String(12), nullable=False)
+    market_cap_bucket: Mapped[str] = mapped_column(String(16), nullable=False)
+    effective_from: Mapped[object] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[object | None] = mapped_column(Date)
+    source_as_of_date: Mapped[object] = mapped_column(Date, nullable=False)
+    source_document_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("security_id", "effective_from", "source_sha256", name="uq_security_market_cap_source"),
+        CheckConstraint("market_cap_bucket IN ('LARGE_CAP', 'MID_CAP', 'SMALL_CAP', 'OTHER')", name="ck_security_market_cap_bucket"),
+        CheckConstraint("verification_status IN ('PENDING', 'VERIFIED', 'REJECTED')", name="ck_security_market_cap_status"),
+        CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="ck_security_market_cap_effective_range"),
+        CheckConstraint("length(source_sha256) = 64", name="ck_security_market_cap_source_hash"),
+        Index("ix_security_market_cap_asof", "security_id", "effective_from", "effective_to"),
+    )
+
+
 class FundHolding(Base):
     """Normalized security exposure from one immutable portfolio disclosure."""
 
