@@ -237,3 +237,36 @@ def test_monthly_comparison_withholds_missing_category_identifiers():
 
     assert result["comparisons"]["category"]["status"] == "WITHHELD_DUPLICATE_OR_INVALID_KEYS"
     assert result["comparisons"]["category"]["items"] == []
+
+
+def test_monthly_comparison_withholds_out_of_range_percentage_sources():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["allocation"]["schemes"][0]["portfolio_weight_pct"] = "120"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["comparisons"]["scheme"]["items"][0]["metrics"]["portfolio_weight_pct"]
+    assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metric["previous"] is None
+    assert metric["current"] is None
+    assert metric["change"] is None
+
+
+def test_monthly_risk_comparison_rejects_boolean_lookback_window():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    for report in (previous_report, current_report):
+        report["lookback_days"] = True
+        report["risk"] = {"status": "OK", "metrics": {"annualized_volatility": "0.12"}}
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["risk_changes"]["annualized_volatility"]["status"] == "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
+    assert result["risk_changes"]["annualized_volatility"]["change"] is None
