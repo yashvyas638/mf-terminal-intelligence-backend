@@ -2501,6 +2501,13 @@ class SmartSIPPreviewRequest(BaseModel):
     additional_contribution_budget_approved: bool = False
     additional_contribution_budget_inr: Decimal | None = Field(default=None, gt=0, le=Decimal("1000000000000"))
 
+    @model_validator(mode="after")
+    def validate_additional_budget_precision(self) -> "SmartSIPPreviewRequest":
+        amount = self.additional_contribution_budget_inr
+        if amount is not None and amount != amount.quantize(Decimal("0.01")):
+            raise ValueError("additional contribution budget must use INR paise precision (maximum 2 decimal places)")
+        return self
+
 
 class MarketCapClassificationImportRequest(BaseModel):
     source_document_url: str = Field(min_length=8, max_length=1000)
