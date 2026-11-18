@@ -5227,6 +5227,19 @@ def portfolio_fund_overlap_matrix(
         else "PARTIAL_MISSING_OR_STALE_DISCLOSURES"
         if missing_disclosures or stale_disclosures else "AVAILABLE"
     )
+    if result["status"] != "AVAILABLE":
+        duplication = result.get("portfolio_duplication") or {}
+        duplication["observed_duplicated_exposure_inr"] = duplication.get("duplicated_exposure_inr")
+        duplication["observed_gross_positive_lookthrough_exposure_inr"] = duplication.get("gross_positive_lookthrough_exposure_inr")
+        duplication["duplicated_exposure_inr"] = None
+        duplication["gross_positive_lookthrough_exposure_inr"] = None
+        duplication["duplicated_share_of_gross_positive_lookthrough_pct"] = None
+        duplication["coverage_status"] = result["status"]
+        duplication["limitation"] = (
+            "Only the disclosed subset was measured. The portfolio-wide duplicated exposure is withheld "
+            "because one or more active funds have missing/stale disclosures or stale NAV inputs. "
+            "Observed subset values are lower-bound diagnostics, not a complete portfolio estimate."
+        )
     result["disclosure_health"] = {
         "max_disclosure_age_days": max_disclosure_age_days,
         "included_verified_disclosure_count": len(funds),
