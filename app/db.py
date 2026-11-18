@@ -197,6 +197,30 @@ class Portfolio(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class PortfolioAllocationTarget(Base):
+    """Versioned, owner-scoped target bands for one portfolio allocation dimension."""
+
+    __tablename__ = "portfolio_allocation_targets"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    min_pct: Mapped[object] = mapped_column(Numeric(9, 4), nullable=False)
+    target_pct: Mapped[object] = mapped_column(Numeric(9, 4), nullable=False)
+    max_pct: Mapped[object] = mapped_column(Numeric(9, 4), nullable=False)
+    effective_from: Mapped[object] = mapped_column(Date, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "dimension", "target_key", "effective_from", name="uq_portfolio_target_version_key"),
+        CheckConstraint("dimension IN ('ASSET_CLASS', 'CATEGORY', 'SUB_CATEGORY', 'MARKET_CAP', 'AMC', 'SCHEME', 'SECTOR')", name="ck_portfolio_target_dimension"),
+        CheckConstraint("min_pct >= 0 AND min_pct <= target_pct AND target_pct <= max_pct AND max_pct <= 100", name="ck_portfolio_target_band_bounds"),
+        CheckConstraint("priority BETWEEN 1 AND 1000", name="ck_portfolio_target_priority_bounds"),
+        Index("ix_portfolio_target_owner_effective", "owner_user_id", "portfolio_id", "dimension", "effective_from"),
+    )
+
+
 class PortfolioTransaction(Base):
     __tablename__ = "portfolio_transactions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
