@@ -4059,12 +4059,22 @@ def portfolio_holdings_overlap(portfolio_id: int) -> dict[str, Any]:
                 select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
             ).scalars().all()
             positive_weight = sum((Decimal(row.weight_pct) for row in rows if row.weight_pct > 0), Decimal("0"))
-            isin_rows = {
-                row.security_id.strip().upper(): row
-                for row in rows
-                if row.is_isin and row.security_id and row.weight_pct > 0
-            }
-            isin_weight = sum((Decimal(row.weight_pct) for row in isin_rows.values()), Decimal("0"))
+            isin_rows: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                if not row.is_isin or not row.security_id or row.weight_pct <= 0:
+                    continue
+                isin = row.security_id.strip().upper()
+                if not isin:
+                    continue
+                current = isin_rows.setdefault(isin, {
+                    "isin": isin,
+                    "security_name": row.security_name,
+                    "weight_pct": Decimal("0"),
+                })
+                current["weight_pct"] += Decimal(row.weight_pct)
+                if not current["security_name"] and row.security_name:
+                    current["security_name"] = row.security_name
+            isin_weight = sum((row["weight_pct"] for row in isin_rows.values()), Decimal("0"))
             age = (today - disclosure.as_of_date).days
             funds.append({
                 "scheme_code": code,
@@ -4098,15 +4108,15 @@ def portfolio_holdings_overlap(portfolio_id: int) -> dict[str, Any]:
             shared_b = Decimal("0")
             shared_rows = []
             for isin in common:
-                a = Decimal(left["holdings"][isin].weight_pct)
-                b = Decimal(right["holdings"][isin].weight_pct)
+                a = left["holdings"][isin]["weight_pct"]
+                b = right["holdings"][isin]["weight_pct"]
                 matched = min(a, b)
                 overlap += matched
                 shared_a += a
                 shared_b += b
                 shared_rows.append({
                     "isin": isin,
-                    "security_name": left["holdings"][isin].security_name,
+                    "security_name": left["holdings"][isin]["security_name"],
                     "weight_in_fund_a_pct": str(a),
                     "weight_in_fund_b_pct": str(b),
                     "matched_overlap_weight_pct": str(matched),
@@ -4128,7 +4138,11 @@ def portfolio_holdings_overlap(portfolio_id: int) -> dict[str, Any]:
         "portfolio_id": portfolio_id,
         "portfolio_name": valuation.get("portfolio_name"),
         "as_of_date": today.isoformat(),
-        "status": "OK" if len(comparable_pairs) == len(pairs) else "PARTIAL_COVERAGE",
+        "status": (
+            "INSUFFICIENT_FUNDS" if len(funds) < 2
+            else "OK" if all(fund["holdings"] for fund in funds) and len(comparable_pairs) == len(pairs)
+            else "PARTIAL_COVERAGE"
+        ),
         "fund_count": len(funds),
         "comparable_pair_count": len(comparable_pairs),
         "total_pair_count": len(pairs),
