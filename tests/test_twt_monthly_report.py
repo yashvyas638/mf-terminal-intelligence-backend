@@ -55,6 +55,80 @@ def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_statu
     }
 
 
+def _with_target_drift(report, *, version=3, equity_actual="70", equity_drift="5", debt_actual="30", debt_drift="-5", status="AVAILABLE"):
+    report["target_policy_snapshot"] = {
+        "dimensions": [{
+            "dimension": "CATEGORY",
+            "version": version,
+            "effective_from": "2026-01-01",
+        }],
+    }
+    report["target_drift_snapshot"] = {
+        "CATEGORY": {
+            "status": status,
+            "target_version": version,
+            "effective_from": "2026-01-01",
+            "targets": [
+                {"key": "Equity", "actual_weight_pct": equity_actual, "drift_percentage_points": equity_drift},
+                {"key": "Debt", "actual_weight_pct": debt_actual, "drift_percentage_points": debt_drift},
+            ],
+        },
+    }
+    return report
+
+
+def test_monthly_target_drift_compares_only_same_immutable_policy_and_reports_pp():
+    previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5))
+    current_report = _with_target_drift(
+        _report("2026-10-30", 900, 600, 66.6667),
+        equity_actual="75", equity_drift="10", debt_actual="25", debt_drift="-10",
+    )
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["target_drift"]
+    assert section["status"] == "COMPARABLE"
+    equity = next(item for item in section["items"] if item["key"] == "CATEGORY:Equity")
+    assert equity["metrics"]["drift_percentage_points"]["previous"] == "5"
+    assert equity["metrics"]["drift_percentage_points"]["current"] == "10"
+    assert equity["metrics"]["drift_percentage_points"]["change_percentage_points"] == "5"
+    assert equity["metrics"]["actual_weight_pct"]["change_percentage_points"] == "5"
+
+
+def test_monthly_target_drift_withholds_when_policy_version_changes():
+    previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5), version=3)
+    current_report = _with_target_drift(_report("2026-10-30", 900, 600, 66.6667), version=4)
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["target_drift"]
+    assert section["status"] == "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH"
+    assert section["items"] == []
+
+
+def test_monthly_target_drift_withholds_incomplete_or_unreconciled_snapshot():
+    previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5))
+    current_report = _with_target_drift(
+        _report("2026-10-30", 900, 600, 66.6667),
+        equity_actual="80", debt_actual="30",
+    )
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["target_drift"]
+    assert section["status"] == "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH"
+    assert section["items"] == []
+
+
 def test_month_selection_uses_newest_snapshot_per_distinct_valuation_month():
     snapshots = [
         {"report_id": 3, "generated_at": "2026-11-02", "report": _report("2026-10-30", 1000, 700, 70)},
