@@ -5254,11 +5254,12 @@ def preview_portfolio_contribution_plan(
             PortfolioAllocationTarget.owner_user_id == portfolio.owner_user_id,
             PortfolioAllocationTarget.dimension == payload.dimension,
             PortfolioAllocationTarget.effective_from <= today,
-        ).order_by(desc(PortfolioAllocationTarget.effective_from), PortfolioAllocationTarget.priority)).scalars().all()
+        ).order_by(desc(PortfolioAllocationTarget.effective_from), desc(PortfolioAllocationTarget.version), PortfolioAllocationTarget.priority)).scalars().all()
     if not rows:
         raise HTTPException(404, f"No effective {payload.dimension} target set is configured")
     effective = rows[0].effective_from
-    targets = [row for row in rows if row.effective_from == effective]
+    effective_version = rows[0].version
+    targets = [row for row in rows if row.effective_from == effective and row.version == effective_version]
     target_inputs = [{
         "key": row.target_key,
         "min_pct": str(row.min_pct),
