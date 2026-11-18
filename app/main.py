@@ -5071,6 +5071,17 @@ def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
             })
     allocation = portfolio_allocation(rows)
     concentration = amc_concentration(rows)
+    active_valuation_rows = [
+        item for item in valuation.get("holdings", [])
+        if Decimal(str(item.get("units") or "0")) > 0
+    ]
+    fresh_nav_count = sum(1 for item in active_valuation_rows if item.get("nav_freshness") == "FRESH")
+    nav_coverage_pct = (
+        (Decimal(fresh_nav_count) / Decimal(len(active_valuation_rows)) * Decimal("100")).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
+        if active_valuation_rows else Decimal("0")
+    )
     return {
         "portfolio_id": portfolio_id,
         "portfolio_name": valuation.get("portfolio_name"),
@@ -5085,6 +5096,16 @@ def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
             "as_of_date": valuation.get("valuation_date"),
             "covered_market_value_inr": allocation["portfolio_market_value_inr"],
             "coverage_pct": "100.0000",
+            "scheme_count": allocation["scheme_count"],
+            "nav_coverage": {
+                "active_scheme_count": len(active_valuation_rows),
+                "fresh_nav_scheme_count": fresh_nav_count,
+                "fresh_nav_coverage_pct": str(nav_coverage_pct),
+                "missing_nav_scheme_codes": sorted(valuation.get("missing_nav_scheme_codes", [])),
+                "stale_nav_scheme_codes": sorted(valuation.get("stale_nav_scheme_codes", [])),
+                "maximum_allowed_nav_age_days": valuation.get("maximum_allowed_nav_age_days"),
+            },
+            "unclassified_allocation": allocation["data_quality"],
             "methodology_version": allocation["methodology_version"],
             "warnings": [
                 "Category and asset-class labels are the stored scheme metadata; they are not underlying market-cap exposure.",
