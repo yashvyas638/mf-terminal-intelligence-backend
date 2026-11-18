@@ -5170,14 +5170,15 @@ def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
             scheme = by_code.get(int(item["scheme_code"]))
             if scheme is None:
                 raise HTTPException(409, f"Scheme metadata is missing for active holding {item['scheme_code']}")
+            taxonomy = _scheme_taxonomy(scheme)
             rows.append({
                 "scheme_code": str(scheme.scheme_code),
                 "scheme_name": scheme.scheme_name,
                 "market_value_inr": str(item["market_value"]),
                 "amc": scheme.amc,
-                "category_group": scheme.category_group,
-                "sub_category": scheme.category,
-                "asset_class": scheme.asset_class,
+                "category_group": taxonomy["category_group"] or "UNCLASSIFIED",
+                "sub_category": taxonomy["category"] or "UNCLASSIFIED",
+                "asset_class": taxonomy["asset_class"] or "UNCLASSIFIED",
             })
     allocation = portfolio_allocation(rows)
     concentration = amc_concentration(rows)
