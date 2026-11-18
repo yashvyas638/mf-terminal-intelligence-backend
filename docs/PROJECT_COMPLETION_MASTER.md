@@ -381,3 +381,18 @@ Commits:
 - `1a8f888` — Test corrupted TWT snapshots are withheld from reads and PDFs.
 
 **Validation status:** code and regression test are committed. CI has not yet been checked on the exact new head; do not mark tests passed until the branch workflow completes. No production data, migrations, deployment or UI styling were changed.
+
+
+## TWT month-end boundary correction — 2026-11-18
+
+A further audit found an off-by-one issue in the month-end eligibility helper. The code treated a seven-day window as a date difference of 0 through 7 inclusive, which admits eight calendar dates (for a 31-day month, October 24–31). The report specification requires exactly the final seven calendar dates.
+
+- Corrected the helper to accept date differences from 0 through 6 for the default seven-calendar-day window.
+- Rejects invalid zero/negative window sizes.
+- Expanded boundary tests for 31-day, 30-day and leap-year February month ends. October 25 is now the first eligible date; October 24 is rejected.
+
+Commits:
+- `8afba58` — Correct TWT month-end seven-calendar-day boundary.
+- `5130001` — Test exact seven-calendar-day TWT month-end window.
+
+**Validation:** targeted regression is committed; current-head CI is pending. The previous CI run was queued on the prior head and cannot validate these commits. Do not claim the suite passed until the new run completes.
