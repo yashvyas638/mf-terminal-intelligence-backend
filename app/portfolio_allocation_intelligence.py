@@ -165,6 +165,9 @@ def allocation_drift(
         normalized.append((key, minimum, target, maximum, actual))
     if abs(preferred_total - HUNDRED) > Decimal("0.01"):
         raise ValueError("preferred target percentages must reconcile to 100")
+    actual_total = sum((item[4] for item in normalized), ZERO)
+    if abs(actual_total - total) > Decimal("0.01"):
+        raise ValueError("actual target values must reconcile to the complete portfolio value")
 
     results = []
     for key, minimum, target, maximum, actual in normalized:
