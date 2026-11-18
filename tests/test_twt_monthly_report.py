@@ -612,3 +612,27 @@ def test_monthly_target_drift_withholds_when_drift_rows_do_not_match_frozen_poli
     section = result["comparisons"]["target_drift"]
     assert section["status"] == "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH"
     assert section["items"] == []
+
+
+def test_monthly_risk_comparison_rejects_mixed_boolean_or_float_lookback_types():
+    for old_window, new_window in ((1, True), (365, 365.0)):
+        previous_report = _report("2026-09-30", 800, 500, 62.5)
+        current_report = _report("2026-10-30", 900, 600, 66.6667)
+        previous_report["lookback_days"] = old_window
+        current_report["lookback_days"] = new_window
+        for report in (previous_report, current_report):
+            report["risk"] = {
+                "status": "OK",
+                "metrics": {"annualized_volatility": "0.12"},
+            }
+
+        result = compare_monthly_reports(
+            {"period": "2026-09", "report": previous_report},
+            {"period": "2026-10", "report": current_report},
+        )
+
+        metric = result["risk_changes"]["annualized_volatility"]
+        assert metric["status"] == "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
+        assert metric["previous"] is None
+        assert metric["current"] is None
+        assert metric["change"] is None
