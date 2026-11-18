@@ -109,6 +109,7 @@ def test_monthly_comparison_rows_render_frozen_inr_and_percentage_point_changes(
                     "items": [
                         {
                             "key": "Equity",
+                            "presence_status": "CONTINUING",
                             "metrics": {
                                 "market_value_inr": {
                                     "previous": "70000",
@@ -135,9 +136,9 @@ def test_monthly_comparison_rows_render_frozen_inr_and_percentage_point_changes(
         "portfolio_weight_pct",
     )
 
-    assert rows[0] == ["Item", "Previous INR", "Current INR", "Change INR", "Change pp", "Status"]
+    assert rows[0] == ["Item", "Previous INR", "Current INR", "Change INR", "Change pp", "Presence", "Status"]
     assert rows[1][0].text == "Equity"
-    assert rows[1][1:] == ["70000", "75000", "5000", "5", "COMPARABLE"]
+    assert rows[1][1:] == ["70000", "75000", "5000", "5", "CONTINUING", "COMPARABLE"]
 
 
 def test_monthly_comparison_rows_show_withheld_status_without_fabricating_values():
@@ -148,4 +149,4 @@ def test_monthly_comparison_rows_show_withheld_status_without_fabricating_values
         "weight_of_total_portfolio_pct",
     )
 
-    assert rows[1] == ["WITHHELD_OR_NOT_COMPARABLE", "—", "—", "—", "—", "Withheld"]
+    assert rows[1] == ["WITHHELD_OR_NOT_COMPARABLE", "—", "—", "—", "—", "—", "Withheld"]
