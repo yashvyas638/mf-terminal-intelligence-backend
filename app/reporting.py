@@ -130,6 +130,37 @@ def _monthly_comparison_rows(
     return rows
 
 
+def _monthly_target_drift_rows(comparison: dict) -> list[list[object]]:
+    """Render policy-comparable allocation drift in percentage points, never INR."""
+    section = comparison.get("comparisons", {}).get("target_drift") or {}
+    rows: list[list[object]] = [[
+        "Dimension / bucket", "Previous drift pp", "Current drift pp",
+        "Change pp", "Previous actual %", "Current actual %", "Status",
+    ]]
+    if section.get("status") != "COMPARABLE":
+        rows.append([
+            Paragraph(_text(section.get("reason") or section.get("status") or "Target drift unavailable"), getSampleStyleSheet()["BodyText"]),
+            "—", "—", "—", "—", "—", "Withheld",
+        ])
+        return rows
+    for item in section.get("items") or []:
+        metrics = item.get("metrics") or {}
+        drift = metrics.get("drift_percentage_points") or {}
+        actual = metrics.get("actual_weight_pct") or {}
+        rows.append([
+            Paragraph(_text(item.get("key")), getSampleStyleSheet()["BodyText"]),
+            _text(drift.get("previous")),
+            _text(drift.get("current")),
+            _text(drift.get("change_percentage_points")),
+            _text(actual.get("previous")),
+            _text(actual.get("current")),
+            _text(drift.get("status")),
+        ])
+    if len(rows) == 1:
+        rows.append(["No comparable target buckets", "—", "—", "—", "—", "—", "—"])
+    return rows
+
+
 def build_portfolio_report_pdf(report: dict) -> bytes:
     """Render a compact, source-linked report; source values remain in the JSON snapshot."""
     output = BytesIO()
@@ -499,6 +530,14 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
                 widths,
             ),
         ])
+    story.extend([
+        Paragraph("Target allocation drift movement", styles["Heading3"]),
+        _table(
+            _monthly_target_drift_rows(monthly),
+            [43 * mm, 20 * mm, 20 * mm, 18 * mm, 20 * mm, 20 * mm, 24 * mm],
+        ),
+    ])
+
     amc_metrics = monthly.get("comparisons", {}).get("amc_concentration_metrics") or {}
     amc_metric_rows = [["AMC concentration metric", "Previous", "Current", "Change"]]
     for key, item in amc_metrics.items():
