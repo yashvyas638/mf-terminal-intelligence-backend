@@ -83,3 +83,18 @@ def test_non_finite_tri_and_malformed_provenance_hashes_are_rejected():
     assert result["evidence"]["rejected_observation_count"] == 3
     assert result["evidence"]["latest_observation_date"] == rows[-4]["date"]
     assert not result["topup_eligible"]
+
+def test_non_finite_derived_signals_are_withheld():
+    rows = observations()
+    # This valid positive TRI value makes the subsequent return and momentum
+    # ratio overflow even though every individual observation is finite.
+    rows[-64]["tri"] = 1e-308
+    result = assess_smart_sip_regime(
+        rows, as_of=date(2026, 11, 18),
+        portfolio_need=inputs()[0], risk_budget=inputs()[1], config=CONFIG,
+    )
+    assert result["status"] == "NOT_ASSESSED"
+    assert result["market_opportunity"]["reason"] == "INVALID_DERIVED_SIGNAL"
+    assert result["signals"] == {}
+    assert not result["topup_eligible"]
+    assert result["decision"] == "CONTINUE_PLANNED_SIP"
