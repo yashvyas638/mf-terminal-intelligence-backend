@@ -72,3 +72,12 @@ def test_monthly_review_is_loaded_and_shows_explicit_insufficient_history_state(
     assert '"/monthly-review"' in js
     assert 'INSUFFICIENT_MONTHLY_SNAPSHOTS' in js
     assert 'change_percentage_points' in js
+
+
+def test_market_cap_lookthrough_is_explicitly_withheld_without_verified_security_classifications():
+    html = Path("app/static/portfolio-intelligence.html").read_text()
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    assert 'id="marketCapStatus"' in html
+    assert 'd.market_cap_allocation||{}' in js
+    assert 'market_cap_allocation' in js
+    assert "scheme categories are not used as a proxy" in html.lower()
