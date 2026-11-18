@@ -366,3 +366,18 @@ Commits:
 - `e84ca82` — Preserve target drift monthly comparison UI contract.
 
 Visual pagination and CI remain pending.
+
+
+## TWT immutable snapshot read-integrity gate — 2026-11-18
+
+A final API-path audit found that monthly comparison already verified snapshot SHA-256 before parsing, but the individual report-detail and PDF endpoints still parsed `content_json` directly. A corrupted snapshot could therefore be returned as trusted financial data or rendered to PDF even though the monthly comparison correctly withheld it.
+
+- `GET /v1/reports/{report_id}` now verifies the stored SHA-256 and JSON object before returning the report. Invalid or malformed snapshots return HTTP 409 and are not served.
+- `GET /v1/reports/{report_id}/pdf` applies the same integrity gate before rendering. The PDF is generated only from a verified immutable snapshot.
+- Added an API regression to corrupt the stored payload while retaining its original digest and assert that both detail and PDF endpoints return HTTP 409.
+
+Commits:
+- `c178572` — Fail closed on corrupted TWT report snapshots.
+- `1a8f888` — Test corrupted TWT snapshots are withheld from reads and PDFs.
+
+**Validation status:** code and regression test are committed. CI has not yet been checked on the exact new head; do not mark tests passed until the branch workflow completes. No production data, migrations, deployment or UI styling were changed.
