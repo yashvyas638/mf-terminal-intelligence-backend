@@ -5743,6 +5743,7 @@ def preview_smart_sip_regime(
         "portfolio_valuation_freshness": valuation.get("valuation_freshness"),
         "portfolio_need": portfolio_need,
         "risk_budget": risk_budget,
+        "policy": config,
         "config_version": "environment-configured",
     })
     return result
