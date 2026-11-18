@@ -695,3 +695,18 @@ def test_monthly_duplication_comparison_withholds_malformed_snapshot_shape():
     assert metric["previous_inr"] is None
     assert metric["current_inr"] is None
     assert metric["change_inr"] is None
+
+
+def test_monthly_overlap_comparison_withholds_negative_overlap_amounts():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["overlap_intelligence"]["pairs"][0]["overlap_inr"] = "-1"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["overlap_pairs"]
+    assert section["status"] == "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE"
+    assert section["items"] == []
