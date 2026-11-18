@@ -143,6 +143,32 @@ def test_monthly_target_drift_withholds_when_policy_effective_date_changes():
 
 
 
+
+def test_monthly_target_drift_withholds_when_policy_bands_change_under_same_version():
+    previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5), version=3)
+    current_report = _with_target_drift(_report("2026-10-30", 900, 600, 66.6667), version=3)
+    current_policy = current_report["target_policy_snapshot"]["dimensions"][0]["targets"]
+    current_drift = current_report["target_drift_snapshot"]["CATEGORY"]["targets"]
+    current_policy[0]["min_pct"] = "56"
+    current_policy[0]["target_pct"] = "66"
+    current_policy[0]["max_pct"] = "76"
+    current_policy[1]["min_pct"] = "24"
+    current_policy[1]["target_pct"] = "34"
+    current_policy[1]["max_pct"] = "44"
+    current_drift[0].update({"min_pct": "56", "target_pct": "66", "max_pct": "76", "drift_percentage_points": "9"})
+    current_drift[1].update({"min_pct": "24", "target_pct": "34", "max_pct": "44", "drift_percentage_points": "-9"})
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["target_drift"]
+    assert section["status"] == "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH"
+    assert section["items"] == []
+
+
+
 def test_monthly_target_drift_withholds_incomplete_or_unreconciled_snapshot():
     previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5))
     current_report = _with_target_drift(
