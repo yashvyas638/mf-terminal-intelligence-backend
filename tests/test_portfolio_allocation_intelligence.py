@@ -379,3 +379,18 @@ def test_market_cap_exposure_reconciliation_includes_classified_and_every_unknow
         "status": "RECONCILED",
     }
 
+
+
+def test_allocation_exposes_unclassified_value_and_weight_by_dimension():
+    result = portfolio_allocation([
+        {"scheme_code": "1", "market_value_inr": "750", "amc": "AMC A", "category_group": "Equity", "sub_category": "Large Cap", "asset_class": "Equity"},
+        {"scheme_code": "2", "market_value_inr": "250", "amc": None, "category_group": "Equity", "sub_category": None, "asset_class": "Equity"},
+    ])
+    quality = result["data_quality"]
+    assert quality["unclassified_scheme_count"] == 1
+    assert quality["unclassified_market_value_inr"] == "250.00"
+    assert quality["unclassified_weight_pct"] == "25.0000"
+    assert quality["unclassified_by_dimension"]["amc"] == {
+        "scheme_count": 1, "market_value_inr": "250.00", "portfolio_weight_pct": "25.0000"
+    }
+    assert quality["unclassified_by_dimension"]["sub_category"]["market_value_inr"] == "250.00"
