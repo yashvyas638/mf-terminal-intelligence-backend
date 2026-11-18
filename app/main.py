@@ -3301,9 +3301,18 @@ def create_portfolio_report_snapshot(
     risk = portfolio_historical_risk(portfolio_id, days, None)
     tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
     lookthrough = portfolio_holdings_lookthrough(portfolio_id, 180)
-    allocation_intelligence = portfolio_allocation_intelligence(portfolio_id)
-    overlap_intelligence = portfolio_fund_overlap_matrix(portfolio_id, 180)
-    market_cap_intelligence = get_portfolio_market_cap_allocation(portfolio_id, 180, 180)
+    try:
+        allocation_intelligence = portfolio_allocation_intelligence(portfolio_id)
+    except HTTPException as exc:
+        allocation_intelligence = {"status": "WITHHELD", "message": str(exc.detail)}
+    try:
+        overlap_intelligence = portfolio_fund_overlap_matrix(portfolio_id, 180)
+    except HTTPException as exc:
+        overlap_intelligence = {"status": "WITHHELD", "message": str(exc.detail)}
+    try:
+        market_cap_intelligence = get_portfolio_market_cap_allocation(portfolio_id, 180, 180)
+    except HTTPException as exc:
+        market_cap_intelligence = {"status": "WITHHELD", "message": str(exc.detail)}
     generated_at = datetime.now(timezone.utc)
 
     with SessionLocal() as db:
