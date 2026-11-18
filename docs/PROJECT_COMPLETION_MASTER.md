@@ -801,3 +801,14 @@ Commits:
 - `f5a3e6c` — Test negative monthly overlap amount rejection.
 
 **Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
+
+
+## Supabase database-size remediation — 2026-11-18
+
+- Read-only live inspection measured the application database at 519,689,907 bytes (~496 MiB), above the 500 MB Free-plan quota; cluster databases total 534,966,133 bytes (~510 MiB).
+- `nav_observations` is 380 MiB (134 MiB heap + 246 MiB indexes; 2,664,820 rows). `fund_research_snapshots` is 94 MiB (34,852 rows).
+- Found duplicate non-unique index `ix_nav_code_date`, duplicating unique `uq_nav_scheme_date` on `(scheme_code, nav_date)`, occupying 89,989,120 bytes (~86 MiB). The unique constraint index, primary key and source-snapshot index are retained.
+- Added migration `0033_remove_duplicate_nav_index`, removed the redundant SQLAlchemy index declaration and added a post-migration regression for the unique constraint and primary key.
+- Added `docs/SUPABASE_DATABASE_SIZE_REMEDIATION.md` with live measurements, data-preservation rules and verification steps.
+- The hybrid NAV sampling plan is already represented in live checkpoints: recent/baseline daily windows, older month-end windows and paused obsolete daily windows. No NAV rows or research snapshots were deleted.
+- **Status:** repository-only change; production migration NOT applied. Production remains gated by the separate migration-credential/startup and verified-backup blockers. Exact-head CI is required before merge/release. Remeasure after migration because Supabase usage reporting can lag.
