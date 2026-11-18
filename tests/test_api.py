@@ -1342,7 +1342,7 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     monkeypatch.setattr(main, "_research_snapshots_are_current", lambda: True)
     init_db()
     now = datetime.now(timezone.utc)
-    as_of = date(2026, 11, 10)
+    as_of = date.today()
     scheme_codes = (999983, 999984, 99999999, 99999998, 99999997)
     with SessionLocal() as db:
         snapshot = IngestionSnapshot(
