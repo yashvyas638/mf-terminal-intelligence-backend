@@ -248,3 +248,24 @@ def test_overlap_matrix_has_a_hard_fund_count_limit():
     ]
     with pytest.raises(ValueError, match="limited to 200"):
         holdings_overlap_matrix(funds)
+
+
+
+def test_holdings_disclosure_coverage_uses_positive_isin_weight_over_all_positive_weight():
+    from app.portfolio_allocation_intelligence import holdings_disclosure_coverage
+
+    assert holdings_disclosure_coverage([
+        {"is_isin": True, "weight_pct": "70"},
+        {"is_isin": False, "weight_pct": "20"},
+        {"is_isin": False, "weight_pct": "10"},
+        {"is_isin": True, "weight_pct": "-5"},
+    ]) == "70.0000"
+
+
+def test_holdings_disclosure_coverage_returns_none_without_positive_reported_weight():
+    from app.portfolio_allocation_intelligence import holdings_disclosure_coverage
+
+    assert holdings_disclosure_coverage([
+        {"is_isin": True, "weight_pct": "0"},
+        {"is_isin": False, "weight_pct": "-2"},
+    ]) is None
