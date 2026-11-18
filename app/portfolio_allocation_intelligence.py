@@ -24,6 +24,7 @@ HUNDRED = Decimal("100")
 def allocation_dimension_key(dimension: str, scheme: Mapping[str, Any]) -> str:
     """Return the same canonical bucket key used by portfolio allocation analytics."""
     from app.fund_taxonomy import (
+        SCHEME_GROUP_ASSET_CLASS,
         canonical_asset_class,
         canonical_group,
         canonical_subcategory,
