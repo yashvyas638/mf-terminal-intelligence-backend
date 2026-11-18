@@ -178,6 +178,6 @@ def test_monthly_overlap_pdf_rows_include_both_funds_percentage_point_changes():
     )
 
     assert rows[0] == [
-        "Item", "Previous INR", "Current INR", "Change INR", "Change pp", "Change pp B", "Presence", "Status",
+        "Item", "Previous INR", "Current INR", "Change INR", "Change pp A", "Change pp B", "Presence", "Status",
     ]
     assert rows[1][4:8] == ["0.5", "1.0", "CONTINUING", "COMPARABLE"]
