@@ -197,3 +197,18 @@ The NAV table contains two valid B-tree indexes on the identical key `(scheme_co
 - The live database also contains 34,852 research snapshots. Their `metrics_json` payloads account for about 36.6 MB; this is not deleted or rewritten in this change because the JSON carries monthly/period-return details consumed by existing APIs.
 
 **Status:** code and migration prepared on `audit/production-foundation`; production migration not run. ORM metadata change: `3ca135ddaf2bd862ca663c65fd99b2aee45b0d1c`; migration: `a96b577ceefaf42d22973dfce4daa09e3e9964d2`; test: `0dbd76e58557630e8123b9f743125c5dc33b39a3`. Latest code/test commit: `0dbd76e58557630e8123b9f743125c5dc33b39a3`; subsequent commits `1a72c58d0eeac1566ff0da0ffc1ee980eb019176` and this checklist update are documentation-only; CI run [#44285643532](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44285643532) is queued (SQLite, PostgreSQL and live-source jobs have not executed). Before release, require PostgreSQL CI on the exact candidate SHA, a fresh verified backup and restore path, migration-role authority, explicit release approval, and a post-migration size/query-plan audit. The database was read-only during this investigation.
+
+
+### Production execution gate — live role and CI evidence (2026-11-18)
+
+Follow-up inspection confirmed why the production migration cannot safely be run through the connected SQL session yet:
+
+- Live database is still at Alembic revision `0028_restrictive_private_access`.
+- The connected SQL session is `postgres` (not a superuser); it is a member of `supabase_privileged_role` but **not** `supabase_admin`.
+- Roles with `CREATE` on `public` include `pg_database_owner`, `postgres`, and `supabase_admin`. The live `0029_admin_default_acl` migration deliberately refuses to proceed unless the migration identity can alter default privileges for every creator. Its preflight therefore identifies `supabase_admin` as unauthorized under the connected `postgres` identity.
+- Do not weaken or skip that preflight. Obtain an approved migration identity that can alter defaults for `supabase_admin`, or a Supabase-supported privileged migration path, then rerun the exact migration preflight.
+- The available connected Supabase actions expose project restore but no backup-creation or backup-verification operation. A fresh backup and isolated restore have therefore **not** been established by this session. Use the Supabase dashboard's supported backup/restore workflow and record evidence before production DDL.
+- GitHub Actions run `44285776588` at candidate SHA `24c30bc39d858abe9250753dfc626d54f408d911` remains queued; its PostgreSQL, SQLite and live AMFI jobs have not started. An earlier run `44285764453` is also queued. No CI pass is claimed.
+- The branch remains intentionally unmerged: 692 commits ahead and 57 behind `main` at the last comparison. Do not merge the diverged branch wholesale.
+
+**Current decision:** code-level remediation is committed; production DDL is blocked on (1) green CI for the exact code SHA, (2) verified backup/restore, and (3) a migration role authorised for the existing 0029 security migration. Once these are evidenced, run 0029 then 0030, verify the Alembic head, re-measure database size, and compare NAV query plans. No production objects or data were changed in this follow-up.
