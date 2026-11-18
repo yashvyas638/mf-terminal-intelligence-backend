@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -16,7 +16,7 @@ from app.db import NavObservation, NavObservationRevision, SessionLocal, engine,
 def _amfi_response(nav: str):
     body = (
         "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
-        f"998877;INF000000001;INF000000002;Correction Test Fund;{nav};10-Nov-2026\n"
+        f"998877;INF000000001;INF000000002;Correction Test Fund;{nav};{date.today():%d-%b-%Y}\n"
     )
     raw = body.encode("utf-8")
     return SimpleNamespace(
@@ -115,7 +115,7 @@ def test_stale_nav_effective_date_is_rejected(monkeypatch):
     monkeypatch.setattr(main, "MAX_NAV_STALENESS_DAYS", 7)
     stale = (
         "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
-        "998876;INF000000003;INF000000004;Stale Test Fund;100.0000;01-Nov-2026\n"
+        f"998876;INF000000003;INF000000004;Stale Test Fund;100.0000;{date.today() - timedelta(days=17):%d-%b-%Y}\n"
     )
     monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: SimpleNamespace(
         status_code=200, headers={"Content-Type": "text/plain"}, iter_content=lambda chunk_size: iter([stale.encode("utf-8")]), close=lambda: None, raise_for_status=lambda: None
