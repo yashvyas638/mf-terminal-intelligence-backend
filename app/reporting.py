@@ -93,7 +93,7 @@ def _monthly_comparison_rows(
     secondary_weight_field: str | None = None,
 ) -> list[list[object]]:
     """Flatten one frozen month-comparison section for PDF rendering."""
-    headers = ["Item", "Previous INR", "Current INR", "Change INR", "Change pp"]
+    headers = ["Item", "Previous INR", "Current INR", "Change INR", "Change pp A" if secondary_weight_field else "Change pp"]
     if secondary_weight_field:
         headers.append("Change pp B")
     headers.extend(["Presence", "Status"])
