@@ -101,3 +101,15 @@ def test_month_end_window_includes_final_seven_days_only():
     assert not is_month_end_valuation_date("2026-10-23")
     assert not is_month_end_valuation_date("2026-10-15")
     assert not is_month_end_valuation_date("not-a-date")
+
+
+
+def test_month_selection_does_not_compare_across_a_missing_calendar_month():
+    snapshots = [
+        {"report_id": 3, "generated_at": "2026-12-31", "report": _report("2026-12-31", 1200, 800, 66.7)},
+        {"report_id": 1, "generated_at": "2026-10-31", "report": _report("2026-10-31", 900, 600, 66.7)},
+    ]
+
+    selected = select_latest_distinct_months(snapshots)
+
+    assert [item["period"] for item in selected] == ["2026-12"]
