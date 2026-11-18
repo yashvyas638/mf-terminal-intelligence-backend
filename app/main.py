@@ -5275,7 +5275,10 @@ def portfolio_fund_overlap_matrix(
                     "weight_pct": str(row.weight_pct),
                 } for row in rows],
             })
-    result = holdings_overlap_matrix(funds)
+    result = holdings_overlap_matrix(
+        funds,
+        max_disclosure_age_days=max_disclosure_age_days,
+    )
     result["portfolio_id"] = portfolio_id
     result["portfolio_name"] = valuation.get("portfolio_name")
     result["portfolio_market_value_inr"] = str(valuation.get("current_value"))
@@ -5317,7 +5320,7 @@ def portfolio_fund_overlap_matrix(
         "warnings": [
             "Overlap is based only on positive, common ISIN holdings in the included verified disclosures.",
             "Disclosure scheme coverage is a count of schemes with verified disclosures, not a claim that every underlying holding is disclosed.",
-            "Stale disclosures remain included and are explicitly listed; interpret their overlap as stale.",
+            "Pairwise overlap values are withheld for any pair containing a stale disclosure; observed subset duplication is withheld when portfolio disclosure coverage is incomplete.",
             "Non-ISIN holdings are not cross-matched.",
             "Holdings overlap is not return correlation.",
         ],
