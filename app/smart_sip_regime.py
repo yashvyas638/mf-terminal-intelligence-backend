@@ -120,12 +120,24 @@ def assess_smart_sip_regime(
         prior = [point for point in series if point[0] <= cutoff]
         return (latest_tri / prior[-1][1] - 1) * 100 if prior else None
 
-    recent = window(90)
-    returns = [recent[i][1] / recent[i - 1][1] - 1
-               for i in range(1, len(recent)) if recent[i - 1][1] > 0]
-    volatility = (pstdev(returns) * sqrt(float(config["annualisation_days"])) * 100
-                  if len(returns) >= 20 else None)
-    dd52, dd3y, mom63, mom126 = drawdown(w52), drawdown(w3y), momentum(63), momentum(126)
+    try:
+        recent = window(90)
+        returns = [recent[i][1] / recent[i - 1][1] - 1
+                   for i in range(1, len(recent)) if recent[i - 1][1] > 0]
+        volatility = (pstdev(returns) * sqrt(float(config["annualisation_days"])) * 100
+                      if len(returns) >= 20 else None)
+        dd52, dd3y, mom63, mom126 = drawdown(w52), drawdown(w3y), momentum(63), momentum(126)
+    except (OverflowError, ValueError, ZeroDivisionError):
+        result["market_opportunity"]["reason"] = "INVALID_DERIVED_SIGNAL"
+        result["limitations"].append("Derived benchmark signal exceeded safe numeric limits and was withheld.")
+        return result
+
+    derived = (dd52, dd3y, mom63, mom126, volatility)
+    if any(value is not None and not isfinite(value) for value in derived):
+        result["market_opportunity"]["reason"] = "INVALID_DERIVED_SIGNAL"
+        result["limitations"].append("Derived benchmark signal was non-finite and was withheld.")
+        return result
+
     result["signals"] = {
         "drawdown_52w_pct": round(dd52, 4), "drawdown_3y_pct": round(dd3y, 4),
         "momentum_63d_pct": round(mom63, 4) if mom63 is not None else None,
