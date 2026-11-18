@@ -5099,9 +5099,19 @@ def save_portfolio_allocation_targets(
     total_value, actual_values = _portfolio_dimension_values(portfolio_id, payload.dimension, valuation)
     if total_value <= 0:
         raise HTTPException(409, "Allocation targets require a positively valued portfolio")
-    missing_actual_keys = sorted(set(actual_values) - {item.key.strip() for item in payload.targets})
-    if missing_actual_keys:
-        raise HTTPException(422, f"Target set must include every currently held allocation key: {missing_actual_keys}")
+    actual_keys = set(actual_values)
+    requested_keys = {item.key.strip() for item in payload.targets}
+    missing_actual_keys = sorted(actual_keys - requested_keys)
+    unknown_target_keys = sorted(requested_keys - actual_keys)
+    if missing_actual_keys or unknown_target_keys:
+        raise HTTPException(
+            422,
+            {
+                "message": "Target keys must exactly match every currently valued member of the selected dimension.",
+                "missing_current_keys": missing_actual_keys,
+                "unknown_target_keys": unknown_target_keys,
+            },
+        )
     with SessionLocal() as db:
         portfolio = _require_portfolio_owner(db, portfolio_id)
         existing = db.execute(select(PortfolioAllocationTarget.id).where(
