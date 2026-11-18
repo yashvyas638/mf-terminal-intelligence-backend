@@ -668,3 +668,14 @@ Commits:
 - `b2dabe3` — Test monthly risk deltas against actual report schema.
 
 **Validation:** committed; exact current-head CI is required before acceptance. No merge, deployment or production data changes.
+
+
+### TWT risk-payload schema clarification — 2026-11-18
+
+A final trace through the report assembly confirmed that the canonical saved-report shape is `risk.metrics`: the report builder calls the portfolio historical-risk endpoint, which wraps the risk engine output under `metrics`. The existing nested reader was already aligned with that canonical shape. The additional direct-field fallback and regression are retained as harmless compatibility support, not counted as a correction to the current report path.
+
+- Clarified the code comment to document the canonical nested schema and compatibility fallback.
+- Renamed the regression to describe the direct-field compatibility case accurately.
+- Existing nested-risk regression cases continue to cover the canonical report shape.
+
+No additional production change or release claim is made from this clarification.
