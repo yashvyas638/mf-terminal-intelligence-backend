@@ -627,3 +627,11 @@ Commits:
 - `aea2ca0` — Assert latest portfolio intelligence asset cache key.
 
 Validation pending on exact latest branch SHA. No merge or deployment.
+
+
+AMC consistency guard follow-up: the cross-metric validation also checks available metric pairs when other AMC fields are missing, so partial evidence cannot bypass top-N ordering checks. Added a partial-evidence regression.
+
+- `f0811ac` — Validate partial AMC concentration evidence consistently.
+- `7afda9d` — Test partial AMC concentration inconsistency.
+
+Exact-head CI remains the release gate; no pass is claimed.
