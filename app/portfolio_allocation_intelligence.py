@@ -744,10 +744,13 @@ def holdings_overlap_matrix(
                 continue
             contribution = nav * weight / HUNDRED
             exposures[security_id] += contribution
+        # Stale disclosures remain available for pair diagnostics (their pair values
+        # are withheld), but must not enter portfolio-wide duplication totals.
         fund_exposures[code] = dict(exposures)
-        gross_positive += sum(exposures.values(), ZERO)
-        for security_id, amount in exposures.items():
-            security_contributions[security_id].append((code, amount))
+        if not disclosure_stale:
+            gross_positive += sum(exposures.values(), ZERO)
+            for security_id, amount in exposures.items():
+                security_contributions[security_id].append((code, amount))
         normalized.append({
             "scheme_code": code,
             "scheme_name": str(fund.get("scheme_name") or code),
