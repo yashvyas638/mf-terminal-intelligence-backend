@@ -6,7 +6,7 @@ Revises: 0029_admin_default_acl
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0030_portfolio_allocation_targets"
+revision = "0030_portfolio_targets"
 down_revision = "0029_admin_default_acl"
 branch_labels = None
 depends_on = None
