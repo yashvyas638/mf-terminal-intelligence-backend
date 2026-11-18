@@ -248,3 +248,41 @@ def test_overlap_matrix_has_a_hard_fund_count_limit():
     ]
     with pytest.raises(ValueError, match="limited to 200"):
         holdings_overlap_matrix(funds)
+
+def test_overlap_withholds_stale_or_undated_disclosures_when_freshness_gate_is_enabled():
+    funds = [
+        {"scheme_code": "A", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100",
+         "disclosure_age_days": 12, "holdings": [
+             {"security_id": "INE000000001", "is_isin": True, "weight_pct": "20"}]},
+        {"scheme_code": "B", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100",
+         "disclosure_age_days": 46, "holdings": [
+             {"security_id": "INE000000001", "is_isin": True, "weight_pct": "20"}]},
+    ]
+    result = holdings_overlap_matrix(funds, max_disclosure_age_days=45)
+    pair = result["pairs"][0]
+    assert pair["status"] == "WITHHELD_STALE_OR_UNDATED_DISCLOSURE"
+    assert pair["overlap_inr"] is None
+    assert pair["common_isin_count"] == 1
+    assert pair["disclosure_age_days_a"] == 12
+    assert pair["disclosure_age_days_b"] == 46
+
+
+def test_overlap_freshness_gate_withholds_missing_age_and_rejects_invalid_age():
+    funds = [
+        {"scheme_code": "A", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100",
+         "disclosure_age_days": None, "holdings": []},
+        {"scheme_code": "B", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100",
+         "disclosure_age_days": 1, "holdings": []},
+    ]
+    pair = holdings_overlap_matrix(funds, max_disclosure_age_days=45)["pairs"][0]
+    assert pair["status"] == "WITHHELD_STALE_OR_UNDATED_DISCLOSURE"
+    with pytest.raises(ValueError, match="non-negative integer"):
+        holdings_overlap_matrix(
+            [{**funds[0], "disclosure_age_days": -1}],
+            max_disclosure_age_days=45,
+        )
+    with pytest.raises(ValueError, match="non-negative integer"):
+        holdings_overlap_matrix(
+            [{**funds[0], "disclosure_age_days": 1.5}],
+            max_disclosure_age_days=45,
+        )
