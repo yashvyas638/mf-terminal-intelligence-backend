@@ -295,3 +295,8 @@ API outputs must be deterministic for the same inputs and methodology version. A
 This is educational decision support, not personalised regulated investment advice. The system must not promise returns, label a fund "best" from one metric, infer suitability from age or risk appetite alone, or automatically buy/sell/rebalance. Recommendations remain previews requiring user review.
 
 This specification does not authorise a production deploy, schema migration, secret change or production data write. All implementation work must remain on the candidate branch until the existing P0 release gates, branch reconciliation, backup/restore evidence and explicit release approval are complete.
+
+
+## 11. Smart SIP evidence engine implementation contract
+
+The candidate branch includes a pure, non-executing regime assessor in app/smart_sip_regime.py. It requires verified benchmark TRI observations with source IDs and hashes, rejects duplicate dates, enforces freshness and minimum lookback coverage, and reports 52-week / 3-year drawdown, 63/126-day momentum and 90-day annualised volatility. Thresholds are passed as explicit configuration. Portfolio need and risk-budget approval are independent gates; a market signal alone can never make a top-up eligible. Missing or stale evidence returns NOT_ASSESSED and the default decision remains CONTINUE_PLANNED_SIP. The engine is not wired to live portfolio endpoints until a verified benchmark-series contract and owner-scoped target/risk-budget inputs are available.
