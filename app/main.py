@@ -4875,7 +4875,7 @@ def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
     return {
         "portfolio_id": portfolio_id,
         "portfolio_name": valuation.get("portfolio_name"),
-        "status": "AVAILABLE",
+        "status": "PARTIAL_STALE_NAV" if valuation.get("stale_nav_scheme_codes") else "AVAILABLE",
         "valuation_status": valuation.get("valuation_status"),
         "valuation_date": valuation.get("valuation_date"),
         "valuation_freshness": valuation.get("valuation_freshness"),
