@@ -84,6 +84,16 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 
 **Monthly comparison limits:** A comparison requires valid report snapshots from two distinct calendar months. The selected snapshots are latest generated report per month, not guaranteed month-end valuations. Flow-versus-market attribution is not available; value movement is net movement only. The API withholds value change unless both valuations are complete.
 
+### Market-cap evidence gate (2026-11-18)
+
+- `a86a41dab537497fc71895393d11483e3dcfe24c` — added an explicit `market_cap_allocation.status = NOT_CONFIGURED` contract to portfolio look-through. No market-cap percentages or zero values are fabricated without verified effective-dated security classifications.
+- `b8a41471c3b8e2c29d3bb7af6872aa8bee254437`, `5e131aefa8749bcf2f4d8b27e6009db71a477c1a`, `7699b37758d5599515fe84680d3e7d21b033c6f3` — surfaced the market-cap limitation in UI and PDF.
+- `f7ba5137cc028039a91275f35e8e35ba263b28a6`, `0e24b7b6da5bb1c322786c2c846eb8dac78f13d9` — added API/UI contract assertions for this withheld state.
+
+**Remaining critical data dependency:** To deliver actual large/mid/small-cap exposure, add an operator-reviewed, source-hashed, effective-dated ISIN classification feed and backfill classifications for holdings. Until that feed is available and verified, market-cap allocation is correctly withheld. Portfolio-wide overlap matrix and flow-versus-market monthly attribution are also still open; current pairwise overlap is scheme-level only.
+
+**Branch state after these commits:** `audit/production-foundation` is 655 commits ahead and 57 behind `main` at the last comparison. This divergence remains a release blocker; do not merge wholesale.
+
 ### Fixes committed on `audit/production-foundation`
 
 - `2e73dd962afdc07f8bd63d126c3c522bd86402ac` — corrected look-through concentration percentages. API values are already percentage points; the UI had divided ISIN coverage and top-1/5/10 weights by 100, displaying values 100 times too small. Also corrected the diagnosis panel to read `security_concentration`, the actual API response key.
