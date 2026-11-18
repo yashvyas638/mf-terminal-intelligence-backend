@@ -812,3 +812,13 @@ Commits:
 - Added `docs/SUPABASE_DATABASE_SIZE_REMEDIATION.md` with live measurements, data-preservation rules and verification steps.
 - The hybrid NAV sampling plan is already represented in live checkpoints: recent/baseline daily windows, older month-end windows and paused obsolete daily windows. No NAV rows or research snapshots were deleted.
 - **Status:** repository-only change; production migration NOT applied. Production remains gated by the separate migration-credential/startup and verified-backup blockers. Exact-head CI is required before merge/release. Remeasure after migration because Supabase usage reporting can lag.
+
+
+### TWT target-policy cross-month identity guard — 2026-11-18
+
+- Follow-up audit found that target-policy versions were validated within each report but the two monthly policy identities were not compared against one another.
+- Monthly drift now compares the complete per-dimension policy identity (version plus effective-from date) across both snapshots before producing any movement.
+- Version or effective-date changes explicitly withhold the monthly target-drift section; allocation changes are not misreported as policy drift.
+- Added a regression where only the version changes and another where only the effective date changes.
+- Commits: `c4306d6`, `842e800`.
+- Exact-head CI is still pending; no pass claimed.
