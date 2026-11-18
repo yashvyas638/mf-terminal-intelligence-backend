@@ -60,6 +60,31 @@ def _allocation_group_rows(items: list[dict], label: str) -> list[list[object]]:
     return rows
 
 
+def _source_reference_row(source: dict, note_style) -> list[object]:
+    """Normalise the different provenance fields used by NAV and holdings sources."""
+    source_type = str(source.get("source_type") or "SOURCE").replace("_", " ").title()
+    source_label = source.get("title") or source.get("scheme_name") or source_type
+    source_as_of = (
+        source.get("as_of_date")
+        or source.get("source_as_of_date")
+        or source.get("max_nav_date")
+        or source.get("effective_nav_date")
+        or source.get("retrieved_at")
+    )
+    source_url = source.get("url") or source.get("source_url")
+    if source.get("min_nav_date") or source.get("max_nav_date"):
+        source_as_of = (
+            str(source.get("min_nav_date") or "—")
+            + " to "
+            + str(source.get("max_nav_date") or "—")
+        )
+    return [
+        Paragraph(_text(source_label), note_style),
+        _text(source_as_of),
+        Paragraph(_text(source_url), note_style),
+    ]
+
+
 def build_portfolio_report_pdf(report: dict) -> bytes:
     """Render a compact, source-linked report; source values remain in the JSON snapshot."""
     output = BytesIO()
@@ -350,27 +375,7 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
     sources = report.get("sources") or []
     source_rows = [["Source", "As-of / retrieval", "Reference"]]
     for source in sources:
-        source_type = str(source.get("source_type") or "SOURCE").replace("_", " ").title()
-        source_label = source.get("title") or source.get("scheme_name") or source_type
-        source_as_of = (
-            source.get("as_of_date")
-            or source.get("source_as_of_date")
-            or source.get("max_nav_date")
-            or source.get("effective_nav_date")
-            or source.get("retrieved_at")
-        )
-        source_url = source.get("url") or source.get("source_url")
-        if source.get("min_nav_date") or source.get("max_nav_date"):
-            source_as_of = (
-                str(source.get("min_nav_date") or "—")
-                + " to "
-                + str(source.get("max_nav_date") or "—")
-            )
-        source_rows.append([
-            Paragraph(_text(source_label), styles["SmallNote"]),
-            _text(source_as_of),
-            Paragraph(_text(source_url), styles["SmallNote"]),
-        ])
+        source_rows.append(_source_reference_row(source, styles["SmallNote"]))
     story.extend([Paragraph("Source references", styles["SectionHeading"]), _table(source_rows, [55 * mm, 40 * mm, 70 * mm])])
 
     limitations = report.get("limitations") or []
