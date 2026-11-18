@@ -2179,7 +2179,15 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF")
     with SessionLocal() as db:
+        saved_snapshot = db.query(PortfolioReportSnapshot).filter_by(id=report_id).one()
         assert db.query(PortfolioReportSnapshot).filter_by(id=report_id).count() == 1
+        # Corrupt the payload without updating its digest; financial reads must fail closed.
+        saved_snapshot.content_json = saved_snapshot.content_json + " "
+        db.commit()
+    corrupted_detail = client.get(f"/v1/reports/{report_id}", headers=headers)
+    assert corrupted_detail.status_code == 409
+    corrupted_pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
+    assert corrupted_pdf.status_code == 409
 
     incomplete = client.post(
         f"/v1/portfolios/{portfolio_id}/stress",
