@@ -75,6 +75,9 @@ def test_monthly_snapshots_and_pdf_include_twt_allocation_intelligence():
         '"allocation_intelligence": allocation_intelligence',
         '"overlap_intelligence": overlap_intelligence',
         '"market_cap_intelligence": market_cap_intelligence',
+        '"target_policy_snapshot": target_policy_snapshot',
+        '"target_drift_snapshot": target_drift_snapshot',
+        '"snapshot_consistency": {',
         '"/v1/portfolios/{portfolio_id}/monthly-comparison"',
     ):
         assert field in main, field
@@ -82,6 +85,8 @@ def test_monthly_snapshots_and_pdf_include_twt_allocation_intelligence():
         "Allocation and AMC concentration",
         "Fund overlap and duplicated exposure",
         "Underlying market-cap allocation",
+        "Target policy and allocation drift",
+        "Snapshot consistency:",
     ):
         assert heading in reporting, heading
     assert "weight_of_total_portfolio_pct" in js
