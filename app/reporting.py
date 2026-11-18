@@ -1,6 +1,7 @@
 """Reproducible PDF rendering for immutable portfolio report snapshots."""
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from xml.sax.saxutils import escape
 
@@ -25,6 +26,21 @@ def _text(value: object) -> str:
         return f"{value:.4f}"
     return escape(str(value))
 
+
+
+
+def _holding_weight_pct(item: dict, valuation: dict) -> str:
+    """Return a holding's portfolio weight only when total valuation is complete."""
+    if valuation.get("valuation_status") != "COMPLETE":
+        return "—"
+    try:
+        total_value = Decimal(str(valuation.get("current_value") or "0"))
+        market_value = Decimal(str(item.get("market_value")))
+    except (InvalidOperation, TypeError, ValueError):
+        return "—"
+    if not total_value.is_finite() or not market_value.is_finite() or total_value <= 0:
+        return "—"
+    return f"{(market_value / total_value * Decimal('100')).quantize(Decimal('0.01'))}%"
 
 def _table(rows: list[list[object]], widths=None) -> Table:
     table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
@@ -118,9 +134,9 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
             Paragraph(_text(item.get("scheme_name")), styles["SmallNote"]),
             _text(item.get("units")),
             _text(item.get("market_value")),
-            _text(item.get("weight_pct")),
+            _holding_weight_pct(item, valuation),
             _text(item.get("nav_date")),
-            _text(item.get("freshness_status")),
+            _text(item.get("nav_freshness") or item.get("freshness_status")),
         ])
     story.extend([
         Paragraph("Holdings", styles["SectionHeading"]),
