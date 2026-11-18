@@ -274,3 +274,41 @@ def test_twt_pdf_includes_all_scheme_rows_beyond_previous_40_row_limit(monkeypat
     assert pdf.startswith(b"%PDF")
     assert len(captured_scheme_rows) == 46
     assert captured_scheme_rows[-1][0].text == "Scheme 45"
+
+
+def test_monthly_pdf_status_reflects_withheld_percentage_metric_even_if_inr_is_comparable():
+    rows = _monthly_comparison_rows(
+        {
+            "comparisons": {
+                "category": {
+                    "status": "COMPARABLE",
+                    "items": [{
+                        "key": "Equity",
+                        "presence_status": "CONTINUING",
+                        "metrics": {
+                            "market_value_inr": {
+                                "previous": "70000",
+                                "current": "75000",
+                                "change": "5000",
+                                "change_inr": "5000",
+                                "status": "COMPARABLE",
+                            },
+                            "portfolio_weight_pct": {
+                                "previous": None,
+                                "current": None,
+                                "change_percentage_points": None,
+                                "status": "WITHHELD_INVALID_SOURCE_VALUE",
+                            },
+                        },
+                    }],
+                },
+            },
+        },
+        "category",
+        "market_value_inr",
+        "portfolio_weight_pct",
+    )
+
+    assert rows[1][3] == "5000"
+    assert rows[1][4] == "—"
+    assert rows[1][-1] == "WITHHELD_INVALID_SOURCE_VALUE"
