@@ -635,3 +635,21 @@ AMC consistency guard follow-up: the cross-metric validation also checks availab
 - `7afda9d` — Test partial AMC concentration inconsistency.
 
 Exact-head CI remains the release gate; no pass is claimed.
+
+
+### TWT monthly monetary and risk-source validation — 2026-11-18
+
+A further snapshot-comparison audit found that malformed market-cap rows could raise during report comparison, and negative rupee values or impossible historical-risk values could still be treated as valid source metrics.
+
+- Market-cap comparison now withholds malformed classified/unclassified row structures instead of raising.
+- Monthly INR allocation values and portfolio valuation reject negative source amounts.
+- Historical risk deltas now validate volatility (non-negative), drawdown (-100% to 0%), and historical VaR/CVaR (0–100% loss fraction) before exposing movement.
+- Added regressions for malformed market-cap rows, negative INR/portfolio values, impossible drawdown and VaR.
+
+Commits:
+- `3d429a0` — Reject invalid monetary values and malformed market-cap rows.
+- `318859c` — Test invalid monetary and market-cap monthly sources.
+- `daa4c51` — Validate historical risk source metric bounds.
+- `4d84a4e` — Test invalid monthly historical risk source values.
+
+**Validation:** code and regression tests are committed; exact latest-head CI is still the release gate. No merge, deployment or production data changes.
