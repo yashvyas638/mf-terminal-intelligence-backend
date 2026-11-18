@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 def is_month_end_valuation_date(raw: Any, *, window_days: int = 7) -> bool:
     """Return whether a valuation date falls within the final days of its month."""
-    if not raw or window_days < 0:
+    if not raw or window_days < 1:
         return False
     try:
         valuation_date = date.fromisoformat(str(raw)[:10])
@@ -25,7 +25,8 @@ def is_month_end_valuation_date(raw: Any, *, window_days: int = 7) -> bool:
         valuation_date.month,
         monthrange(valuation_date.year, valuation_date.month)[1],
     )
-    return 0 <= (month_end - valuation_date).days <= window_days
+    # A seven-calendar-day window contains seven dates, including month-end.
+    return 0 <= (month_end - valuation_date).days < window_days
 
 
 def _period_key(report: dict[str, Any]) -> str | None:
