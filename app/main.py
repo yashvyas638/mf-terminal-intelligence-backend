@@ -5135,6 +5135,8 @@ def portfolio_fund_overlap_matrix(
     result = holdings_overlap_matrix(funds)
     result["portfolio_id"] = portfolio_id
     result["portfolio_name"] = valuation.get("portfolio_name")
+    result["portfolio_market_value_inr"] = str(valuation.get("current_value"))
+    result["valuation_date"] = valuation.get("valuation_date")
     result["status"] = (
         "PARTIAL_STALE_NAV" if valuation.get("stale_nav_scheme_codes")
         else "PARTIAL_MISSING_OR_STALE_DISCLOSURES"
@@ -5624,6 +5626,7 @@ def get_portfolio_market_cap_allocation(
     result.update({
         "portfolio_id": portfolio_id,
         "portfolio_name": valuation.get("portfolio_name"),
+        "valuation_date": valuation.get("valuation_date"),
         "status": market_cap_status,
         "lookthrough_coverage": lookthrough.get("coverage"),
         "classification_health": {
