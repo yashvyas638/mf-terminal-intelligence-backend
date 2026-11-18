@@ -700,5 +700,5 @@ No additional production change or release claim is made from this clarification
 - TWT PDF includes a dedicated target-drift movement table with previous/current drift pp, pp change and actual weights; withheld evidence includes its reason.
 - Regression coverage added for comparable same-policy movement, policy-version changes, incomplete/reconciliation failures, PDF formatting and UI rendering.
 - Static asset cache keys advanced to v5.
-- Commits in this batch: `ce44e93`, `093e75c`, `dd4b457`, `c33312e`, `fc072c8`, `6aa7c69`, `792f087`, `6f87440`.
+- Commits in this batch: `ce44e93`, `093e75c`, `dd4b457`, `c33312e`, `fc072c8`, `6aa7c69`, `792f087`, `6f87440`, `c173f68`, `c71f38a`, `365b16b`, `770f3f5`, plus tracker update `10905ae`.
 - Validation: pending exact-head GitHub Actions; do not treat this work as test-passed until the SQLite, PostgreSQL and AMFI jobs complete successfully. Visual PDF pagination review remains open. No merge, deployment or production data changes.
