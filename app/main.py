@@ -5095,6 +5095,13 @@ def save_portfolio_allocation_targets(
         raise HTTPException(409, f"{payload.dimension} target bands are not enabled until complete verified classification coverage is available")
     if payload.effective_from > datetime.now(timezone.utc).date():
         raise HTTPException(422, "effective_from cannot be in the future")
+    valuation = portfolio_valuation(portfolio_id, None)
+    total_value, actual_values = _portfolio_dimension_values(portfolio_id, payload.dimension, valuation)
+    if total_value <= 0:
+        raise HTTPException(409, "Allocation targets require a positively valued portfolio")
+    missing_actual_keys = sorted(set(actual_values) - {item.key.strip() for item in payload.targets})
+    if missing_actual_keys:
+        raise HTTPException(422, f"Target set must include every currently held allocation key: {missing_actual_keys}")
     with SessionLocal() as db:
         portfolio = _require_portfolio_owner(db, portfolio_id)
         existing = db.execute(select(PortfolioAllocationTarget.id).where(
