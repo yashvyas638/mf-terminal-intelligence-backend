@@ -224,9 +224,18 @@ def holdings_overlap_matrix(
             ), ZERO)
             matched_left = sum((fund_exposures[left["scheme_code"]][sid] for sid in shared), ZERO)
             matched_right = sum((fund_exposures[right["scheme_code"]][sid] for sid in shared), ZERO)
-            withheld = (
-                left_cov is None or right_cov is None
-                or left_cov < threshold or right_cov < threshold
+            below_threshold = (
+                left_cov is not None and right_cov is not None
+                and (left_cov < threshold or right_cov < threshold)
+            )
+            withheld = threshold > ZERO and (
+                left_cov is None or right_cov is None or below_threshold
+            )
+            pair_status = (
+                "WITHHELD_LOW_OR_UNKNOWN_COVERAGE" if withheld
+                else "PARTIAL_COVERAGE_UNKNOWN" if left_cov is None or right_cov is None
+                else "PARTIAL_BELOW_CONFIGURED_THRESHOLD" if below_threshold
+                else "AVAILABLE"
             )
             pairs.append({
                 "scheme_a": left["scheme_code"],
@@ -241,7 +250,7 @@ def holdings_overlap_matrix(
                 "disclosure_coverage_b_pct": str(right_cov) if right_cov is not None else None,
                 "disclosure_as_of_a": left["disclosure_as_of_date"],
                 "disclosure_as_of_b": right["disclosure_as_of_date"],
-                "status": "WITHHELD_LOW_OR_UNKNOWN_COVERAGE" if withheld else "AVAILABLE",
+                "status": pair_status,
             })
 
     duplicated = ZERO
