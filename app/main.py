@@ -4804,6 +4804,9 @@ def portfolio_holdings_lookthrough(
             ),
         },
         "top_securities": security_rows[:max_securities],
+        "security_count": len(security_rows),
+        "returned_security_count": min(len(security_rows), max_securities),
+        "security_rows_truncated": len(security_rows) > max_securities,
         "sector_exposure": sector_rows,
         "security_concentration": concentration,
         "sources": source_rows,
@@ -5327,6 +5330,14 @@ def get_portfolio_market_cap_allocation(
             "message": "Market-cap percentages are withheld until portfolio valuation is complete.",
         }
     lookthrough = portfolio_holdings_lookthrough(portfolio_id, max_disclosure_age_days, 20000)
+    if lookthrough.get("security_rows_truncated"):
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "WITHHELD_SECURITY_LIMIT_EXCEEDED",
+            "security_count": lookthrough.get("security_count"),
+            "returned_security_count": lookthrough.get("returned_security_count"),
+            "message": "Market-cap totals are withheld because the complete look-through security set exceeds the calculation limit.",
+        }
     as_of_date = lookthrough["as_of_date"]
     with SessionLocal() as db:
         _require_portfolio_owner(db, portfolio_id)
