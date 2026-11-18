@@ -5094,19 +5094,24 @@ def get_portfolio_allocation_targets(
         rows = db.execute(query.order_by(
             PortfolioAllocationTarget.dimension,
             desc(PortfolioAllocationTarget.effective_from),
+            desc(PortfolioAllocationTarget.version),
             PortfolioAllocationTarget.priority,
             PortfolioAllocationTarget.target_key,
         )).scalars().all()
-    latest_by_dimension: dict[str, date] = {}
+    latest_by_dimension: dict[str, tuple[date, int]] = {}
     for row in rows:
-        latest_by_dimension.setdefault(row.dimension, row.effective_from)
-    selected = [row for row in rows if row.effective_from == latest_by_dimension.get(row.dimension)]
+        latest_by_dimension.setdefault(row.dimension, (row.effective_from, row.version))
+    selected = [
+        row for row in rows
+        if (row.effective_from, row.version) == latest_by_dimension.get(row.dimension)
+    ]
     return {
         "portfolio_id": portfolio_id,
         "as_of_date": today.isoformat(),
         "dimensions": [{
             "dimension": dim,
-            "effective_from": latest_by_dimension[dim].isoformat(),
+            "effective_from": latest_by_dimension[dim][0].isoformat(),
+            "version": latest_by_dimension[dim][1],
             "targets": [{
                 "key": row.target_key,
                 "min_pct": str(row.min_pct),
@@ -5148,13 +5153,12 @@ def save_portfolio_allocation_targets(
         )
     with SessionLocal() as db:
         portfolio = _require_portfolio_owner(db, portfolio_id)
-        existing = db.execute(select(PortfolioAllocationTarget.id).where(
+        latest_version = db.execute(select(func.max(PortfolioAllocationTarget.version)).where(
             PortfolioAllocationTarget.portfolio_id == portfolio_id,
             PortfolioAllocationTarget.dimension == payload.dimension,
             PortfolioAllocationTarget.effective_from == payload.effective_from,
-        ).limit(1)).first()
-        if existing:
-            raise HTTPException(409, "A target version already exists for this dimension and effective date; add a new effective date to preserve history")
+        )).scalar_one_or_none() or 0
+        next_version = int(latest_version) + 1
         created_at = datetime.now(timezone.utc)
         rows = [
             PortfolioAllocationTarget(
@@ -5166,6 +5170,7 @@ def save_portfolio_allocation_targets(
                 target_pct=item.target_pct,
                 max_pct=item.max_pct,
                 effective_from=payload.effective_from,
+                version=next_version,
                 priority=item.priority,
                 created_at=created_at,
             )
@@ -5182,8 +5187,9 @@ def save_portfolio_allocation_targets(
         "dimension": payload.dimension,
         "effective_from": payload.effective_from.isoformat(),
         "target_count": len(rows),
+        "version": next_version,
         "status": "SAVED",
-        "history": "Previous effective-dated versions are retained.",
+        "history": "Previous effective-dated versions and same-day revisions are retained.",
     }
 
 
@@ -5204,11 +5210,12 @@ def get_portfolio_allocation_drift(
             PortfolioAllocationTarget.owner_user_id == portfolio.owner_user_id,
             PortfolioAllocationTarget.dimension == dimension,
             PortfolioAllocationTarget.effective_from <= today,
-        ).order_by(desc(PortfolioAllocationTarget.effective_from), PortfolioAllocationTarget.priority)).scalars().all()
+        ).order_by(desc(PortfolioAllocationTarget.effective_from), desc(PortfolioAllocationTarget.version), PortfolioAllocationTarget.priority)).scalars().all()
     if not rows:
         raise HTTPException(404, f"No effective {dimension} target set is configured")
     effective = rows[0].effective_from
-    targets = [row for row in rows if row.effective_from == effective]
+    effective_version = rows[0].version
+    targets = [row for row in rows if row.effective_from == effective and row.version == effective_version]
     payload = [{
         "key": row.target_key,
         "min_pct": str(row.min_pct),
@@ -5224,6 +5231,7 @@ def get_portfolio_allocation_drift(
         "portfolio_id": portfolio_id,
         "dimension": dimension,
         "effective_from": effective.isoformat(),
+        "target_version": effective_version,
         "valuation_date": valuation.get("valuation_date"),
     })
     return result
@@ -5270,6 +5278,7 @@ def preview_portfolio_contribution_plan(
         "portfolio_id": portfolio_id,
         "dimension": payload.dimension,
         "effective_from": effective.isoformat(),
+        "target_version": effective_version,
         "valuation_date": valuation.get("valuation_date"),
         "valuation_freshness": valuation.get("valuation_freshness"),
     })
