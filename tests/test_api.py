@@ -2655,3 +2655,43 @@ def test_contribution_preview_enforces_explicit_risk_caps_and_never_writes_trans
     assert sum(Decimal(row["post_contribution_weight_pct"]) for row in result["post_contribution_allocation"]) == Decimal("100.0000")
     with SessionLocal() as db:
         assert db.query(PortfolioTransaction).filter(PortfolioTransaction.portfolio_id == portfolio_id).count() == 0
+
+
+
+def test_target_policy_and_drift_are_selected_as_of_portfolio_valuation_date(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    created = client.post("/v1/portfolios", headers=headers, json={"name": "Historical Target Policy"})
+    assert created.status_code == 201
+    portfolio_id = created.json()["id"]
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        portfolio = db.get(Portfolio, portfolio_id)
+        for effective_from, version, target_pct in ((date(2026, 11, 1), 1, "100"), (date(2026, 11, 19), 1, "80")):
+            db.add(PortfolioAllocationTarget(
+                portfolio_id=portfolio_id, owner_user_id=portfolio.owner_user_id,
+                dimension="ASSET_CLASS", target_key="EQUITY", min_pct="0", target_pct=target_pct,
+                max_pct="100", effective_from=effective_from, version=version, priority=100, created_at=now,
+            ))
+        db.commit()
+    monkeypatch.setattr(main, "portfolio_valuation", lambda *_: {
+        "valuation_status": "COMPLETE", "valuation_date": "2026-11-18",
+        "valuation_freshness": "FRESH", "current_value": "1000.00",
+    })
+    monkeypatch.setattr(main, "_portfolio_dimension_values", lambda *_: (
+        Decimal("1000.00"), {"EQUITY": Decimal("1000.00")},
+    ))
+    targets = client.get(
+        f"/v1/portfolios/{portfolio_id}/targets?dimension=ASSET_CLASS&as_of_date=2026-11-18", headers=headers,
+    )
+    assert targets.status_code == 200
+    assert targets.json()["as_of_date"] == "2026-11-18"
+    assert targets.json()["dimensions"][0]["targets"][0]["target_pct"] == "100.0000"
+    drift = client.get(f"/v1/portfolios/{portfolio_id}/allocation-drift?dimension=ASSET_CLASS", headers=headers)
+    assert drift.status_code == 200
+    assert drift.json()["valuation_date"] == "2026-11-18"
+    assert drift.json()["policy_as_of_date"] == "2026-11-18"
+    assert drift.json()["targets"][0]["target_pct"] == "100.0000"
