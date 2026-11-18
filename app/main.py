@@ -5211,6 +5211,10 @@ def portfolio_fund_overlap_matrix(
 ) -> dict[str, Any]:
     """Return pairwise verified-disclosure overlap and non-double-counted duplication."""
     require_authenticated_user()
+    # Check ownership before valuation so unauthorized requests cannot trigger
+    # portfolio reads or learn valuation-state details for another user's ID.
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
     valuation = portfolio_valuation(portfolio_id, None)
     if valuation.get("valuation_status") != "COMPLETE":
         return {
