@@ -414,15 +414,29 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         risk_withheld_status = None
 
     risk_changes = {}
-    for metric_name in ("annualized_volatility", "max_drawdown", "historical_var_95", "historical_cvar_95"):
+    risk_bounds = {
+        "annualized_volatility": (Decimal("0"), None),
+        "max_drawdown": (Decimal("-1"), Decimal("0")),
+        "historical_var_95": (Decimal("0"), Decimal("1")),
+        "historical_cvar_95": (Decimal("0"), Decimal("1")),
+    }
+    for metric_name, (minimum, maximum) in risk_bounds.items():
         old_metric = _decimal((old_risk.get("metrics") or {}).get(metric_name))
         new_metric = _decimal((new_risk.get("metrics") or {}).get(metric_name))
-        comparable = risk_withheld_status is None and old_metric is not None and new_metric is not None
+        invalid_metric = any(
+            value is not None and (value < minimum or (maximum is not None and value > maximum))
+            for value in (old_metric, new_metric)
+        )
+        comparable = risk_withheld_status is None and not invalid_metric and old_metric is not None and new_metric is not None
         risk_changes[metric_name] = {
             "previous": str(old_metric) if comparable else None,
             "current": str(new_metric) if comparable else None,
             "change": str(new_metric - old_metric) if comparable else None,
-            "status": "COMPARABLE" if comparable else risk_withheld_status or "WITHHELD_METRIC_UNAVAILABLE",
+            "status": (
+                "WITHHELD_INVALID_SOURCE_VALUE" if invalid_metric
+                else "COMPARABLE" if comparable
+                else risk_withheld_status or "WITHHELD_METRIC_UNAVAILABLE"
+            ),
             "lookback_days": old_risk_window if comparable else None,
         }
     return {
