@@ -3,7 +3,9 @@ from decimal import Decimal
 import pytest
 
 from app.portfolio_allocation_intelligence import (
+    allocation_drift,
     amc_concentration,
+    contribution_plan_preview,
     holdings_overlap_matrix,
     market_cap_allocation,
     portfolio_allocation,
@@ -161,3 +163,43 @@ def test_market_cap_rejects_conflicting_effective_classifications_and_bad_proven
             [{**base, "market_cap_bucket": "LARGE_CAP", "source_sha256": "bad"}],
             as_of_date="2026-11-01", portfolio_value_inr="100",
         )
+
+
+
+def test_allocation_drift_validates_complete_target_set_and_calculates_band_status():
+    result = allocation_drift([
+        {"key": "EQUITY", "min_pct": "40", "target_pct": "50", "max_pct": "60", "actual_value_inr": "300"},
+        {"key": "DEBT", "min_pct": "40", "target_pct": "50", "max_pct": "60", "actual_value_inr": "700"},
+    ], portfolio_value_inr="1000")
+    by_key = {row["key"]: row for row in result["targets"]}
+    assert by_key["EQUITY"]["actual_weight_pct"] == "30.0000"
+    assert by_key["EQUITY"]["drift_percentage_points"] == "-20.0000"
+    assert by_key["EQUITY"]["amount_to_preferred_target_inr"] == "200.00"
+    assert by_key["EQUITY"]["status"] == "UNDERWEIGHT"
+    assert by_key["DEBT"]["status"] == "OVERWEIGHT"
+    with pytest.raises(ValueError, match="reconcile to 100"):
+        allocation_drift([
+            {"key": "EQUITY", "min_pct": "0", "target_pct": "40", "max_pct": "60", "actual_value_inr": "500"},
+        ], portfolio_value_inr="1000")
+
+
+def test_contribution_plan_is_contribution_only_and_does_not_allocate_to_overweight_segment():
+    result = contribution_plan_preview([
+        {"key": "EQUITY", "min_pct": "40", "target_pct": "50", "max_pct": "60", "actual_value_inr": "300"},
+        {"key": "DEBT", "min_pct": "40", "target_pct": "50", "max_pct": "60", "actual_value_inr": "700"},
+    ], portfolio_value_inr="1000", contribution_inr="100")
+    by_key = {row["key"]: row for row in result["allocations"]}
+    assert by_key["EQUITY"]["contribution_allocation_inr"] == "100.00"
+    assert by_key["DEBT"]["contribution_allocation_inr"] == "0.00"
+    assert result["allocated_contribution_inr"] == "100.00"
+    assert result["plan_type"] == "CONTRIBUTION_ONLY_PREVIEW"
+    assert sum(Decimal(row["post_contribution_weight_pct"]) for row in result["post_contribution_allocation"]) == Decimal("100.0000")
+
+
+def test_contribution_plan_rejects_nonpositive_and_unbounded_contributions():
+    targets = [
+        {"key": "EQUITY", "min_pct": "0", "target_pct": "50", "max_pct": "100", "actual_value_inr": "500"},
+        {"key": "DEBT", "min_pct": "0", "target_pct": "50", "max_pct": "100", "actual_value_inr": "500"},
+    ]
+    with pytest.raises(ValueError, match="positive"):
+        contribution_plan_preview(targets, portfolio_value_inr="1000", contribution_inr="0")
