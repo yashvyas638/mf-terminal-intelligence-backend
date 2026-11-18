@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db import (
     Portfolio,
+    PortfolioAllocationTarget,
     PortfolioTransaction,
     Scheme,
     SessionLocal,
@@ -48,5 +49,73 @@ def test_database_rejects_non_positive_portfolio_transaction_units():
                     created_at=now,
                 )
             )
+            db.commit()
+        db.rollback()
+
+
+
+def test_database_enforces_versioned_target_ranges_and_uniqueness():
+    init_db()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        portfolio = Portfolio(
+            name="Target Constraint Test",
+            currency="INR",
+            owner_user_id="target-owner",
+            created_at=now,
+        )
+        db.add(portfolio)
+        db.commit()
+        portfolio_id = portfolio.id
+
+    with SessionLocal() as db:
+        invalid = PortfolioAllocationTarget(
+            portfolio_id=portfolio_id,
+            owner_user_id="target-owner",
+            dimension="ASSET_CLASS",
+            target_key="EQUITY",
+            min_pct="60",
+            target_pct="50",
+            max_pct="70",
+            effective_from=date(2026, 1, 1),
+            priority=100,
+            created_at=now,
+        )
+        db.add(invalid)
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    with SessionLocal() as db:
+        valid = PortfolioAllocationTarget(
+            portfolio_id=portfolio_id,
+            owner_user_id="target-owner",
+            dimension="ASSET_CLASS",
+            target_key="EQUITY",
+            min_pct="40",
+            target_pct="50",
+            max_pct="60",
+            effective_from=date(2026, 1, 1),
+            priority=100,
+            created_at=now,
+        )
+        db.add(valid)
+        db.commit()
+
+    with SessionLocal() as db:
+        duplicate = PortfolioAllocationTarget(
+            portfolio_id=portfolio_id,
+            owner_user_id="target-owner",
+            dimension="ASSET_CLASS",
+            target_key="EQUITY",
+            min_pct="35",
+            target_pct="50",
+            max_pct="65",
+            effective_from=date(2026, 1, 1),
+            priority=100,
+            created_at=now,
+        )
+        db.add(duplicate)
+        with pytest.raises(IntegrityError):
             db.commit()
         db.rollback()
