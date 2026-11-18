@@ -508,3 +508,18 @@ Directional overlap PDF labels were clarified to `Change pp A` and `Change pp B`
 
 - `ec7decb` — Label both directional fund overlap deltas.
 - `7b0e371` — Assert labelled fund A and B overlap deltas.
+
+### TWT historical-risk comparison comparability gate — 2026-11-18
+
+A report comparison audit found that historical-risk deltas were calculated without checking whether both snapshots used the same lookback window or whether either risk calculation was flagged stale/invalid. Numerically populated values alone do not make the comparison valid.
+
+- Risk deltas now require identical, positive `lookback_days` in both immutable reports.
+- Both report-level risk statuses must be `OK`; stale NAV or other non-OK input states withhold risk movement.
+- Withheld metrics expose no previous/current/change numbers and include an explicit reason status.
+- Added regressions for different lookback windows and stale-NAV risk inputs.
+
+Commits:
+- `b3978a4` — Withhold TWT risk deltas across incompatible inputs.
+- `42b194b` — Test comparable risk windows for TWT monthly reports.
+
+Validation remains pending on the exact latest PR head. No merge, deployment or production data changes.
