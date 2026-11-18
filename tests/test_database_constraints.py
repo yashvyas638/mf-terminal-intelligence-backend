@@ -137,3 +137,38 @@ def test_database_enforces_versioned_target_ranges_and_uniqueness():
         with pytest.raises(IntegrityError):
             db.commit()
         db.rollback()
+
+
+def test_database_rejects_allocation_target_with_mismatched_portfolio_owner():
+    """Target rows cannot claim a different owner from their parent portfolio."""
+    init_db()
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        portfolio = Portfolio(
+            name="Owner Integrity Test",
+            currency="INR",
+            owner_user_id="actual-portfolio-owner",
+            created_at=now,
+        )
+        db.add(portfolio)
+        db.commit()
+        portfolio_id = portfolio.id
+
+    with SessionLocal() as db:
+        mismatched = PortfolioAllocationTarget(
+            portfolio_id=portfolio_id,
+            owner_user_id="different-owner",
+            dimension="ASSET_CLASS",
+            target_key="EQUITY",
+            min_pct="40",
+            target_pct="50",
+            max_pct="60",
+            effective_from=date(2026, 1, 1),
+            version=1,
+            priority=100,
+            created_at=now,
+        )
+        db.add(mismatched)
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
