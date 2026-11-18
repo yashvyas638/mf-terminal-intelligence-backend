@@ -192,3 +192,21 @@ def test_smart_sip_withholds_portfolio_need_when_valuation_is_stale(monkeypatch)
     assert need["verified"] is False
     assert need["underweight_buckets"] == []
     assert response.json()["topup_eligible"] is False
+
+
+def test_smart_sip_rejects_sub_paisa_budget_amount():
+    from fastapi.testclient import TestClient
+    import app.main as main
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/v1/portfolios/123/smart-sip/preview",
+        headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+        json={
+            "benchmark_code": "NIFTY_TEST_TRI",
+            "dimension": "ASSET_CLASS",
+            "additional_contribution_budget_approved": True,
+            "additional_contribution_budget_inr": "5000.001",
+        },
+    )
+    assert response.status_code == 422
