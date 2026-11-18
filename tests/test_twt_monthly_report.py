@@ -1,4 +1,4 @@
-from app.twt_monthly_report import compare_monthly_reports, select_latest_distinct_months
+from app.twt_monthly_report import compare_monthly_reports, is_month_end_valuation_date, select_latest_distinct_months
 
 
 def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_status="PARTIAL_CLASSIFICATION_COVERAGE"):
@@ -92,3 +92,12 @@ def test_month_selection_excludes_mid_month_valuation_snapshots():
         {"report_id": 8, "generated_at": "2026-10-15", "report": _report("2026-10-15", 900, 600, 66.6667)},
     ]
     assert select_latest_distinct_months(snapshots) == []
+
+
+
+def test_month_end_window_includes_final_seven_days_only():
+    assert is_month_end_valuation_date("2026-10-31")
+    assert is_month_end_valuation_date("2026-10-24")
+    assert not is_month_end_valuation_date("2026-10-23")
+    assert not is_month_end_valuation_date("2026-10-15")
+    assert not is_month_end_valuation_date("not-a-date")
