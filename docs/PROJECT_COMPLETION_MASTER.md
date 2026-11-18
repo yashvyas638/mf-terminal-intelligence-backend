@@ -89,3 +89,24 @@ Latest observed branch head after the subsequent snapshot-integrity and tracker 
 - [ ] Review rendered multi-page PDF visually for table splitting, repeated headers, clipped cells, URL wrapping and footer overlap.
 - [ ] Add/confirm explicit coverage numerator/denominator, retrieval timestamp and methodology-version presentation in the PDF where those values exist in the saved snapshot.
 - [ ] Decide whether to include a frozen prior-month comparison appendix. If added, it must be captured into the report JSON at snapshot creation; the PDF renderer must never query current data or compute a live comparison.
+
+
+## Frozen monthly comparison in report/PDF — 2026-11-18
+
+A further TWT gap was found and addressed: the monthly comparison endpoint could compare saved reports, but the immutable report payload and PDF did not contain the prior-month comparison. This meant a PDF could not reproduce its month-on-month section later.
+
+Changes:
+- At report creation, load the portfolio owner's existing immutable snapshots and select the newest saved report for each distinct valuation month.
+- Compare the current report payload with the preceding distinct valuation month before hashing/persisting the new report.
+- Persist the result under `report.monthly_comparison`; the existing PDF endpoint continues to read only saved `content_json`.
+- If no prior distinct month exists, persist `INSUFFICIENT_MONTHLY_SNAPSHOTS`. If the current valuation month is older than a previously saved valuation month, persist `NOT_LATEST_VALUATION_MONTH` rather than making a misleading backward comparison.
+- PDF now renders the frozen portfolio value comparison, category/sub-category/asset-class/AMC/market-cap/sector movements, data coverage movement and comparison limitations.
+- Added tests for monthly comparison PDF rows and an API regression test proving a generated report stores the prior-period comparison in its immutable JSON.
+
+Commits:
+- `6b479c2` — Freeze prior-month comparison into immutable TWT report snapshots.
+- `c2766de` — Render frozen monthly allocation and coverage comparisons in TWT PDF.
+- `3d56329` — Test frozen monthly comparison rendering in TWT PDF.
+- `ecb1f57` — Verify monthly comparison is frozen into report snapshot.
+
+Validation: latest CI must pass on the current branch head; do not reuse older CI results. Verify PDF pagination visually, particularly the additional comparison tables. A report generated before this change will not gain a monthly comparison retroactively; create a new immutable report snapshot to include the section.
