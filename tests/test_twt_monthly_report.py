@@ -1,6 +1,12 @@
-from app.twt_monthly_report import compare_monthly_reports, decode_verified_snapshot, is_month_end_valuation_date, select_latest_distinct_months
 import hashlib
 import json
+
+from app.twt_monthly_report import (
+    compare_monthly_reports,
+    decode_verified_snapshot,
+    is_month_end_valuation_date,
+    select_latest_distinct_months,
+)
 
 
 def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_status="PARTIAL_CLASSIFICATION_COVERAGE"):
