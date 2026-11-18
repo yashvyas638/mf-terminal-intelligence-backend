@@ -37,7 +37,11 @@ def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_statu
                 "overlap_inr": "40.00", "overlap_pct_of_scheme_a_nav": "4.0000",
                 "overlap_pct_of_scheme_b_nav": "8.0000",
             }],
-            "portfolio_duplication": {"duplicated_exposure_inr": "50.00"},
+            "portfolio_duplication": {
+                "duplicated_exposure_inr": "50.00",
+                "gross_positive_lookthrough_exposure_inr": "1000.00",
+                "duplicated_share_of_gross_positive_lookthrough_pct": "5.0000",
+            },
             "disclosure_health": {"disclosure_scheme_coverage_pct": "100.0000"},
         },
         "market_cap_intelligence": {
@@ -636,3 +640,41 @@ def test_monthly_risk_comparison_rejects_mixed_boolean_or_float_lookback_types()
         assert metric["previous"] is None
         assert metric["current"] is None
         assert metric["change"] is None
+
+
+def test_monthly_duplication_comparison_withholds_unreconciled_exposure_share():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["overlap_intelligence"]["portfolio_duplication"] = {
+        "duplicated_exposure_inr": "200",
+        "gross_positive_lookthrough_exposure_inr": "100",
+        "duplicated_share_of_gross_positive_lookthrough_pct": "20",
+    }
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["comparisons"]["portfolio_duplication"]
+    assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metric["previous_inr"] is None
+    assert metric["current_inr"] is None
+    assert metric["change_inr"] is None
+
+
+def test_monthly_duplication_comparison_withholds_negative_exposure():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["overlap_intelligence"]["portfolio_duplication"] = {
+        "duplicated_exposure_inr": "-1",
+        "gross_positive_lookthrough_exposure_inr": "100",
+        "duplicated_share_of_gross_positive_lookthrough_pct": "0",
+    }
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["comparisons"]["portfolio_duplication"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
