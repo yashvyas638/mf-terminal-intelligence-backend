@@ -354,3 +354,15 @@ Commits:
 - `ae21eb0` — Guard TWT monthly comparison UI against API metric shape drift.
 
 Current head validation is pending. CI must pass JavaScript validation, UI contract tests, PDF tests, SQLite and PostgreSQL suites.
+
+
+## Final TWT PDF methodology presentation — 2026-11-18
+
+- PDF now renders the frozen methodology dictionary (valuation, risk, capital gains, allocation, overlap, market-cap and snapshot methodology/version) as a separate table before limitations.
+- The frontend monthly renderer was also updated to retain the target-drift label contract while using nested API metrics.
+
+Commits:
+- `dd70f9b` — Render methodology versions and methods in TWT PDF.
+- `e84ca82` — Preserve target drift monthly comparison UI contract.
+
+Visual pagination and CI remain pending.
