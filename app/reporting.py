@@ -363,6 +363,23 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         ),
         _table(overlap_rows, [34 * mm, 34 * mm, 17 * mm, 23 * mm, 18 * mm, 18 * mm, 18 * mm]),
     ])
+    overlap_coverage_rows = [[
+        "Fund A / disclosure date", "Fund B / disclosure date",
+        "Coverage A %", "Coverage B %",
+        "Matched exposure A INR", "Matched exposure B INR",
+    ]]
+    for item in overlap.get("pairs") or []:
+        overlap_coverage_rows.append([
+            Paragraph(_text(item.get("scheme_a_name")) + " · " + _text(item.get("disclosure_as_of_a")), styles["SmallNote"]),
+            Paragraph(_text(item.get("scheme_b_name")) + " · " + _text(item.get("disclosure_as_of_b")), styles["SmallNote"]),
+            _text(item.get("disclosure_coverage_a_pct")),
+            _text(item.get("disclosure_coverage_b_pct")),
+            _text(item.get("matched_isin_exposure_a_inr")),
+            _text(item.get("matched_isin_exposure_b_inr")),
+        ])
+    if len(overlap_coverage_rows) == 1:
+        overlap_coverage_rows.append(["No comparable fund pairs", "—", "—", "—", "—", "—"])
+    story.append(_table(overlap_coverage_rows, [40 * mm, 40 * mm, 20 * mm, 20 * mm, 30 * mm, 30 * mm]))
 
     market_cap = report.get("market_cap_intelligence") or {}
     market_cap_rows = [["Classification", "Exposure INR", "Portfolio weight", "Look-through weight"]]
