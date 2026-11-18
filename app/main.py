@@ -80,6 +80,7 @@ from app.portfolio_allocation_intelligence import (
     portfolio_allocation,
 )
 from app.reporting import build_portfolio_report_pdf
+from app.smart_sip_regime import assess_smart_sip_regime
 from app.nav_adjustments import (
     NAV_ADJUSTMENT_REGISTRY_VERSION,
     apply_nav_quality_gates,
@@ -2488,6 +2489,12 @@ class PortfolioAllocationTargetsRequest(BaseModel):
 class ContributionPlanRequest(BaseModel):
     dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"]
     contribution_inr: Decimal = Field(gt=0, le=Decimal("1000000000000"))
+
+
+class SmartSIPPreviewRequest(BaseModel):
+    benchmark_code: str = Field(min_length=1, max_length=80)
+    dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"]
+    additional_contribution_budget_approved: bool = False
 
 
 class MarketCapClassificationImportRequest(BaseModel):
@@ -5520,6 +5527,153 @@ def preview_portfolio_contribution_plan(
     })
     return result
 
+
+
+@app.get("/v1/benchmarks/tri-options")
+def list_smart_sip_benchmark_options() -> dict[str, Any]:
+    """List imported NSE TRI series suitable for evidence-gated market context."""
+    require_authenticated_user()
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(BenchmarkIndex).where(
+                BenchmarkIndex.variant == "TRI",
+                BenchmarkIndex.provider == "NSE Indices Ltd.",
+                BenchmarkIndex.source_url == NIFTY_HISTORICAL_DATA_URL,
+            ).order_by(BenchmarkIndex.benchmark_name)
+        ).scalars().all()
+        options = []
+        for row in rows:
+            coverage = db.execute(
+                select(
+                    func.count(BenchmarkObservation.id),
+                    func.min(BenchmarkObservation.observation_date),
+                    func.max(BenchmarkObservation.observation_date),
+                ).where(BenchmarkObservation.benchmark_code == row.benchmark_code)
+            ).one()
+            options.append({
+                "benchmark_code": row.benchmark_code,
+                "benchmark_name": row.benchmark_name,
+                "variant": row.variant,
+                "observations": coverage[0],
+                "first_date": coverage[1].isoformat() if coverage[1] else None,
+                "last_date": coverage[2].isoformat() if coverage[2] else None,
+                "source_url": row.source_url,
+                "last_seen_at": row.last_seen_at.isoformat(),
+            })
+    return {"items": options, "count": len(options), "source_requirement": "Official NSE Indices TRI import only"}
+
+
+@app.post("/v1/portfolios/{portfolio_id}/smart-sip/preview")
+def preview_smart_sip_regime(
+    portfolio_id: int,
+    payload: SmartSIPPreviewRequest,
+) -> dict[str, Any]:
+    """Assess market context independently from verified portfolio need and user-approved risk budget."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    try:
+        drift = get_portfolio_allocation_drift(portfolio_id, payload.dimension)
+        underweight = any(row.get("status") == "UNDERWEIGHT" for row in drift.get("targets", []))
+        portfolio_need = {
+            "status": "UNDERWEIGHT" if underweight else "NOT_UNDERWEIGHT",
+            "verified": drift.get("status") == "AVAILABLE" and drift.get("valuation_date") == valuation.get("valuation_date"),
+            "dimension": payload.dimension,
+            "effective_from": drift.get("effective_from"),
+            "target_version": drift.get("target_version"),
+            "underweight_buckets": [row.get("key") for row in drift.get("targets", []) if row.get("status") == "UNDERWEIGHT"],
+        }
+    except HTTPException as exc:
+        portfolio_need = {"status": "WITHHELD", "verified": False, "reason": str(exc.detail), "dimension": payload.dimension}
+
+    risk_budget = {
+        "allowed": payload.additional_contribution_budget_approved is True,
+        "approval_basis": "Explicit user approval in this preview request",
+    }
+    config_names = {
+        "max_observation_age_days": "SMART_SIP_MAX_OBSERVATION_AGE_DAYS",
+        "min_observations_52w": "SMART_SIP_MIN_OBSERVATIONS_52W",
+        "min_observations_3y": "SMART_SIP_MIN_OBSERVATIONS_3Y",
+        "drawdown_topup_threshold_pct": "SMART_SIP_DRAWDOWN_TOPUP_THRESHOLD_PCT",
+        "momentum_floor_pct": "SMART_SIP_MOMENTUM_FLOOR_PCT",
+        "volatility_ceiling_pct": "SMART_SIP_VOLATILITY_CEILING_PCT",
+        "annualisation_days": "SMART_SIP_ANNUALISATION_DAYS",
+    }
+    config = {}
+    missing_config = []
+    for key, env_name in config_names.items():
+        raw = os.getenv(env_name)
+        if raw is None or not raw.strip():
+            missing_config.append(env_name)
+            continue
+        try:
+            config[key] = float(raw) if key in {"drawdown_topup_threshold_pct", "momentum_floor_pct", "volatility_ceiling_pct"} else int(raw)
+        except ValueError:
+            raise HTTPException(503, f"Invalid Smart SIP regime configuration: {env_name}") from None
+    if missing_config:
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "NOT_CONFIGURED",
+            "decision": "CONTINUE_PLANNED_SIP",
+            "topup_eligible": False,
+            "market_opportunity": {"status": "NOT_ASSESSED", "reason": "SMART_SIP_POLICY_NOT_CONFIGURED"},
+            "missing_configuration": missing_config,
+            "portfolio_need": portfolio_need,
+            "risk_budget": risk_budget,
+            "message": "Smart SIP thresholds must be explicitly configured and approved before a market signal can be assessed.",
+        }
+
+    with SessionLocal() as db:
+        benchmark = db.get(BenchmarkIndex, payload.benchmark_code)
+        if benchmark is None:
+            raise HTTPException(404, "Benchmark TRI series not found")
+        if (
+            benchmark.variant != "TRI"
+            or benchmark.provider != "NSE Indices Ltd."
+            or benchmark.source_url != NIFTY_HISTORICAL_DATA_URL
+        ):
+            raise HTTPException(409, "Smart SIP requires an official NSE Indices TRI series")
+        observations = db.execute(
+            select(BenchmarkObservation)
+            .where(BenchmarkObservation.benchmark_code == payload.benchmark_code)
+            .order_by(BenchmarkObservation.observation_date)
+        ).scalars().all()
+        evidence = [{
+            "date": row.observation_date,
+            "tri": str(row.index_value),
+            "source_id": benchmark.benchmark_code,
+            "source_hash": row.source_sha256,
+            "source_verified": (
+                len(row.source_sha256) == 64
+                and all(ch in "0123456789abcdef" for ch in row.source_sha256.lower())
+            ),
+        } for row in observations]
+    try:
+        result = assess_smart_sip_regime(
+            evidence,
+            as_of=datetime.now(timezone.utc).date(),
+            portfolio_need=portfolio_need,
+            risk_budget=risk_budget,
+            config=config,
+        )
+    except ValueError as exc:
+        raise HTTPException(503, f"Smart SIP assessment configuration or evidence error: {exc}") from None
+    result.update({
+        "portfolio_id": portfolio_id,
+        "benchmark": {
+            "benchmark_code": benchmark.benchmark_code,
+            "benchmark_name": benchmark.benchmark_name,
+            "provider": benchmark.provider,
+            "variant": benchmark.variant,
+            "source_url": benchmark.source_url,
+            "last_seen_at": benchmark.last_seen_at.isoformat(),
+        },
+        "portfolio_valuation_date": valuation.get("valuation_date"),
+        "portfolio_valuation_freshness": valuation.get("valuation_freshness"),
+        "portfolio_need": portfolio_need,
+        "risk_budget": risk_budget,
+        "config_version": "environment-configured",
+    })
+    return result
 
 
 @app.post("/v1/market-cap/classifications/import")
