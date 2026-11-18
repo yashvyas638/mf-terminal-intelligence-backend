@@ -1920,10 +1920,20 @@ def test_portfolio_holdings_overlap_matrix_calculates_exact_shared_isin_weights(
     class AuthResponse:
         status_code = 200
 
-        def json(self):
-            return {"id": user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"}
+        def __init__(self, identity):
+            self.identity = identity
 
-    monkeypatch.setattr(main.requests, "get", lambda url, headers, timeout: AuthResponse())
+        def json(self):
+            return {"id": self.identity, "email_confirmed_at": "2026-11-16T00:00:00Z"}
+
+    identities = {
+        "Bearer portfolio-overlap-user": user_id,
+        "Bearer portfolio-overlap-other": "00000000-0000-0000-0000-000000000088",
+    }
+    monkeypatch.setattr(
+        main.requests, "get",
+        lambda url, headers, timeout: AuthResponse(identities[headers["Authorization"]]),
+    )
     client = TestClient(app)
     headers = {"Authorization": "Bearer portfolio-overlap-user"}
     created = client.post("/v1/portfolios", headers=headers, json={"name": "Overlap Matrix Test"})
