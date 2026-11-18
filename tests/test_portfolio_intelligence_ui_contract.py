@@ -52,3 +52,14 @@ def test_risk_results_are_discarded_after_portfolio_or_session_changes():
     assert "requestedLoadEpoch!==loadEpoch" in js
     assert "requestedAuthEpoch!==authEpoch" in js
     assert '$("riskStatus").classList.remove("error")' in js
+
+
+def test_portfolio_intelligence_renders_amc_and_classification_allocations():
+    html = Path("app/static/portfolio-intelligence.html").read_text()
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    for element_id in ("amcBars", "amcMetrics", "categoryBars", "assetClassBars"):
+        assert f'id="{element_id}"' in html
+    assert 'd.amc_concentration||{}' in js
+    assert 'd.category_allocation||[]' in js
+    assert 'd.asset_class_allocation||[]' in js
+    assert 'top_3_weight_of_observed_pct' in js
