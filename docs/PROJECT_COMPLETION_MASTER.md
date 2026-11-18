@@ -594,3 +594,20 @@ Commits:
 - `d066707` — Test portfolio UI cache and look-through API contract.
 
 Validation pending on exact latest branch SHA. No merge or deployment.
+
+
+### TWT AMC concentration cross-metric integrity — 2026-11-18
+
+A further monthly-comparison audit found that individually in-range AMC metrics could still contradict one another. For example, top-1 concentration could exceed top-3, or HHI and effective AMC count could disagree while each value remained inside its standalone numeric bounds.
+
+- Monthly comparison now validates each snapshot's top-1 ≤ top-3 ≤ top-5 ordering.
+- For populated snapshots, HHI × effective AMC count must reconcile to 10,000 within a small rounding tolerance; the all-zero empty-allocation case remains valid.
+- All AMC concentration deltas are withheld when either snapshot has internally inconsistent or out-of-range AMC evidence, rather than exposing a partially plausible set of metrics.
+- Added regressions for inverted top-N ordering and contradictory HHI/effective-count values.
+
+Commits:
+- `4d50aa7` — Validate cross-metric AMC concentration consistency.
+- `707feff` — Test inconsistent AMC concentration source metrics.
+- `d2c31a7` — Fail closed on any inconsistent AMC source metric.
+
+**Validation:** implementation and regression tests are committed. GitHub Actions has not reported a run or completed status for the exact latest head; no test pass is claimed. PR #135 remains open and draft. No merge, deployment, production migration or production data change was performed.
