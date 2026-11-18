@@ -240,25 +240,29 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
 
     def amc_snapshot_is_consistent(metrics: dict[str, Any]) -> bool:
         values = {name: _decimal(metrics.get(name)) for name in amc_bounds}
-        if any(value is None for value in values.values()):
-            return True  # Missing evidence is handled as non-comparable per metric.
         for name, value in values.items():
             minimum, maximum = amc_bounds[name]
-            if value < minimum or (maximum is not None and value > maximum):
+            if value is not None and (
+                value < minimum or (maximum is not None and value > maximum)
+            ):
                 return False
         top_1 = values["top_1_amc_weight_pct"]
         top_3 = values["top_3_amc_weight_pct"]
         top_5 = values["top_5_amc_weight_pct"]
+        if top_1 is not None and top_3 is not None and top_1 > top_3:
+            return False
+        if top_3 is not None and top_5 is not None and top_3 > top_5:
+            return False
         hhi = values["hhi_points"]
         effective_count = values["effective_amc_count"]
-        if not (top_1 <= top_3 <= top_5):
-            return False
         # For a populated portfolio, effective AMC count is 10,000 / HHI.
         # Allow a small tolerance for source rounding; the all-zero case is
         # retained for an empty/unvalued allocation snapshot.
-        if hhi > 0 and effective_count > 0:
-            return abs(hhi * effective_count - Decimal("10000")) <= Decimal("0.5")
-        return hhi == 0 and effective_count == 0
+        if hhi is not None and effective_count is not None:
+            if hhi > 0 and effective_count > 0:
+                return abs(hhi * effective_count - Decimal("10000")) <= Decimal("0.5")
+            return hhi == 0 and effective_count == 0
+        return True  # Missing evidence is withheld per metric, not invented.
 
     invalid_amc_snapshot = not (
         amc_snapshot_is_consistent(old_amc) and amc_snapshot_is_consistent(new_amc)
