@@ -837,6 +837,6 @@ Commits:
 
 - Corrected a historical-report integrity gap: target policies were previously selected using the current UTC date even when the report's portfolio valuation date was earlier.
 - Target-policy retrieval now accepts an explicit as-of date (defaults to today for existing callers); immutable report creation supplies its valuation date.
-- Allocation drift now selects its effective target policy using the valuation date returned by the same portfolio valuation, and returns policy_as_of_date for auditability. It fails closed if the valuation date is invalid or no policy was effective on that date.
+- Allocation drift now selects its effective target policy using the valuation date returned by the same portfolio valuation, and returns policy_as_of_date for auditability. It fails closed if the valuation date is invalid or no policy was effective on that date. Contribution previews use the same valuation-date rule so Smart SIP, allocation drift and contribution routing cannot silently use a later target set than the valuation being assessed.
 - Added an API regression with a target version effective November 1 and a later policy effective November 19; a November 18 valuation must continue to use the November 1 policy.
 - Validation: source and regression changes committed; exact-head CI remains required. No merge, deployment or production data change.
