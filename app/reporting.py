@@ -553,8 +553,20 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         source_rows.append(_source_reference_row(source, styles["SmallNote"]))
     story.extend([Paragraph("Source references", styles["SectionHeading"]), _table(source_rows, [55 * mm, 40 * mm, 70 * mm])])
 
+    methodology = report.get("methodology") or {}
+    methodology_rows = [["Methodology component", "Version / method"]]
+    for key, value in methodology.items():
+        methodology_rows.append([
+            _text(key.replace("_", " ").title()),
+            Paragraph(_text(value), styles["SmallNote"]),
+        ])
+    if len(methodology_rows) == 1:
+        methodology_rows.append(["Methodology details", "Not recorded in this snapshot"])
     limitations = report.get("limitations") or []
-    story.append(Paragraph("Methodology and limitations", styles["SectionHeading"]))
+    story.extend([
+        Paragraph("Methodology and limitations", styles["SectionHeading"]),
+        _table(methodology_rows, [48 * mm, 117 * mm]),
+    ])
     for limitation in limitations:
         story.append(Paragraph("• " + _text(limitation), styles["SmallNote"]))
         story.append(Spacer(1, 2))
