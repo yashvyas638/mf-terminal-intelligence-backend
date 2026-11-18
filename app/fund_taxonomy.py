@@ -57,6 +57,9 @@ def _key(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").casefold()).strip()
 
 _GROUP_ALIASES = {
+    "equity": "Equity Scheme",
+    "debt": "Debt Scheme",
+    "hybrid": "Hybrid Scheme",
     "equity scheme": "Equity Scheme",
     "equity schemes": "Equity Scheme",
     "growth": "Equity Scheme",
