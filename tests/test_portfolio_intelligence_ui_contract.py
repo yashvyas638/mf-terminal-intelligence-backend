@@ -43,3 +43,12 @@ def test_lookthrough_percentage_fields_are_rendered_as_percentage_points():
     assert 'pct(conc.top_10_weight_of_observed_positive_pct)' in js
     assert 'l.security_concentration?.isin_identity_coverage_pct' in js
     assert 'l.concentration?.isin_identity_coverage_pct' not in js
+
+
+def test_risk_results_are_discarded_after_portfolio_or_session_changes():
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    assert "riskEpoch" in js
+    assert "requestedPortfolio!==portfolio" in js
+    assert "requestedLoadEpoch!==loadEpoch" in js
+    assert "requestedAuthEpoch!==authEpoch" in js
+    assert '$("riskStatus").classList.remove("error")' in js
