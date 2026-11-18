@@ -2160,6 +2160,7 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert report_detail.status_code == 200
     assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
     assert report_detail.json()["report"]["valuation"]["current_value"] == saved_report_value
+    assert report_detail.json()["report"]["monthly_comparison"]["status"] == "CURRENT_REPORT_NOT_MONTH_END"
     assert report_detail.json()["report"]["lookthrough"]["coverage"]["status"] == "COMPLETE"
     frozen_comparison = report_detail.json()["report"]["monthly_comparison"]
     assert frozen_comparison["status"] == "AVAILABLE"
