@@ -85,30 +85,48 @@ def _source_reference_row(source: dict, note_style) -> list[object]:
     ]
 
 
-def _monthly_comparison_rows(comparison: dict, section: str, value_field: str, weight_field: str) -> list[list[object]]:
+def _monthly_comparison_rows(
+    comparison: dict,
+    section: str,
+    value_field: str,
+    weight_field: str,
+    secondary_weight_field: str | None = None,
+) -> list[list[object]]:
     """Flatten one frozen month-comparison section for PDF rendering."""
-    rows: list[list[object]] = [[
-        "Item", "Previous INR", "Current INR", "Change INR", "Change pp", "Presence", "Status",
-    ]]
+    headers = ["Item", "Previous INR", "Current INR", "Change INR", "Change pp"]
+    if secondary_weight_field:
+        headers.append("Change pp B")
+    headers.extend(["Presence", "Status"])
+    rows: list[list[object]] = [headers]
     section_data = comparison.get("comparisons", {}).get(section) or {}
+    empty_row = [section_data.get("status") or "NOT_AVAILABLE", "—", "—", "—", "—"]
+    if secondary_weight_field:
+        empty_row.append("—")
+    empty_row.extend(["—", "Withheld"])
     if section_data.get("status") != "COMPARABLE":
-        rows.append([section_data.get("status") or "NOT_AVAILABLE", "—", "—", "—", "—", "—", "Withheld"])
+        rows.append(empty_row)
         return rows
     for item in section_data.get("items") or []:
         metrics = item.get("metrics") or {}
         value = metrics.get(value_field) or {}
         weight = metrics.get(weight_field) or {}
-        rows.append([
+        row = [
             Paragraph(_text(item.get("key")), getSampleStyleSheet()["BodyText"]),
             _text(value.get("previous")),
             _text(value.get("current")),
             _text(value.get("change_inr") if value.get("change_inr") is not None else value.get("change")),
             _text(weight.get("change_percentage_points")),
+        ]
+        if secondary_weight_field:
+            secondary_weight = metrics.get(secondary_weight_field) or {}
+            row.append(_text(secondary_weight.get("change_percentage_points")))
+        row.extend([
             _text(item.get("presence_status")),
             _text(value.get("status")),
         ])
+        rows.append(row)
     if len(rows) == 1:
-        rows.append(["No comparable rows", "—", "—", "—", "—", "—", "—"])
+        rows.append(["No comparable rows", *(["—"] * (len(headers) - 1))])
     return rows
 
 
@@ -459,21 +477,26 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         ),
         _table(monthly_rows, [55 * mm, 37 * mm, 37 * mm, 38 * mm]),
     ])
-    for section, label, value_field, weight_field in (
-        ("scheme", "Scheme movement", "market_value_inr", "portfolio_weight_pct"),
-        ("category", "Category movement", "market_value_inr", "portfolio_weight_pct"),
-        ("sub_category", "Sub-category movement", "market_value_inr", "portfolio_weight_pct"),
-        ("asset_class", "Asset-class movement", "market_value_inr", "portfolio_weight_pct"),
-        ("amc", "AMC movement", "market_value_inr", "portfolio_weight_pct"),
-        ("market_cap", "Market-cap movement", "exposure_inr", "weight_of_total_portfolio_pct"),
-        ("sector", "Sector movement", "lookthrough_value", "portfolio_weight_pct"),
-        ("overlap_pairs", "Pairwise fund-overlap movement", "overlap_inr", "overlap_pct_of_scheme_a_nav"),
+    for section, label, value_field, weight_field, secondary_weight_field in (
+        ("scheme", "Scheme movement", "market_value_inr", "portfolio_weight_pct", None),
+        ("category", "Category movement", "market_value_inr", "portfolio_weight_pct", None),
+        ("sub_category", "Sub-category movement", "market_value_inr", "portfolio_weight_pct", None),
+        ("asset_class", "Asset-class movement", "market_value_inr", "portfolio_weight_pct", None),
+        ("amc", "AMC movement", "market_value_inr", "portfolio_weight_pct", None),
+        ("market_cap", "Market-cap movement", "exposure_inr", "weight_of_total_portfolio_pct", None),
+        ("sector", "Sector movement", "lookthrough_value", "portfolio_weight_pct", None),
+        ("overlap_pairs", "Pairwise fund-overlap movement", "overlap_inr", "overlap_pct_of_scheme_a_nav", "overlap_pct_of_scheme_b_nav"),
     ):
+        widths = (
+            [31 * mm, 20 * mm, 20 * mm, 20 * mm, 16 * mm, 16 * mm, 16 * mm, 16 * mm]
+            if secondary_weight_field else
+            [38 * mm, 24 * mm, 24 * mm, 24 * mm, 18 * mm, 22 * mm, 22 * mm]
+        )
         story.extend([
             Paragraph(label, styles["Heading3"]),
             _table(
-                _monthly_comparison_rows(monthly, section, value_field, weight_field),
-                [38 * mm, 24 * mm, 24 * mm, 24 * mm, 18 * mm, 22 * mm, 22 * mm],
+                _monthly_comparison_rows(monthly, section, value_field, weight_field, secondary_weight_field),
+                widths,
             ),
         ])
     amc_metrics = monthly.get("comparisons", {}).get("amc_concentration_metrics") or {}
