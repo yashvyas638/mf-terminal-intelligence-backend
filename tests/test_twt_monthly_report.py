@@ -1,4 +1,6 @@
-from app.twt_monthly_report import compare_monthly_reports, is_month_end_valuation_date, select_latest_distinct_months
+from app.twt_monthly_report import compare_monthly_reports, decode_verified_snapshot, is_month_end_valuation_date, select_latest_distinct_months
+import hashlib
+import json
 
 
 def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_status="PARTIAL_CLASSIFICATION_COVERAGE"):
@@ -113,3 +115,14 @@ def test_month_selection_does_not_compare_across_a_missing_calendar_month():
     selected = select_latest_distinct_months(snapshots)
 
     assert [item["period"] for item in selected] == ["2026-12"]
+
+
+
+def test_snapshot_json_is_decoded_only_when_sha256_matches():
+    payload = {"valuation": {"valuation_date": "2026-10-31", "current_value": "100"}}
+    content = json.dumps(payload, sort_keys=True)
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    assert decode_verified_snapshot(content, digest) == payload
+    assert decode_verified_snapshot(content, "0" * 64) is None
+    assert decode_verified_snapshot("{broken", digest) is None
