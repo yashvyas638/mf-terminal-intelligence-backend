@@ -577,6 +577,7 @@ def holdings_overlap_matrix(
             "portfolio_value_inr": nav,
             "disclosure_coverage_pct": coverage,
             "disclosure_as_of_date": fund.get("disclosure_as_of_date"),
+            "disclosure_age_days": fund.get("disclosure_age_days"),
         })
 
     normalized.sort(key=lambda row: row["scheme_code"])
@@ -617,6 +618,8 @@ def holdings_overlap_matrix(
                 "disclosure_coverage_b_pct": str(right_cov) if right_cov is not None else None,
                 "disclosure_as_of_a": left["disclosure_as_of_date"],
                 "disclosure_as_of_b": right["disclosure_as_of_date"],
+                "disclosure_age_days_a": left["disclosure_age_days"],
+                "disclosure_age_days_b": right["disclosure_age_days"],
                 "status": pair_status,
             })
 
