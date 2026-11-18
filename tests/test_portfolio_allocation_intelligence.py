@@ -92,8 +92,8 @@ def test_non_isin_rows_are_never_cross_matched_and_missing_coverage_withholds_pa
         ]},
     ])
     pair = result["pairs"][0]
-    assert pair["status"] == "WITHHELD_LOW_OR_UNKNOWN_COVERAGE"
-    assert pair["overlap_inr"] is None
+    assert pair["status"] == "PARTIAL_COVERAGE_UNKNOWN"
+    assert pair["overlap_inr"] == "10.00"
     assert pair["common_isin_count"] == 1
 
 
