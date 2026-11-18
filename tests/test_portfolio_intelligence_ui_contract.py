@@ -84,6 +84,7 @@ def test_monthly_snapshots_and_pdf_include_twt_allocation_intelligence():
         '"target_drift_snapshot": target_drift_snapshot',
         '"snapshot_consistency": {',
         '"/v1/portfolios/{portfolio_id}/monthly-comparison"',
+        '"WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE"',
     ):
         assert field in main, field
     for heading in (
