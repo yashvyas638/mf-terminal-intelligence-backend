@@ -542,3 +542,18 @@ Validation remains pending on the exact latest PR head. No merge, deployment or 
 - Fresh valuation gate and stale-valuation regression remain present.
 - The last inspectable Actions run (#2175 / run ID 44281293794) has all three jobs queued and belongs to the earlier head `550def791b193fe4a0d1da89e980a1d42418315c`, not this latest head. The connector's commit-run lookup returned no exact-head PR runs; therefore current-head CI is unverified. No tests are claimed as passed.
 - No merge, production migration, deployment or production data changes were performed.
+
+
+### TWT monthly comparison duplicate-key integrity — 2026-11-18
+
+A further review found that the generic monthly comparison helper built dictionaries directly from snapshot rows. Duplicate scheme/category/AMC/sector identifiers could silently overwrite earlier rows, producing incomplete but apparently valid comparison deltas. Missing identifiers could also collapse into a shared `None` key.
+
+- Added identifier validation before constructing comparison maps.
+- Duplicate, blank or missing identifiers, and malformed rows now withhold that comparison section with `WITHHELD_DUPLICATE_OR_INVALID_KEYS`; no rows are silently dropped.
+- Added regression tests for duplicate scheme codes and blank category identifiers.
+
+Commits:
+- `7cc08fb` — Fail closed on duplicate monthly comparison identifiers.
+- `acea17d` — Test invalid and duplicate monthly comparison identifiers.
+
+**Validation:** code and tests are committed; current-head CI must complete before this is marked passed. No merge, deployment or production data changes.
