@@ -634,6 +634,10 @@ def holdings_overlap_matrix(
                 left_cov is not None and right_cov is not None
                 and (left_cov < threshold or right_cov < threshold)
             )
+            coverage_partial = (
+                left_cov is None or right_cov is None
+                or left_cov < HUNDRED or right_cov < HUNDRED
+            )
             stale_disclosure = left["disclosure_stale"] or right["disclosure_stale"]
             withheld = stale_disclosure or (threshold > ZERO and (
                 left_cov is None or right_cov is None or below_threshold
@@ -642,7 +646,7 @@ def holdings_overlap_matrix(
                 "WITHHELD_STALE_OR_UNDATED_DISCLOSURE" if stale_disclosure
                 else "WITHHELD_LOW_OR_UNKNOWN_COVERAGE" if withheld
                 else "PARTIAL_COVERAGE_UNKNOWN" if left_cov is None or right_cov is None
-                else "PARTIAL_BELOW_CONFIGURED_THRESHOLD" if below_threshold
+                else "PARTIAL_COVERAGE_OBSERVED" if coverage_partial
                 else "AVAILABLE"
             )
             pairs.append({
