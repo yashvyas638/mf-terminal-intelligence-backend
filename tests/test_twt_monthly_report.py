@@ -203,3 +203,37 @@ def test_monthly_risk_comparison_withholds_stale_nav_risk_inputs():
     )
 
     assert result["risk_changes"]["annualized_volatility"]["status"] == "WITHHELD_RISK_INPUT_STATUS"
+
+
+
+def test_monthly_comparison_withholds_duplicate_scheme_identifiers_instead_of_overwriting():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["allocation"]["schemes"].append({
+        "scheme_code": "1001", "market_value_inr": "300",
+        "portfolio_weight_pct": "33.3333",
+    })
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["comparisons"]["scheme"]["status"] == "WITHHELD_DUPLICATE_OR_INVALID_KEYS"
+    assert result["comparisons"]["scheme"]["items"] == []
+
+
+def test_monthly_comparison_withholds_missing_category_identifiers():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["allocation"]["by_category"].append({
+        "name": " ", "market_value_inr": "300", "portfolio_weight_pct": "33.3333",
+    })
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["comparisons"]["category"]["status"] == "WITHHELD_DUPLICATE_OR_INVALID_KEYS"
+    assert result["comparisons"]["category"]["items"] == []
