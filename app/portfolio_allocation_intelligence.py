@@ -527,6 +527,25 @@ def amc_concentration(schemes: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def holdings_disclosure_coverage(holdings: Iterable[Mapping[str, Any]]) -> str | None:
+    """Return positive ISIN-identified weight as a share of all positive disclosed weight.
+
+    The denominator includes positive ISIN and non-ISIN rows. Negative rows do not
+    inflate coverage. None means the disclosure has no positive reported exposure.
+    """
+    total_positive = ZERO
+    positive_isin = ZERO
+    for row in holdings:
+        weight = _d(row.get("weight_pct"), "holding weight")
+        assert weight is not None
+        if weight <= ZERO:
+            continue
+        total_positive += weight
+        if bool(row.get("is_isin")):
+            positive_isin += weight
+    return _pct(positive_isin, total_positive)
+
+
 def holdings_overlap_matrix(
     funds: Iterable[Mapping[str, Any]],
     *,
