@@ -1936,6 +1936,10 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         db.add(Scheme(
             scheme_code=scheme_code,
             scheme_name="Portfolio Risk Growth Fund",
+            amc="Example Asset Management",
+            category="Flexi Cap Fund",
+            category_group="Equity",
+            asset_class="Equity",
             isin_growth=None,
             isin_dividend_reinvestment=None,
             first_seen_at=now,
@@ -2069,6 +2073,13 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert concentration["fresh_positive_disclosed_exposure_inr"] == look_json["top_securities"][0]["lookthrough_value"]
     assert concentration["stale_positive_disclosed_exposure_inr"] == "0.00"
     assert look_json["sector_exposure"][0]["sector"] == "Financial Services"
+    assert look_json["amc_concentration"]["items"][0]["name"] == "Example Asset Management"
+    assert look_json["amc_concentration"]["items"][0]["portfolio_weight_pct"] == pytest.approx(100.0)
+    assert look_json["amc_concentration"]["summary"]["top_1_weight_of_observed_pct"] == pytest.approx(100.0)
+    assert look_json["amc_concentration"]["summary"]["hhi_points"] == pytest.approx(10000.0)
+    assert look_json["category_allocation"][0]["name"] == "Flexi Cap Fund"
+    assert look_json["category_group_allocation"][0]["name"] == "Equity"
+    assert look_json["asset_class_allocation"][0]["name"] == "Equity"
 
     risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
     assert risk.status_code == 200, risk.text
