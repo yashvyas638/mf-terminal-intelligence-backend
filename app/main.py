@@ -3247,6 +3247,7 @@ def create_portfolio_report_snapshot(
     risk = portfolio_historical_risk(portfolio_id, days, None)
     tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
     lookthrough = portfolio_holdings_lookthrough(portfolio_id, 180)
+    holdings_overlap = portfolio_holdings_overlap(portfolio_id)
     generated_at = datetime.now(timezone.utc)
 
     with SessionLocal() as db:
@@ -3323,6 +3324,7 @@ def create_portfolio_report_snapshot(
             "valuation": valuation,
             "risk": risk,
             "lookthrough": lookthrough,
+            "holdings_overlap": holdings_overlap,
             "fifo_tax_lots": tax_lots,
             "sources": sources,
             "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
