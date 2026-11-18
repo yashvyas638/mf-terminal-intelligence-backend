@@ -3491,6 +3491,122 @@ def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
         }
 
 
+@app.get("/v1/portfolios/{portfolio_id}/monthly-comparison")
+def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
+    """Compare the two latest immutable report snapshots without inventing missing metrics."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        snapshots = db.execute(
+            select(PortfolioReportSnapshot)
+            .where(
+                PortfolioReportSnapshot.portfolio_id == portfolio_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+            .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
+            .limit(2)
+        ).scalars().all()
+    if len(snapshots) < 2:
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "INSUFFICIENT_SNAPSHOTS",
+            "required_snapshot_count": 2,
+            "available_snapshot_count": len(snapshots),
+            "message": "Generate at least two monthly report snapshots to compare portfolio movement.",
+        }
+    current = json.loads(snapshots[0].content_json)
+    previous = json.loads(snapshots[1].content_json)
+
+    def compare_rows(section: dict[str, Any], field: str, key_field: str, value_field: str) -> dict[str, Any]:
+        old_rows = {str(row.get(key_field)): row for row in (section.get("previous") or [])}
+        new_rows = {str(row.get(key_field)): row for row in (section.get("current") or [])}
+        keys = sorted(set(old_rows) | set(new_rows))
+        changes = []
+        for key in keys:
+            old = old_rows.get(key)
+            new = new_rows.get(key)
+            old_value = Decimal(str(old.get(value_field))) if old and old.get(value_field) is not None else None
+            new_value = Decimal(str(new.get(value_field))) if new and new.get(value_field) is not None else None
+            delta = new_value - old_value if old_value is not None and new_value is not None else None
+            changes.append({
+                "key": key,
+                "previous_value": str(old_value) if old_value is not None else None,
+                "current_value": str(new_value) if new_value is not None else None,
+                "change": str(delta) if delta is not None else None,
+                "status": "COMPARABLE" if delta is not None else "NOT_COMPARABLE_MISSING_SOURCE",
+            })
+        return {"dimension": field, "items": changes}
+
+    def rows_at(report: dict[str, Any], path: tuple[str, ...], key: str, value: str) -> list[dict[str, Any]] | None:
+        node: Any = report
+        for part in path:
+            node = node.get(part) if isinstance(node, dict) else None
+        if not isinstance(node, list):
+            return None
+        return [{key: row.get(key), value: row.get(value)} for row in node]
+
+    comparisons = {}
+    for name, path, key_field, value_field in [
+        ("category", ("allocation_intelligence", "allocation", "by_category"), "name", "portfolio_weight_pct"),
+        ("asset_class", ("allocation_intelligence", "allocation", "by_asset_class"), "name", "portfolio_weight_pct"),
+        ("amc", ("allocation_intelligence", "amc_concentration", "amcs"), "name", "portfolio_weight_pct"),
+        ("market_cap", ("market_cap_intelligence", "classified_distribution"), "market_cap_bucket", "weight_of_total_portfolio_pct"),
+        ("sector", ("lookthrough", "sector_exposure"), "sector", "portfolio_weight_pct"),
+    ]:
+        old_rows = rows_at(previous, path, key_field, value_field)
+        new_rows = rows_at(current, path, key_field, value_field)
+        old_status = (
+            previous.get("market_cap_intelligence", {}).get("status")
+            if name == "market_cap" else
+            previous.get("lookthrough", {}).get("coverage", {}).get("status")
+            if name == "sector" else
+            previous.get("allocation_intelligence", {}).get("status")
+        )
+        new_status = (
+            current.get("market_cap_intelligence", {}).get("status")
+            if name == "market_cap" else
+            current.get("lookthrough", {}).get("coverage", {}).get("status")
+            if name == "sector" else
+            current.get("allocation_intelligence", {}).get("status")
+        )
+        if old_rows is None or new_rows is None or old_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE"} or new_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE"}:
+            comparisons[name] = {"status": "WITHHELD_OR_NOT_COMPARABLE", "items": []}
+        else:
+            comparisons[name] = compare_rows({"previous": old_rows, "current": new_rows}, name, key_field, value_field)
+
+    def metric(report: dict[str, Any], *path: str):
+        node: Any = report
+        for part in path:
+            node = node.get(part) if isinstance(node, dict) else None
+        return str(node) if node is not None else None
+
+    risk_keys = ("annualized_volatility", "max_drawdown", "historical_var_95", "historical_cvar_95")
+    risk_changes = {}
+    for key in risk_keys:
+        old = metric(previous, "risk", "metrics", key)
+        new = metric(current, "risk", "metrics", key)
+        risk_changes[key] = {
+            "previous": old,
+            "current": new,
+            "change": str(Decimal(new) - Decimal(old)) if old is not None and new is not None else None,
+            "status": "COMPARABLE" if old is not None and new is not None else "WITHHELD_OR_NOT_COMPARABLE",
+        }
+    return {
+        "portfolio_id": portfolio_id,
+        "status": "AVAILABLE",
+        "previous_snapshot": {"report_id": snapshots[1].id, "generated_at": snapshots[1].generated_at.isoformat(), "source_max_nav_date": snapshots[1].source_max_nav_date.isoformat() if snapshots[1].source_max_nav_date else None},
+        "current_snapshot": {"report_id": snapshots[0].id, "generated_at": snapshots[0].generated_at.isoformat(), "source_max_nav_date": snapshots[0].source_max_nav_date.isoformat() if snapshots[0].source_max_nav_date else None},
+        "comparisons": comparisons,
+        "risk_changes": risk_changes,
+        "limitations": [
+            "This compares two saved snapshots; it is not a daily time series.",
+            "Changes are only comparable where both snapshots contain a supported metric.",
+            "Look-through and market-cap changes may reflect disclosure or classification refreshes as well as portfolio trades and market movement.",
+            "Historical risk snapshots use the methodology and data coverage recorded at each report date.",
+        ],
+    }
+
+
 @app.get("/v1/reports/{report_id}/pdf")
 def download_portfolio_report_pdf(report_id: int) -> Response:
     owner_id = require_authenticated_user()
