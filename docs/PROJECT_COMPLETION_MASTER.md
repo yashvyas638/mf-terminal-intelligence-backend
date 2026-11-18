@@ -755,3 +755,19 @@ Commits:
 - `99f3509` — Test mixed monthly risk lookback value types.
 
 **Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
+
+
+### TWT portfolio-duplication monthly reconciliation — 2026-11-18
+
+A final monthly comparison pass found that portfolio duplicated exposure was compared using only the duplicated INR value. It did not validate the gross-positive look-through denominator or the reported duplicated-share percentage.
+
+- Monthly duplication deltas now require non-negative duplicated and gross exposure, duplicated exposure not exceeding gross exposure, and a reconciled duplicated-share percentage within 0.05 percentage points.
+- Zero gross exposure is accepted only when duplicated exposure is also zero and the percentage is absent.
+- Inconsistent or negative source values are withheld with `WITHHELD_INVALID_SOURCE_VALUE`.
+- Updated the standard monthly fixture with a fully reconciled denominator and added regressions for impossible and negative duplication values.
+
+Commits:
+- `2ab01c7` — Validate portfolio duplication source reconciliation.
+- `69e4b0f` — Test portfolio duplication source reconciliation.
+
+**Validation:** committed, pending exact-head SQLite/PostgreSQL CI. No merge, deployment or production data changes.
