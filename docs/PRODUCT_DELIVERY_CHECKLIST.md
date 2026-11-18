@@ -135,3 +135,11 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 - `d0f8546084c1096677960e5d4f7985151288e820` — PDF report includes the pairwise overlap table and its non-additivity warning.
 - `f64185b148379524765aa8ba072fb762461972bf` and `582f34d3ddad7a8a340e7448e3b0b36a03b24649` — added report snapshot and PDF regression assertions/fixture.
 - `ba504136d58e88835dc0b1d676558fc1f886b3e5` — added frontend contract coverage for the overlap panel.
+
+### Validation state after overlap integration (2026-11-18)
+
+- Latest audit branch head at this checkpoint: `3811a770d270289fc81cb38f4f1fe12f900ebc2a`.
+- Static DOM check: 56 HTML IDs, no duplicate IDs, and no missing IDs referenced by the Portfolio Intelligence JavaScript.
+- GitHub Actions CI for the latest branch head was observed in `queued` state; no successful test result is claimed until the run completes.
+- The existing PR #1 remains open and GitHub reports `mergeable=false`. Branch comparison against `main`: `diverged`, 673 commits ahead and 57 behind. Do not merge blindly; reconcile the base divergence and review the full diff first.
+- No production deployment, production data change, or database migration was performed as part of this report feature work.
