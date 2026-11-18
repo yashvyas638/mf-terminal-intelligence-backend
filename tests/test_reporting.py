@@ -150,3 +150,34 @@ def test_monthly_comparison_rows_show_withheld_status_without_fabricating_values
     )
 
     assert rows[1] == ["WITHHELD_OR_NOT_COMPARABLE", "—", "—", "—", "—", "—", "Withheld"]
+
+def test_monthly_overlap_pdf_rows_include_both_funds_percentage_point_changes():
+    from app.reporting import _monthly_comparison_rows
+
+    rows = _monthly_comparison_rows(
+        {
+            "comparisons": {
+                "overlap_pairs": {
+                    "status": "COMPARABLE",
+                    "items": [{
+                        "key": "1001:1002",
+                        "presence_status": "CONTINUING",
+                        "metrics": {
+                            "overlap_inr": {"previous": "40", "current": "45", "change_inr": "5", "status": "COMPARABLE"},
+                            "overlap_pct_of_scheme_a_nav": {"change_percentage_points": "0.5"},
+                            "overlap_pct_of_scheme_b_nav": {"change_percentage_points": "1.0"},
+                        },
+                    }],
+                },
+            },
+        },
+        "overlap_pairs",
+        "overlap_inr",
+        "overlap_pct_of_scheme_a_nav",
+        "overlap_pct_of_scheme_b_nav",
+    )
+
+    assert rows[0] == [
+        "Item", "Previous INR", "Current INR", "Change INR", "Change pp", "Change pp B", "Presence", "Status",
+    ]
+    assert rows[1][4:8] == ["0.5", "1.0", "CONTINUING", "COMPARABLE"]
