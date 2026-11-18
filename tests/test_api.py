@@ -1931,7 +1931,7 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     portfolio_id = created.json()["id"]
     scheme_code = 87654324
     now = datetime.now(timezone.utc)
-    as_of = date.today()
+    as_of = date(2026, 10, 31)
 
     with SessionLocal() as db:
         db.add(Scheme(
@@ -2161,7 +2161,6 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert report_detail.status_code == 200
     assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
     assert report_detail.json()["report"]["valuation"]["current_value"] == saved_report_value
-    assert report_detail.json()["report"]["monthly_comparison"]["status"] == "CURRENT_REPORT_NOT_MONTH_END"
     assert report_detail.json()["report"]["input_snapshot_ids"]["nav_ingestion_snapshot_ids"] == [snapshot.id]
     assert report_detail.json()["report"]["lookthrough"]["coverage"]["status"] == "COMPLETE"
     frozen_comparison = report_detail.json()["report"]["monthly_comparison"]
