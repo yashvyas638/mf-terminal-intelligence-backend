@@ -34,7 +34,7 @@ def allocation_dimension_key(dimension: str, scheme: Mapping[str, Any]) -> str:
     if dimension == "ASSET_CLASS":
         return canonical_asset_class(group, scheme.get("asset_class")) or "UNCLASSIFIED"
     if dimension == "CATEGORY":
-        return group or "UNCLASSIFIED"
+        return SCHEME_GROUP_ASSET_CLASS.get(group or "") or group or "UNCLASSIFIED"
     if dimension == "SUB_CATEGORY":
         return canonical_subcategory(group, scheme.get("category")) or "UNCLASSIFIED"
     if dimension == "AMC":
