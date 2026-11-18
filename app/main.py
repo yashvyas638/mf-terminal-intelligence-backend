@@ -3578,7 +3578,17 @@ def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
             if name == "sector" else
             current.get("allocation_intelligence", {}).get("status")
         )
-        if old_rows is None or new_rows is None or old_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE", "PARTIAL_CLASSIFICATION_COVERAGE"} or new_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE", "PARTIAL_CLASSIFICATION_COVERAGE"}:
+        if name == "sector":
+            comparable_statuses = {"COMPLETE", "PARTIAL_MISSING_DISCLOSURES", "PARTIAL_STALE_DISCLOSURES"}
+        elif name == "market_cap":
+            comparable_statuses = {
+                "AVAILABLE", "PARTIAL_LOOKTHROUGH_COVERAGE",
+                "PARTIAL_CLASSIFICATION_COVERAGE",
+                "PARTIAL_LOOKTHROUGH_AND_CLASSIFICATION_COVERAGE",
+            }
+        else:
+            comparable_statuses = {"AVAILABLE", "PARTIAL_STALE_NAV"}
+        if old_rows is None or new_rows is None or old_status not in comparable_statuses or new_status not in comparable_statuses:
             comparisons[name] = {"status": "WITHHELD_OR_NOT_COMPARABLE", "items": []}
         else:
             comparisons[name] = compare_rows({"previous": old_rows, "current": new_rows}, name, key_field, value_field)
