@@ -146,3 +146,6 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 
 - `981d4b4a0c96b69747743074fdcb78a3d0b95627` — hardened overlap coverage status: portfolios with fewer than two valued funds now return `INSUFFICIENT_FUNDS`; missing verified disclosure coverage remains explicit; duplicate ISIN rows are normalized and their positive weights are aggregated rather than silently overwritten.
 - `42d1220396a7a94288beef6fb0e5d317f2b2b8d9` and `82b11fad166d0c22dc4d317d223a66407852bc75` — added an exact two-fund portfolio fixture covering shared ISIN overlap arithmetic, duplicate case-normalized ISIN aggregation, ISIN coverage, and cross-user isolation; corrected the single-fund expectation to `INSUFFICIENT_FUNDS`.
+
+- `393f51661122a210608623892957721d9c2b8fb4` — added the overlap methodology to the immutable report's machine-readable methodology metadata.
+- `e670a7000eee93751182f0d318f813489651196d` — escaped backend status fields in overlap UI table rendering.
