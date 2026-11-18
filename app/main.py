@@ -5137,6 +5137,10 @@ def portfolio_holdings_lookthrough(
 def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
     """Return value-weighted scheme/category/asset-class and AMC allocation."""
     require_authenticated_user()
+    # Enforce ownership before valuation so an unauthorized caller cannot trigger
+    # portfolio reads or learn valuation-state details for another user's ID.
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
     valuation = portfolio_valuation(portfolio_id, None)
     if valuation.get("valuation_status") != "COMPLETE":
         return {
@@ -5235,7 +5239,6 @@ def portfolio_fund_overlap_matrix(
     missing_disclosures = []
     stale_disclosures = []
     with SessionLocal() as db:
-        _require_portfolio_owner(db, portfolio_id)
         for item in holdings:
             scheme_code = int(item["scheme_code"])
             scheme = db.get(Scheme, scheme_code)
