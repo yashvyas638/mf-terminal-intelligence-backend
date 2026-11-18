@@ -5089,6 +5089,8 @@ def save_portfolio_allocation_targets(
 ) -> dict[str, Any]:
     """Create an immutable effective-dated target set for one owned portfolio."""
     require_authenticated_user()
+    if payload.dimension in {"MARKET_CAP", "SECTOR"}:
+        raise HTTPException(409, f"{payload.dimension} target bands are not enabled until complete verified classification coverage is available")
     if payload.effective_from > datetime.now(timezone.utc).date():
         raise HTTPException(422, "effective_from cannot be in the future")
     with SessionLocal() as db:
@@ -5371,7 +5373,7 @@ def get_portfolio_market_cap_allocation(
         "status": "AVAILABLE" if lookthrough.get("coverage", {}).get("status") == "COMPLETE" else "PARTIAL_LOOKTHROUGH_COVERAGE",
         "lookthrough_coverage": lookthrough.get("coverage"),
         "classification_health": {
-            "verified_mapping_count": len(classification_rows),
+            "verified_mapping_count": len(result.get("sources", [])),
             "max_classification_age_days": max_classification_age_days,
         },
         "evidence": {
