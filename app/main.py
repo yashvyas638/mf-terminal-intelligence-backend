@@ -671,6 +671,11 @@ def research_dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "research.html")
 
 
+@app.get("/intelligence", include_in_schema=False)
+def portfolio_intelligence_dashboard() -> FileResponse:
+    return FileResponse(STATIC_DIR / "portfolio-intelligence.html")
+
+
 _authenticated_user_id: ContextVar[str | None] = ContextVar("authenticated_user_id", default=None)
 
 
