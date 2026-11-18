@@ -134,8 +134,17 @@ def assess_smart_sip_regime(
             if not isfinite(daily_return):
                 raise ValueError("non-finite daily benchmark return")
             returns.append(daily_return)
-        volatility = (pstdev(returns) * sqrt(float(config["annualisation_days"])) * 100
-                      if len(returns) >= 20 else None)
+        if len(returns) >= 20:
+            # Scale finite returns before variance calculation to avoid
+            # overflow in intermediate squared deviations for extreme values.
+            scale = max((abs(value) for value in returns), default=0.0)
+            normalized_returns = [value / scale for value in returns] if scale else returns
+            volatility = (
+                scale * pstdev(normalized_returns)
+                * sqrt(float(config["annualisation_days"])) * 100
+            )
+        else:
+            volatility = None
         dd52, dd3y, mom63, mom126 = drawdown(w52), drawdown(w3y), momentum(63), momentum(126)
     except (OverflowError, ValueError, ZeroDivisionError, AttributeError):
         result["market_opportunity"]["reason"] = "INVALID_DERIVED_SIGNAL"
