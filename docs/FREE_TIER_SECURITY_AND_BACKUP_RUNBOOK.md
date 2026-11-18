@@ -148,7 +148,7 @@ The P0 audit and encrypted-backup workflows exist on default `main`, but the lat
 | Isolated restore | Not run | No verified encrypted backup exists |
 | NAV freshness/scheduler | Blocked | Latest stored NAV date 2026-11-11; refresh workflow is candidate-only |
 | Render deployment mapping | Not verified | Blueprint identity/plan/startup mismatch; actual service not inspected |
-| Branch integration | In progress | Reconcile default-branch operational files with the feature branch, resolve add/add conflicts, then verify mergeability and the complete CI run. |
+| Branch integration | Resolved in candidate branch | `main` is merged into `ui/portfolio-intelligence`; add/add conflicts are resolved. PR #135 remains draft pending final CI and review. |
 
 ## 5. Current limits and next P0 gate
 
@@ -172,5 +172,5 @@ The P0 audit and encrypted-backup workflows exist on default `main`, but the lat
 | Restore drill | Decrypt with offline identity; SHA-256 verification; restore into a separate isolated Supabase project; schema/data counts and application smoke tests reconciled. |
 | NAV schedule and freshness | Refresh workflow active on default branch or approved Render Cron; observe a successful scheduled run; verify current NAV date, retrieval freshness and reproducible 1M/1Y/3Y/5Y snapshots. |
 | Render release | Confirm existing service identity, plan, deployed branch/SHA, trusted non-superuser runtime role, privileged migration role, required environment and start command; no accidental service creation, rename or plan change. |
-| Branch integration | Reconcile the 51 commits on main, review the full 144-file PR diff, resolve add/add conflicts in the P0 audit/backup workflow, runbook and audit script, then verify a mergeable PR. |
+| Branch integration | `main` is integrated into the candidate feature branch; the P0 workflow, backup workflow, runbook and audit-script add/add conflicts are resolved. Verify the latest full CI run and review the complete PR diff before any merge. |
 | Operational audit | A successful default-branch P0 audit completes all checks with two real confirmed users and separate portfolio owners; no configuration-only pass is accepted. |
