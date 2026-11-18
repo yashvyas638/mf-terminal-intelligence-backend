@@ -210,10 +210,11 @@ class PortfolioAllocationTarget(Base):
     target_pct: Mapped[object] = mapped_column(Numeric(9, 4), nullable=False)
     max_pct: Mapped[object] = mapped_column(Numeric(9, 4), nullable=False)
     effective_from: Mapped[object] = mapped_column(Date, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     __table_args__ = (
-        UniqueConstraint("portfolio_id", "dimension", "target_key", "effective_from", name="uq_portfolio_target_version_key"),
+        UniqueConstraint("portfolio_id", "dimension", "target_key", "effective_from", "version", name="uq_portfolio_target_version_key"),
         CheckConstraint("dimension IN ('ASSET_CLASS', 'CATEGORY', 'SUB_CATEGORY', 'MARKET_CAP', 'AMC', 'SCHEME', 'SECTOR')", name="ck_portfolio_target_dimension"),
         CheckConstraint("min_pct >= 0 AND min_pct <= target_pct AND target_pct <= max_pct AND max_pct <= 100", name="ck_portfolio_target_band_bounds"),
         CheckConstraint("priority BETWEEN 1 AND 1000", name="ck_portfolio_target_priority_bounds"),
