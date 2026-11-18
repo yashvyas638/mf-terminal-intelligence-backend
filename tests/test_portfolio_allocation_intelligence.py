@@ -18,12 +18,12 @@ from app.portfolio_allocation_intelligence import (
 def test_allocation_dimension_keys_match_canonical_portfolio_taxonomy():
     scheme = {
         "scheme_code": 123,
-        "category_group": "Equity",
+        "category_group": "Equity Scheme",
         "category": "ELSS-Tax Saver Fund",
         "asset_class": "Equity",
         "amc": None,
     }
-    assert allocation_dimension_key("CATEGORY", scheme) == "Equity"
+    assert allocation_dimension_key("CATEGORY", scheme) == "Equity Scheme"
     assert allocation_dimension_key("SUB_CATEGORY", scheme) == "ELSS Tax Saver Fund"
     assert allocation_dimension_key("ASSET_CLASS", scheme) == "Equity"
     assert allocation_dimension_key("AMC", scheme) == "UNCLASSIFIED"
