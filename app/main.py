@@ -81,6 +81,7 @@ from app.portfolio_allocation_intelligence import (
     allocation_dimension_key,
 )
 from app.reporting import build_portfolio_report_pdf
+from app.twt_monthly_report import compare_monthly_reports, select_latest_distinct_months
 from app.smart_sip_regime import assess_smart_sip_regime
 from app.nav_adjustments import (
     NAV_ADJUSTMENT_REGISTRY_VERSION,
@@ -3591,183 +3592,52 @@ def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
 
 @app.get("/v1/portfolios/{portfolio_id}/monthly-comparison")
 def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
-    """Compare the two latest immutable report snapshots without inventing missing metrics."""
+    """Compare the newest immutable report from each of the two latest valuation months."""
     owner_id = require_authenticated_user()
     with SessionLocal() as db:
         _require_portfolio_owner(db, portfolio_id)
-        snapshots = db.execute(
+        rows = db.execute(
             select(PortfolioReportSnapshot)
             .where(
                 PortfolioReportSnapshot.portfolio_id == portfolio_id,
                 PortfolioReportSnapshot.owner_user_id == owner_id,
             )
             .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
-            .limit(2)
         ).scalars().all()
-    if len(snapshots) < 2:
+
+    snapshots = [{
+        "report_id": row.id,
+        "generated_at": row.generated_at.isoformat(),
+        "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
+        "report": json.loads(row.content_json),
+    } for row in rows]
+    monthly = select_latest_distinct_months(snapshots)
+    if len(monthly) < 2:
         return {
             "portfolio_id": portfolio_id,
-            "status": "INSUFFICIENT_SNAPSHOTS",
-            "required_snapshot_count": 2,
+            "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
+            "required_month_count": 2,
+            "available_month_count": len(monthly),
             "available_snapshot_count": len(snapshots),
-            "message": "Generate at least two monthly report snapshots to compare portfolio movement.",
-        }
-    current = json.loads(snapshots[0].content_json)
-    previous = json.loads(snapshots[1].content_json)
-
-    def compare_rows(section: dict[str, Any], field: str, key_field: str, value_field: str) -> dict[str, Any]:
-        old_rows = {str(row.get(key_field)): row for row in (section.get("previous") or [])}
-        new_rows = {str(row.get(key_field)): row for row in (section.get("current") or [])}
-        keys = sorted(set(old_rows) | set(new_rows))
-        changes = []
-        for key in keys:
-            old = old_rows.get(key)
-            new = new_rows.get(key)
-            old_value = Decimal(str(old.get(value_field))) if old and old.get(value_field) is not None else None
-            new_value = Decimal(str(new.get(value_field))) if new and new.get(value_field) is not None else None
-            delta = new_value - old_value if old_value is not None and new_value is not None else None
-            changes.append({
-                "key": key,
-                "previous_value": str(old_value) if old_value is not None else None,
-                "current_value": str(new_value) if new_value is not None else None,
-                "change": str(delta) if delta is not None else None,
-                "status": "COMPARABLE" if delta is not None else "NOT_COMPARABLE_MISSING_SOURCE",
-            })
-        return {"dimension": field, "items": changes}
-
-    def rows_at(report: dict[str, Any], path: tuple[str, ...], key: str, value: str) -> list[dict[str, Any]] | None:
-        node: Any = report
-        for part in path:
-            node = node.get(part) if isinstance(node, dict) else None
-        if not isinstance(node, list):
-            return None
-        return [{key: row.get(key), value: row.get(value)} for row in node]
-
-    comparisons = {}
-    for name, path, key_field, value_field in [
-        ("category", ("allocation_intelligence", "allocation", "by_category"), "name", "portfolio_weight_pct"),
-        ("asset_class", ("allocation_intelligence", "allocation", "by_asset_class"), "name", "portfolio_weight_pct"),
-        ("amc", ("allocation_intelligence", "amc_concentration", "amcs"), "name", "portfolio_weight_pct"),
-        ("market_cap", ("market_cap_intelligence", "classified_distribution"), "market_cap_bucket", "weight_of_total_portfolio_pct"),
-        ("sector", ("lookthrough", "sector_exposure"), "sector", "portfolio_weight_pct"),
-    ]:
-        old_rows = rows_at(previous, path, key_field, value_field)
-        new_rows = rows_at(current, path, key_field, value_field)
-        if name == "market_cap":
-            for report, rows in ((previous, old_rows), (current, new_rows)):
-                if rows is None:
-                    continue
-                market_cap_section = report.get("market_cap_intelligence") or {}
-                rows.extend([{
-                    key_field: "UNCLASSIFIED:" + str(item.get("reason")),
-                    value_field: item.get("weight_of_total_portfolio_pct"),
-                } for item in market_cap_section.get("unclassified_exposure") or []])
-        old_status = (
-            previous.get("market_cap_intelligence", {}).get("status")
-            if name == "market_cap" else
-            previous.get("lookthrough", {}).get("coverage", {}).get("status")
-            if name == "sector" else
-            previous.get("allocation_intelligence", {}).get("status")
-        )
-        new_status = (
-            current.get("market_cap_intelligence", {}).get("status")
-            if name == "market_cap" else
-            current.get("lookthrough", {}).get("coverage", {}).get("status")
-            if name == "sector" else
-            current.get("allocation_intelligence", {}).get("status")
-        )
-        if name == "sector":
-            comparable_statuses = {"COMPLETE", "PARTIAL_MISSING_DISCLOSURES", "PARTIAL_STALE_DISCLOSURES"}
-        elif name == "market_cap":
-            comparable_statuses = {
-                "AVAILABLE", "PARTIAL_LOOKTHROUGH_COVERAGE",
-                "PARTIAL_CLASSIFICATION_COVERAGE",
-                "PARTIAL_LOOKTHROUGH_AND_CLASSIFICATION_COVERAGE",
-            }
-        else:
-            comparable_statuses = {"AVAILABLE", "PARTIAL_STALE_NAV"}
-        if old_rows is None or new_rows is None or old_status not in comparable_statuses or new_status not in comparable_statuses:
-            comparisons[name] = {"status": "WITHHELD_OR_NOT_COMPARABLE", "items": []}
-        else:
-            comparisons[name] = compare_rows({"previous": old_rows, "current": new_rows}, name, key_field, value_field)
-
-    def target_drift_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
-        rows = []
-        for dimension, drift in (report.get("target_drift_snapshot") or {}).items():
-            if drift.get("status") != "AVAILABLE":
-                continue
-            for item in drift.get("targets") or []:
-                rows.append({
-                    "key": dimension + ":" + str(item.get("key")),
-                    "value": item.get("drift_percentage_points"),
-                })
-        return rows
-
-    previous_duplication = (previous.get("overlap_intelligence") or {}).get("portfolio_duplication") or {}
-    current_duplication = (current.get("overlap_intelligence") or {}).get("portfolio_duplication") or {}
-    previous_overlap_status = (previous.get("overlap_intelligence") or {}).get("status")
-    current_overlap_status = (current.get("overlap_intelligence") or {}).get("status")
-    old_duplicate_value = previous_duplication.get("duplicated_exposure_inr")
-    new_duplicate_value = current_duplication.get("duplicated_exposure_inr")
-    if previous_overlap_status == "AVAILABLE" and current_overlap_status == "AVAILABLE" and old_duplicate_value is not None and new_duplicate_value is not None:
-        old_amount, new_amount = Decimal(str(old_duplicate_value)), Decimal(str(new_duplicate_value))
-        comparisons["portfolio_duplication"] = {
-            "status": "COMPARABLE",
-            "previous_value_inr": str(old_amount),
-            "current_value_inr": str(new_amount),
-            "change_inr": str(new_amount - old_amount),
-        }
-    else:
-        comparisons["portfolio_duplication"] = {
-            "status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE",
-            "previous_value_inr": None,
-            "current_value_inr": None,
-            "change_inr": None,
+            "message": "Generate immutable reports with valuation dates in at least two distinct calendar months.",
         }
 
-    previous_target_drift = target_drift_rows(previous)
-    current_target_drift = target_drift_rows(current)
-    if previous_target_drift and current_target_drift:
-        comparisons["target_drift"] = compare_rows(
-            {"previous": previous_target_drift, "current": current_target_drift},
-            "target_drift_percentage_points",
-            "key",
-            "value",
-        )
-    else:
-        comparisons["target_drift"] = {"status": "WITHHELD_OR_NO_SAVED_TARGETS", "items": []}
-
-    def metric(report: dict[str, Any], *path: str):
-        node: Any = report
-        for part in path:
-            node = node.get(part) if isinstance(node, dict) else None
-        return str(node) if node is not None else None
-
-    risk_keys = ("annualized_volatility", "max_drawdown", "historical_var_95", "historical_cvar_95")
-    risk_changes = {}
-    for key in risk_keys:
-        old = metric(previous, "risk", "metrics", key)
-        new = metric(current, "risk", "metrics", key)
-        risk_changes[key] = {
-            "previous": old,
-            "current": new,
-            "change": str(Decimal(new) - Decimal(old)) if old is not None and new is not None else None,
-            "status": "COMPARABLE" if old is not None and new is not None else "WITHHELD_OR_NOT_COMPARABLE",
-        }
-    return {
+    previous, current = monthly[1], monthly[0]
+    result = compare_monthly_reports(previous, current)
+    result.update({
         "portfolio_id": portfolio_id,
-        "status": "AVAILABLE",
-        "previous_snapshot": {"report_id": snapshots[1].id, "generated_at": snapshots[1].generated_at.isoformat(), "source_max_nav_date": snapshots[1].source_max_nav_date.isoformat() if snapshots[1].source_max_nav_date else None},
-        "current_snapshot": {"report_id": snapshots[0].id, "generated_at": snapshots[0].generated_at.isoformat(), "source_max_nav_date": snapshots[0].source_max_nav_date.isoformat() if snapshots[0].source_max_nav_date else None},
-        "comparisons": comparisons,
-        "risk_changes": risk_changes,
-        "limitations": [
-            "This compares two saved snapshots; it is not a daily time series.",
-            "Changes are only comparable where both snapshots contain a supported metric.",
-            "Look-through and market-cap changes may reflect disclosure or classification refreshes as well as portfolio trades and market movement.",
-            "Historical risk snapshots use the methodology and data coverage recorded at each report date.",
-        ],
-    }
+        "previous_snapshot": {
+            "report_id": previous["report_id"],
+            "generated_at": previous["generated_at"],
+            "source_max_nav_date": previous["source_max_nav_date"],
+        },
+        "current_snapshot": {
+            "report_id": current["report_id"],
+            "generated_at": current["generated_at"],
+            "source_max_nav_date": current["source_max_nav_date"],
+        },
+    })
+    return result
 
 
 @app.get("/v1/reports/{report_id}/pdf")
@@ -5888,7 +5758,8 @@ def get_portfolio_market_cap_allocation(
     max_classification_age_days: int = Query(default=180, ge=30, le=730),
 ) -> dict[str, Any]:
     """Calculate market-cap exposure from verified holdings and verified effective-dated ISIN mappings."""
-    require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
     valuation = portfolio_valuation(portfolio_id, None)
     if valuation.get("valuation_status") != "COMPLETE":
         return {
