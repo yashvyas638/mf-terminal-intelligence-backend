@@ -270,3 +270,35 @@ def test_monthly_risk_comparison_rejects_boolean_lookback_window():
 
     assert result["risk_changes"]["annualized_volatility"]["status"] == "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
     assert result["risk_changes"]["annualized_volatility"]["change"] is None
+
+
+def test_monthly_amc_concentration_deltas_withheld_for_invalid_allocation_status():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["status"] = "WITHHELD_STALE_NAV"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["comparisons"]["amc_concentration_metrics"]["top_1_amc_weight_pct"]
+    assert metric["status"] == "WITHHELD_OR_NOT_COMPARABLE"
+    assert metric["previous"] is None
+    assert metric["current"] is None
+
+
+def test_monthly_amc_concentration_rejects_hhi_outside_valid_range():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["amc_concentration"]["hhi_points"] = "12000"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["comparisons"]["amc_concentration_metrics"]["hhi_points"]
+    assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metric["previous"] is None
+    assert metric["current"] is None
