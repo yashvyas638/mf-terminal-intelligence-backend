@@ -481,3 +481,17 @@ A focused API-path audit found that Smart SIP treated portfolio need as verified
 ### Latest branch/PR state correction — 2026-11-18
 
 After the Smart SIP freshness fix and tracker update, GitHub reports PR #135 mergeable=true against `main` (0 commits behind; branch contains 881 commits ahead). This supersedes the transient mergeable=false state recorded in the previous section. The current head is `cedf292a90253b9c127cbafb2c619e2a4a6cf520`. No combined status checks are currently attached to that exact SHA, and the older queued run is not a substitute. CI evidence remains pending.
+
+### TWT monthly PDF overlap denominator completeness — 2026-11-18
+
+The PDF monthly comparison table showed only Fund A's overlap ratio movement. Fund A and Fund B use different NAV denominators, so both percentage-point movements are required to interpret a pair correctly.
+
+- Extended the monthly PDF row builder to support a second directional percentage-point metric.
+- The pairwise overlap movement table now prints both Fund A and Fund B ratio changes in separate columns, with a narrower table layout to remain within the A4 content width.
+- Added a regression test for both directional deltas and column alignment.
+
+Commits:
+- `7af702a` — Show both fund overlap ratios in monthly TWT PDF.
+- `ca8b510` — Test both directional overlap deltas in TWT PDF.
+
+Validation remains pending on the latest branch head; no test pass is claimed until CI completes. Visual PDF pagination review remains open.
