@@ -169,3 +169,37 @@ def test_monthly_overlap_pair_identity_is_order_independent_and_keeps_directiona
     assert pair["metrics"]["overlap_pct_of_scheme_a_nav"]["current"] == "4.5000"
     assert pair["metrics"]["overlap_pct_of_scheme_b_nav"]["previous"] == "8.0000"
     assert pair["metrics"]["overlap_pct_of_scheme_b_nav"]["current"] == "9.0000"
+
+def test_monthly_risk_comparison_withholds_different_lookback_windows():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    previous_report["lookback_days"] = 1095
+    current_report["lookback_days"] = 365
+    previous_report["risk"] = {"status": "OK", "metrics": {"annualized_volatility": "0.12"}}
+    current_report["risk"] = {"status": "OK", "metrics": {"annualized_volatility": "0.18"}}
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["risk_changes"]["annualized_volatility"]
+    assert metric["status"] == "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
+    assert metric["previous"] is None
+    assert metric["current"] is None
+    assert metric["change"] is None
+
+
+def test_monthly_risk_comparison_withholds_stale_nav_risk_inputs():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    for report in (previous_report, current_report):
+        report["lookback_days"] = 1095
+        report["risk"] = {"status": "STALE_NAV", "metrics": {"annualized_volatility": "0.12"}}
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["risk_changes"]["annualized_volatility"]["status"] == "WITHHELD_RISK_INPUT_STATUS"
