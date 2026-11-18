@@ -4905,6 +4905,12 @@ def portfolio_holdings_lookthrough(
         "category_allocation": category_rows,
         "category_group_allocation": category_group_rows,
         "asset_class_allocation": asset_class_rows,
+        "market_cap_allocation": {
+            "status": "NOT_CONFIGURED",
+            "items": [],
+            "coverage_pct": None,
+            "reason": "No verified, effective-dated security market-cap classification source is configured. Scheme category labels are not used as a proxy.",
+        },
         "security_concentration": concentration,
         "sources": source_rows,
         "methodology": (
