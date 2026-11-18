@@ -43,3 +43,27 @@ def test_pdf_report_builds_with_real_valuation_field_names():
     }
     pdf = build_portfolio_report_pdf(report)
     assert pdf.startswith(b"%PDF")
+
+
+def test_pdf_includes_amc_category_and_asset_class_sections():
+    report = {
+        "portfolio_name": "TWT Allocation Test",
+        "generated_at": "2026-11-18T10:00:00+00:00",
+        "report_version": "portfolio-report-v1",
+        "valuation": {"valuation_status": "COMPLETE", "current_value": "100000", "holdings": []},
+        "lookthrough": {
+            "coverage": {"status": "COMPLETE", "fresh_covered_weight_pct": 100.0},
+            "amc_concentration": {
+                "summary": {"top_1_weight_of_observed_pct": 100.0, "top_3_weight_of_observed_pct": 100.0, "hhi_points": 10000.0, "effective_count": 1.0},
+                "items": [{"name": "Example AMC", "market_value": "100000.00", "portfolio_weight_pct": 100.0, "scheme_count": 1}],
+            },
+            "category_allocation": [{"name": "Flexi Cap Fund", "market_value": "100000.00", "portfolio_weight_pct": 100.0, "scheme_count": 1}],
+            "asset_class_allocation": [{"name": "Equity", "market_value": "100000.00", "portfolio_weight_pct": 100.0, "scheme_count": 1}],
+            "top_securities": [],
+            "sector_exposure": [],
+        },
+        "risk": {}, "fifo_tax_lots": {}, "sources": [], "limitations": [],
+    }
+    pdf = build_portfolio_report_pdf(report)
+    assert pdf.startswith(b"%PDF")
+    assert len(pdf) > 1000
