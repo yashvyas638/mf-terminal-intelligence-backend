@@ -578,3 +578,19 @@ Commits:
 - `0cfad63` — Test invalid monthly coverage percentage values.
 
 **Validation:** committed implementation and regression coverage; no test pass is claimed until the exact current-head CI completes. No merge, deployment or production data changes.
+
+### Portfolio intelligence UI contract and cache invalidation — 2026-11-18
+
+Two frontend integration issues were found during a contract review:
+
+- The look-through API returns security concentration under `security_concentration`; the overview diagnosis incorrectly read `concentration`, so its ISIN-identity warning could never appear. The renderer now reads the actual API field.
+- The HTML kept static asset query keys at `v=2`; browsers/CDNs could continue serving an older JS/CSS bundle after deployment. Both portfolio-intelligence asset keys are bumped to `v=3`.
+
+Added a UI contract regression test for both issues.
+
+Commits:
+- `44b21aa` — Bust portfolio intelligence static asset cache.
+- `e174352` — Fix look-through concentration diagnosis field.
+- `d066707` — Test portfolio UI cache and look-through API contract.
+
+Validation pending on exact latest branch SHA. No merge or deployment.
