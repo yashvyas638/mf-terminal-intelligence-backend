@@ -5600,15 +5600,21 @@ def get_portfolio_market_cap_allocation(
         )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from None
+    lookthrough_complete = lookthrough.get("coverage", {}).get("status") == "COMPLETE"
+    classification_coverage = Decimal(str(result.get("classified_coverage_of_positive_lookthrough_pct") or "0"))
+    classification_complete = classification_coverage >= Decimal("99.9999")
+    if lookthrough_complete and classification_complete:
+        market_cap_status = "AVAILABLE"
+    elif lookthrough_complete:
+        market_cap_status = "PARTIAL_CLASSIFICATION_COVERAGE"
+    elif classification_complete:
+        market_cap_status = "PARTIAL_LOOKTHROUGH_COVERAGE"
+    else:
+        market_cap_status = "PARTIAL_LOOKTHROUGH_AND_CLASSIFICATION_COVERAGE"
     result.update({
         "portfolio_id": portfolio_id,
         "portfolio_name": valuation.get("portfolio_name"),
-        "status": (
-            "PARTIAL_LOOKTHROUGH_COVERAGE" if lookthrough.get("coverage", {}).get("status") != "COMPLETE"
-            else "PARTIAL_CLASSIFICATION_COVERAGE"
-            if Decimal(str(result.get("classified_coverage_of_positive_lookthrough_pct") or "0")) < Decimal("100")
-            else "AVAILABLE"
-        ),
+        "status": market_cap_status,
         "lookthrough_coverage": lookthrough.get("coverage"),
         "classification_health": {
             "verified_mapping_count": len(result.get("sources", [])),
