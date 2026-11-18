@@ -3471,6 +3471,9 @@ def create_portfolio_report_snapshot(
                 "url": source.get("source_url"),
                 "source_sha256": source.get("source_sha256"),
                 "as_of_date": source.get("source_as_of_date"),
+                "retrieved_at": source.get("retrieved_at"),
+                "verified_at": source.get("verified_at"),
+                "classification_ids": source.get("classification_ids", []),
             })
 
         limitations = [
@@ -3522,6 +3525,11 @@ def create_portfolio_report_snapshot(
                     source.get("source_sha256")
                     for source in market_cap_intelligence.get("sources", [])
                     if source.get("source_sha256")
+                }),
+                "market_cap_classification_ids": sorted({
+                    classification_id
+                    for source in market_cap_intelligence.get("sources", [])
+                    for classification_id in source.get("classification_ids", [])
                 }),
             },
             "limitations": limitations,
@@ -5934,11 +5942,14 @@ def get_portfolio_market_cap_allocation(
             SecurityMarketCapClassification.effective_from <= date.fromisoformat(as_of_date),
         )).scalars().all()
     classification_rows = [{
+        "classification_id": row.id,
         "security_id": row.security_id,
         "market_cap_bucket": row.market_cap_bucket,
         "effective_from": row.effective_from,
         "effective_to": row.effective_to,
         "source_as_of_date": row.source_as_of_date,
+        "retrieved_at": row.created_at,
+        "verified_at": row.verified_at,
         "source_url": row.source_document_url,
         "source_sha256": row.source_sha256,
         "verification_status": row.verification_status,
