@@ -4,6 +4,7 @@ from reportlab.platypus import Paragraph
 from app.reporting import (
     _allocation_group_rows,
     _source_reference_row,
+    _monthly_comparison_rows,
     build_portfolio_report_pdf,
 )
 
@@ -96,3 +97,55 @@ def test_twt_report_pdf_builds_from_saved_snapshot_payload():
 
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 1000
+
+
+
+def test_monthly_comparison_rows_render_frozen_inr_and_percentage_point_changes():
+    rows = _monthly_comparison_rows(
+        {
+            "comparisons": {
+                "category": {
+                    "status": "COMPARABLE",
+                    "items": [
+                        {
+                            "key": "Equity",
+                            "metrics": {
+                                "market_value_inr": {
+                                    "previous": "70000",
+                                    "current": "75000",
+                                    "change": "5000",
+                                    "change_inr": "5000",
+                                    "status": "COMPARABLE",
+                                },
+                                "portfolio_weight_pct": {
+                                    "previous": "70",
+                                    "current": "75",
+                                    "change": "5",
+                                    "change_percentage_points": "5",
+                                    "status": "COMPARABLE",
+                                },
+                            },
+                        }
+                    ],
+                }
+            }
+        },
+        "category",
+        "market_value_inr",
+        "portfolio_weight_pct",
+    )
+
+    assert rows[0] == ["Item", "Previous INR", "Current INR", "Change INR", "Change pp", "Status"]
+    assert rows[1][0].text == "Equity"
+    assert rows[1][1:] == ["70000", "75000", "5000", "5", "COMPARABLE"]
+
+
+def test_monthly_comparison_rows_show_withheld_status_without_fabricating_values():
+    rows = _monthly_comparison_rows(
+        {"comparisons": {"market_cap": {"status": "WITHHELD_OR_NOT_COMPARABLE", "items": []}}},
+        "market_cap",
+        "exposure_inr",
+        "weight_of_total_portfolio_pct",
+    )
+
+    assert rows[1] == ["WITHHELD_OR_NOT_COMPARABLE", "—", "—", "—", "—", "Withheld"]
