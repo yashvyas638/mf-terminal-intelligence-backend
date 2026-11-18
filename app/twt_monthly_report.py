@@ -237,10 +237,32 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         "hhi_points": (Decimal("0"), Decimal("10000")),
         "effective_amc_count": (Decimal("0"), None),
     }
+
+    def amc_snapshot_is_consistent(metrics: dict[str, Any]) -> bool:
+        values = {name: _decimal(metrics.get(name)) for name in amc_bounds}
+        if any(value is None for value in values.values()):
+            return True  # Missing evidence is handled as non-comparable per metric.
+        top_1 = values["top_1_amc_weight_pct"]
+        top_3 = values["top_3_amc_weight_pct"]
+        top_5 = values["top_5_amc_weight_pct"]
+        hhi = values["hhi_points"]
+        effective_count = values["effective_amc_count"]
+        if not (top_1 <= top_3 <= top_5):
+            return False
+        # For a populated portfolio, effective AMC count is 10,000 / HHI.
+        # Allow a small tolerance for source rounding; the all-zero case is
+        # retained for an empty/unvalued allocation snapshot.
+        if hhi > 0 and effective_count > 0:
+            return abs(hhi * effective_count - Decimal("10000")) <= Decimal("0.5")
+        return hhi == 0 and effective_count == 0
+
+    invalid_amc_snapshot = not (
+        amc_snapshot_is_consistent(old_amc) and amc_snapshot_is_consistent(new_amc)
+    )
     for metric_name, (minimum, maximum) in amc_bounds.items():
         old_metric = _decimal(old_amc.get(metric_name))
         new_metric = _decimal(new_amc.get(metric_name))
-        invalid = any(
+        invalid = invalid_amc_snapshot or any(
             value is not None and (value < minimum or (maximum is not None and value > maximum))
             for value in (old_metric, new_metric)
         )
