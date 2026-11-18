@@ -242,6 +242,10 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         values = {name: _decimal(metrics.get(name)) for name in amc_bounds}
         if any(value is None for value in values.values()):
             return True  # Missing evidence is handled as non-comparable per metric.
+        for name, value in values.items():
+            minimum, maximum = amc_bounds[name]
+            if value < minimum or (maximum is not None and value > maximum):
+                return False
         top_1 = values["top_1_amc_weight_pct"]
         top_3 = values["top_3_amc_weight_pct"]
         top_5 = values["top_5_amc_weight_pct"]
