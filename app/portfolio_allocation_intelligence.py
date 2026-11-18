@@ -522,11 +522,16 @@ def market_cap_allocation(
             raise ValueError("verified classification requires a source URL")
         if effective_to and effective_to < effective_from:
             raise ValueError("classification effective_to cannot precede effective_from")
+        retrieved_at = row.get("retrieved_at")
+        verified_at = row.get("verified_at")
         by_isin[isin].append({
+            "classification_id": row.get("classification_id"),
             "bucket": bucket,
             "effective_from": effective_from,
             "effective_to": effective_to,
             "source_as_of_date": source_as_of,
+            "retrieved_at": retrieved_at.isoformat() if hasattr(retrieved_at, "isoformat") else str(retrieved_at) if retrieved_at is not None else None,
+            "verified_at": verified_at.isoformat() if hasattr(verified_at, "isoformat") else str(verified_at) if verified_at is not None else None,
             "source_url": str(row["source_url"]),
             "source_sha256": source_hash,
         })
@@ -566,9 +571,13 @@ def market_cap_allocation(
         totals[chosen["bucket"]] += value
         classified += value
         source_rows.append({
+            "classification_id": chosen["classification_id"],
             "security_id": isin,
+            "identity_match_status": "VERIFIED_ISIN_MATCH",
             "market_cap_bucket": chosen["bucket"],
             "source_as_of_date": chosen["source_as_of_date"].isoformat(),
+            "retrieved_at": chosen["retrieved_at"],
+            "verified_at": chosen["verified_at"],
             "classification_age_days": age,
             "source_url": chosen["source_url"],
             "source_sha256": chosen["source_sha256"],
@@ -589,9 +598,14 @@ def market_cap_allocation(
             "source_url": source["source_url"],
             "source_sha256": source_hash,
             "source_as_of_date": source["source_as_of_date"],
+            "retrieved_at": source.get("retrieved_at"),
+            "verified_at": source.get("verified_at"),
+            "classification_ids": [],
             "classified_security_count": 0,
         })
         entry["classified_security_count"] += 1
+        if source.get("classification_id") is not None:
+            entry["classification_ids"].append(source["classification_id"])
     return {
         "methodology_version": METHODOLOGY_VERSION,
         "as_of_date": as_of.isoformat(),
