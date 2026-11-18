@@ -381,3 +381,47 @@ def test_monthly_amc_metrics_withhold_partial_but_contradictory_top_n_evidence()
     assert metrics["top_3_amc_weight_pct"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
     assert metrics["top_5_amc_weight_pct"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
     assert metrics["top_1_amc_weight_pct"]["change"] is None
+
+
+def test_monthly_comparison_withholds_negative_rupee_source_values():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["allocation"]["schemes"][0]["market_value_inr"] = "-1"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["comparisons"]["scheme"]["items"][0]["metrics"]["market_value_inr"]
+    assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metric["previous"] is None
+    assert metric["current"] is None
+    assert metric["change_inr"] is None
+
+
+def test_monthly_comparison_withholds_malformed_market_cap_rows():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["market_cap_intelligence"]["classified_distribution"] = [None]
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["comparisons"]["market_cap"]["status"] == "WITHHELD_OR_NOT_COMPARABLE"
+    assert result["comparisons"]["market_cap"]["items"] == []
+
+
+def test_monthly_comparison_withholds_negative_portfolio_value():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", -1, 600, 66.6667)
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["comparisons"]["portfolio_value"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert result["comparisons"]["portfolio_value"]["change_inr"] is None
