@@ -2106,12 +2106,19 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     )
     assert saved_report.status_code == 201, saved_report.text
     report_id = saved_report.json()["report_id"]
+    saved_report_value = client.get(f"/v1/reports/{report_id}", headers=headers).json()["report"]["valuation"]["current_value"]
+    # Later NAV corrections/refreshes must not rewrite the already persisted report.
+    with SessionLocal() as db:
+        latest_nav = db.query(NavObservation).filter_by(scheme_code=scheme_code).order_by(NavObservation.nav_date.desc()).first()
+        latest_nav.nav_value = latest_nav.nav_value + Decimal("1")
+        db.commit()
     report_list = client.get(f"/v1/portfolios/{portfolio_id}/reports", headers=headers)
     assert report_list.status_code == 200
     assert report_list.json()["count"] == 1
     report_detail = client.get(f"/v1/reports/{report_id}", headers=headers)
     assert report_detail.status_code == 200
     assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
+    assert report_detail.json()["report"]["valuation"]["current_value"] == saved_report_value
     assert report_detail.json()["report"]["lookthrough"]["coverage"]["status"] == "COMPLETE"
     assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
     assert report_detail.json()["integrity_status"] == "VERIFIED"
