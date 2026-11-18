@@ -2491,12 +2491,15 @@ class PortfolioAllocationTargetsRequest(BaseModel):
 class ContributionPlanRequest(BaseModel):
     dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"]
     contribution_inr: Decimal = Field(gt=0, le=Decimal("1000000000000"))
+    max_contribution_inr: Decimal | None = Field(default=None, gt=0, le=Decimal("1000000000000"))
+    max_post_weight_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("100"))
 
 
 class SmartSIPPreviewRequest(BaseModel):
     benchmark_code: str = Field(min_length=1, max_length=80)
     dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"]
     additional_contribution_budget_approved: bool = False
+    additional_contribution_budget_inr: Decimal | None = Field(default=None, gt=0, le=Decimal("1000000000000"))
 
 
 class MarketCapClassificationImportRequest(BaseModel):
@@ -5562,6 +5565,8 @@ def preview_portfolio_contribution_plan(
             target_inputs,
             portfolio_value_inr=total,
             contribution_inr=payload.contribution_inr,
+            max_contribution_inr=payload.max_contribution_inr,
+            max_post_weight_pct=payload.max_post_weight_pct,
         )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
@@ -5633,9 +5638,15 @@ def preview_smart_sip_regime(
     except HTTPException as exc:
         portfolio_need = {"status": "WITHHELD", "verified": False, "reason": str(exc.detail), "dimension": payload.dimension}
 
+    approved_budget = payload.additional_contribution_budget_inr
     risk_budget = {
-        "allowed": payload.additional_contribution_budget_approved is True,
-        "approval_basis": "Explicit user approval in this preview request",
+        "allowed": payload.additional_contribution_budget_approved is True and approved_budget is not None,
+        "max_additional_contribution_inr": str(approved_budget) if approved_budget is not None else None,
+        "approval_basis": (
+            "Explicit user approval and positive INR ceiling in this preview request"
+            if payload.additional_contribution_budget_approved is True and approved_budget is not None
+            else "No usable additional-contribution budget approval was supplied"
+        ),
     }
     config_names = {
         "max_observation_age_days": "SMART_SIP_MAX_OBSERVATION_AGE_DAYS",
