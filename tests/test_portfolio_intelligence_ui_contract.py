@@ -125,3 +125,13 @@ def test_portfolio_intelligence_cache_keys_and_lookthrough_diagnosis_match_api_c
     assert 'portfolio-intelligence.js?v=3' in html
     assert 'l.security_concentration?.isin_identity_coverage_pct' in js
     assert 'l.concentration?.isin_identity_coverage_pct' not in js
+
+def test_lookthrough_percentages_are_not_divided_twice_before_display():
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+
+    assert "Number(conc.isin_identity_coverage_pct)" in js
+    assert "Number(conc.top_1_weight_of_observed_positive_pct)" in js
+    assert "Number(conc.top_5_weight_of_observed_positive_pct)" in js
+    assert "Number(conc.top_10_weight_of_observed_positive_pct)" in js
+    assert "Number(conc.isin_identity_coverage_pct)/100" not in js
+    assert "Number(conc.top_1_weight_of_observed_positive_pct)/100" not in js
