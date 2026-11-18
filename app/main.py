@@ -4584,6 +4584,7 @@ def portfolio_holdings_lookthrough(
     security_totals: dict[str, dict[str, Any]] = {}
     sector_totals: dict[str, Decimal] = {}
     source_rows = []
+    scheme_metadata: dict[int, dict[str, str | None]] = {}
     missing_codes = []
     stale_codes = []
     covered_value = Decimal("0")
@@ -4596,6 +4597,18 @@ def portfolio_holdings_lookthrough(
 
     with SessionLocal() as db:
         _require_portfolio_owner(db, portfolio_id)
+        scheme_codes = [int(item["scheme_code"]) for item in holdings_with_value]
+        if scheme_codes:
+            metadata_rows = db.execute(select(Scheme).where(Scheme.scheme_code.in_(scheme_codes))).scalars().all()
+            scheme_metadata = {
+                row.scheme_code: {
+                    "amc": row.amc,
+                    "category": row.category,
+                    "category_group": row.category_group,
+                    "asset_class": row.asset_class,
+                }
+                for row in metadata_rows
+            }
         for holding in holdings_with_value:
             scheme_code = int(holding["scheme_code"])
             market_value = Decimal(str(holding["market_value"]))
@@ -4672,6 +4685,53 @@ def portfolio_holdings_lookthrough(
                 aggregate["source_disclosure_ids"].add(disclosure.id)
                 sector_key = row.sector or "Unclassified"
                 sector_totals[sector_key] = sector_totals.get(sector_key, Decimal("0")) + exposure
+
+    def aggregate_scheme_segments(field: str) -> list[dict[str, Any]]:
+        totals: dict[str, dict[str, Any]] = {}
+        for holding in holdings_with_value:
+            scheme_code = int(holding["scheme_code"])
+            metadata = scheme_metadata.get(scheme_code, {})
+            raw_label = metadata.get(field)
+            label = str(raw_label).strip() if raw_label and str(raw_label).strip() else "Unclassified"
+            amount = Decimal(str(holding["market_value"]))
+            bucket = totals.setdefault(label, {"market_value": Decimal("0"), "scheme_codes": set()})
+            bucket["market_value"] += amount
+            bucket["scheme_codes"].add(scheme_code)
+        rows = []
+        for label, bucket in totals.items():
+            amount = bucket["market_value"]
+            rows.append({
+                "name": label,
+                "market_value": str(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+                "portfolio_weight_pct": (
+                    float((amount / total_value * 100).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+                    if valuation_complete and total_value > 0 else None
+                ),
+                "scheme_count": len(bucket["scheme_codes"]),
+                "scheme_codes": sorted(bucket["scheme_codes"]),
+                "classification_status": "UNCLASSIFIED" if label == "Unclassified" else "CLASSIFIED",
+            })
+        rows.sort(key=lambda row: Decimal(row["market_value"]), reverse=True)
+        return rows
+
+    def concentration_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        values = [Decimal(row["market_value"]) for row in rows if Decimal(row["market_value"]) > 0]
+        observed = sum(values, Decimal("0"))
+        shares = [value / observed for value in values] if observed > 0 else []
+        hhi = sum((share * share for share in shares), Decimal("0"))
+        return {
+            "observed_market_value": str(observed.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+            "top_1_weight_of_observed_pct": float((sum(sorted(shares, reverse=True)[:1], Decimal("0")) * 100).quantize(Decimal("0.0001"))),
+            "top_3_weight_of_observed_pct": float((sum(sorted(shares, reverse=True)[:3], Decimal("0")) * 100).quantize(Decimal("0.0001"))),
+            "top_5_weight_of_observed_pct": float((sum(sorted(shares, reverse=True)[:5], Decimal("0")) * 100).quantize(Decimal("0.0001"))),
+            "hhi_points": float((hhi * 10000).quantize(Decimal("0.01"))),
+            "effective_count": float((Decimal("1") / hhi).quantize(Decimal("0.01"))) if hhi > 0 else None,
+        }
+
+    amc_rows = aggregate_scheme_segments("amc")
+    category_rows = aggregate_scheme_segments("category")
+    category_group_rows = aggregate_scheme_segments("category_group")
+    asset_class_rows = aggregate_scheme_segments("asset_class")
 
     security_rows = []
     for item in security_totals.values():
@@ -4750,6 +4810,10 @@ def portfolio_holdings_lookthrough(
         },
         "top_securities": security_rows[:50],
         "sector_exposure": sector_rows,
+        "amc_concentration": {"items": amc_rows, "summary": concentration_summary(amc_rows)},
+        "category_allocation": category_rows,
+        "category_group_allocation": category_group_rows,
+        "asset_class_allocation": asset_class_rows,
         "security_concentration": concentration,
         "sources": source_rows,
         "methodology": (
