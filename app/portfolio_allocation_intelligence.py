@@ -531,6 +531,7 @@ def holdings_overlap_matrix(
     funds: Iterable[Mapping[str, Any]],
     *,
     disclosure_coverage_threshold_pct: Any = 0,
+    max_disclosure_age_days: int | None = None,
 ) -> dict[str, Any]:
     """Build pairwise overlap and portfolio-wide duplicated exposure.
 
@@ -542,11 +543,19 @@ def holdings_overlap_matrix(
 
     Disclosure coverage is supplied separately as a percentage of fund NAV;
     a missing coverage value remains unknown and can withhold pair metrics.
+    When max_disclosure_age_days is supplied, stale or undated disclosures
+    withhold pairwise overlap values; age is never inferred from a missing date.
     """
     threshold = _d(disclosure_coverage_threshold_pct, "disclosure_coverage_threshold_pct")
     assert threshold is not None
     if threshold < ZERO or threshold > HUNDRED:
         raise ValueError("disclosure coverage threshold must be between 0 and 100")
+    if max_disclosure_age_days is not None and (
+        isinstance(max_disclosure_age_days, bool)
+        or not isinstance(max_disclosure_age_days, int)
+        or max_disclosure_age_days < 0
+    ):
+        raise ValueError("max_disclosure_age_days must be a non-negative integer or None")
     fund_rows = list(funds)
     if len(fund_rows) > 200:
         raise ValueError("overlap matrix is limited to 200 active funds per calculation")
@@ -567,6 +576,21 @@ def holdings_overlap_matrix(
         coverage = _d(fund.get("disclosure_coverage_pct"), "disclosure_coverage_pct", allow_none=True)
         if coverage is not None and (coverage < ZERO or coverage > HUNDRED):
             raise ValueError("disclosure coverage must be between 0 and 100")
+        raw_age = fund.get("disclosure_age_days")
+        disclosure_age = None
+        if raw_age is not None:
+            if isinstance(raw_age, bool):
+                raise ValueError("disclosure_age_days must be a non-negative integer")
+            try:
+                disclosure_age = int(raw_age)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("disclosure_age_days must be a non-negative integer") from exc
+            if disclosure_age < 0 or str(disclosure_age) != str(raw_age).strip():
+                raise ValueError("disclosure_age_days must be a non-negative integer")
+        disclosure_stale = (
+            max_disclosure_age_days is not None
+            and (disclosure_age is None or disclosure_age > max_disclosure_age_days)
+        )
         exposures: dict[str, Decimal] = defaultdict(lambda: ZERO)
         for holding in fund.get("holdings") or []:
             if not bool(holding.get("is_isin")):
@@ -590,7 +614,8 @@ def holdings_overlap_matrix(
             "portfolio_value_inr": nav,
             "disclosure_coverage_pct": coverage,
             "disclosure_as_of_date": fund.get("disclosure_as_of_date"),
-            "disclosure_age_days": fund.get("disclosure_age_days"),
+            "disclosure_age_days": disclosure_age,
+            "disclosure_stale": disclosure_stale,
         })
 
     normalized.sort(key=lambda row: row["scheme_code"])
@@ -609,11 +634,13 @@ def holdings_overlap_matrix(
                 left_cov is not None and right_cov is not None
                 and (left_cov < threshold or right_cov < threshold)
             )
-            withheld = threshold > ZERO and (
+            stale_disclosure = left["disclosure_stale"] or right["disclosure_stale"]
+            withheld = stale_disclosure or (threshold > ZERO and (
                 left_cov is None or right_cov is None or below_threshold
-            )
+            ))
             pair_status = (
-                "WITHHELD_LOW_OR_UNKNOWN_COVERAGE" if withheld
+                "WITHHELD_STALE_OR_UNDATED_DISCLOSURE" if stale_disclosure
+                else "WITHHELD_LOW_OR_UNKNOWN_COVERAGE" if withheld
                 else "PARTIAL_COVERAGE_UNKNOWN" if left_cov is None or right_cov is None
                 else "PARTIAL_BELOW_CONFIGURED_THRESHOLD" if below_threshold
                 else "AVAILABLE"
