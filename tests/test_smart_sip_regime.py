@@ -54,3 +54,18 @@ def test_duplicate_dates_are_not_counted_as_evidence():
         portfolio_need=inputs()[0], risk_budget=inputs()[1], config=CONFIG)
     assert result["evidence"]["duplicate_date_count"] == 1
     assert not result["topup_eligible"]
+
+
+
+def test_invalid_regime_thresholds_are_rejected():
+    need, budget = inputs()
+    invalid = {**CONFIG, "volatility_ceiling_pct": float("nan")}
+    try:
+        assess_smart_sip_regime(
+            observations(), as_of=date(2026, 11, 18),
+            portfolio_need=need, risk_budget=budget, config=invalid,
+        )
+    except ValueError as exc:
+        assert "finite number" in str(exc)
+    else:
+        raise AssertionError("non-finite regime thresholds must be rejected")
