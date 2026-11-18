@@ -476,3 +476,8 @@ A focused API-path audit found that Smart SIP treated portfolio need as verified
 - Commits: `9725451` (fresh complete valuation gate), `18fc080` (stale valuation regression).
 
 **Validation:** committed to `ui/portfolio-intelligence`; CI for the exact latest head has not yet been observed. The previously observed run #44280273558 is for an older commit and remains queued; it is not valid evidence for this change. PR #135 currently reports mergeable=false, so merge readiness is also unresolved. No merge, deployment or production migration was performed.
+
+
+### Latest branch/PR state correction — 2026-11-18
+
+After the Smart SIP freshness fix and tracker update, GitHub reports PR #135 mergeable=true against `main` (0 commits behind; branch contains 881 commits ahead). This supersedes the transient mergeable=false state recorded in the previous section. The current head is `cedf292a90253b9c127cbafb2c619e2a4a6cf520`. No combined status checks are currently attached to that exact SHA, and the older queued run is not a substitute. CI evidence remains pending.
