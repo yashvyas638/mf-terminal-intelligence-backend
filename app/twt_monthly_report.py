@@ -226,16 +226,36 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     old_amc = (old_report.get("allocation_intelligence") or {}).get("amc_concentration") or {}
     new_amc = (new_report.get("allocation_intelligence") or {}).get("amc_concentration") or {}
     amc_metrics = {}
-    for metric_name in ("top_1_amc_weight_pct", "top_3_amc_weight_pct", "top_5_amc_weight_pct", "hhi_points", "effective_amc_count"):
+    allocation_comparable = (
+        (old_report.get("allocation_intelligence") or {}).get("status") in allocation_statuses
+        and (new_report.get("allocation_intelligence") or {}).get("status") in allocation_statuses
+    )
+    amc_bounds = {
+        "top_1_amc_weight_pct": (Decimal("0"), Decimal("100")),
+        "top_3_amc_weight_pct": (Decimal("0"), Decimal("100")),
+        "top_5_amc_weight_pct": (Decimal("0"), Decimal("100")),
+        "hhi_points": (Decimal("0"), Decimal("10000")),
+        "effective_amc_count": (Decimal("0"), None),
+    }
+    for metric_name, (minimum, maximum) in amc_bounds.items():
         old_metric = _decimal(old_amc.get(metric_name))
         new_metric = _decimal(new_amc.get(metric_name))
-        delta = new_metric - old_metric if old_metric is not None and new_metric is not None else None
+        invalid = any(
+            value is not None and (value < minimum or (maximum is not None and value > maximum))
+            for value in (old_metric, new_metric)
+        )
+        comparable = allocation_comparable and not invalid and old_metric is not None and new_metric is not None
+        delta = new_metric - old_metric if comparable else None
         amc_metrics[metric_name] = {
-            "previous": str(old_metric) if old_metric is not None else None,
-            "current": str(new_metric) if new_metric is not None else None,
+            "previous": str(old_metric) if comparable else None,
+            "current": str(new_metric) if comparable else None,
             "change": str(delta) if delta is not None else None,
             "change_percentage_points": str(delta) if delta is not None and metric_name.endswith("_pct") else None,
-            "status": "COMPARABLE" if delta is not None else "WITHHELD_OR_NOT_COMPARABLE",
+            "status": (
+                "WITHHELD_INVALID_SOURCE_VALUE" if invalid
+                else "COMPARABLE" if comparable
+                else "WITHHELD_OR_NOT_COMPARABLE"
+            ),
         }
     comparisons["amc_concentration_metrics"] = amc_metrics
 
