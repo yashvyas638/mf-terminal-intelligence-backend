@@ -120,9 +120,23 @@ def _monthly_comparison_rows(
         if secondary_weight_field:
             secondary_weight = metrics.get(secondary_weight_field) or {}
             row.append(_text(secondary_weight.get("change_percentage_points")))
+        metric_statuses = [
+            value.get("status") or "NOT_COMPARABLE_MISSING_SOURCE",
+            weight.get("status") or "NOT_COMPARABLE_MISSING_SOURCE",
+        ]
+        if secondary_weight_field:
+            secondary_weight = metrics.get(secondary_weight_field) or {}
+            metric_statuses.append(
+                secondary_weight.get("status") or "NOT_COMPARABLE_MISSING_SOURCE"
+            )
+        overall_metric_status = (
+            "COMPARABLE"
+            if all(status == "COMPARABLE" for status in metric_statuses)
+            else next(status for status in metric_statuses if status != "COMPARABLE")
+        )
         row.extend([
             _text(item.get("presence_status")),
-            _text(value.get("status")),
+            _text(overall_metric_status),
         ])
         rows.append(row)
     if len(rows) == 1:
