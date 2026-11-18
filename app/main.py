@@ -4989,6 +4989,14 @@ def portfolio_fund_overlap_matrix(
                     "weight_pct": str(row.weight_pct),
                 } for row in rows],
             })
+    if len(holdings) > 200:
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "WITHHELD_FUND_COUNT_LIMIT",
+            "active_fund_count": len(holdings),
+            "maximum_supported_funds": 200,
+            "message": "Pairwise overlap is withheld above 200 active funds to prevent unbounded quadratic work.",
+        }
     result = holdings_overlap_matrix(funds)
     result["portfolio_id"] = portfolio_id
     result["portfolio_name"] = valuation.get("portfolio_name")
