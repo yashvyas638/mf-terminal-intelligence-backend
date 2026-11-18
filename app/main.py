@@ -5301,6 +5301,15 @@ def verify_market_cap_classification_batch(
             raise HTTPException(404, "Classification source batch not found")
         if any(row.verification_status == "REJECTED" for row in rows):
             raise HTTPException(409, "A rejected classification batch cannot be verified")
+        for row in rows:
+            conflict = db.execute(select(SecurityMarketCapClassification.id).where(
+                SecurityMarketCapClassification.security_id == row.security_id,
+                SecurityMarketCapClassification.effective_from == row.effective_from,
+                SecurityMarketCapClassification.verification_status == "VERIFIED",
+                SecurityMarketCapClassification.source_sha256 != source_sha256.lower(),
+            ).limit(1)).first()
+            if conflict:
+                raise HTTPException(409, f"Another verified source already classifies {row.security_id} from {row.effective_from}; reject or supersede the conflicting batch before verification")
         verified_at = datetime.now(timezone.utc)
         for row in rows:
             row.verification_status = "VERIFIED"
