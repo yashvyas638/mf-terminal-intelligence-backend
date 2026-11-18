@@ -3701,12 +3701,26 @@ def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
             .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
         ).scalars().all()
 
-    snapshots = [{
-        "report_id": row.id,
-        "generated_at": row.generated_at.isoformat(),
-        "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
-        "report": json.loads(row.content_json),
-    } for row in rows]
+    snapshots = []
+    invalid_snapshot_ids = []
+    for row in rows:
+        saved_report = decode_verified_snapshot(row.content_json, row.content_sha256)
+        if saved_report is None:
+            invalid_snapshot_ids.append(row.id)
+            continue
+        snapshots.append({
+            "report_id": row.id,
+            "generated_at": row.generated_at.isoformat(),
+            "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
+            "report": saved_report,
+        })
+    if invalid_snapshot_ids:
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "SNAPSHOT_INTEGRITY_FAILURE",
+            "invalid_snapshot_ids": invalid_snapshot_ids,
+            "message": "Monthly comparison was withheld because one or more saved report snapshots failed SHA-256 verification.",
+        }
     monthly = select_latest_distinct_months(snapshots)
     if len(monthly) < 2:
         return {
