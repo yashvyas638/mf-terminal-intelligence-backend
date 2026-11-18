@@ -179,6 +179,103 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         _table(sector_rows, [70 * mm, 50 * mm, 38 * mm]),
     ])
 
+    allocation_intelligence = report.get("allocation_intelligence") or {}
+    allocation = allocation_intelligence.get("allocation") or {}
+    allocation_rows = [["Scheme / allocation group", "Category", "AMC", "Value INR", "Portfolio %"]]
+    for item in (allocation.get("schemes") or [])[:40]:
+        allocation_rows.append([
+            Paragraph(_text(item.get("scheme_name")), styles["SmallNote"]),
+            _text(item.get("category_group")),
+            Paragraph(_text(item.get("amc")), styles["SmallNote"]),
+            _text(item.get("market_value_inr")),
+            _text(item.get("portfolio_weight_pct")),
+        ])
+    if len(allocation_rows) == 1:
+        allocation_rows.append(["Allocation unavailable", "—", "—", "—", "—"])
+    story.extend([
+        Paragraph("Allocation and AMC concentration", styles["SectionHeading"]),
+        Paragraph(
+            "Status: " + _text(allocation_intelligence.get("status"))
+            + " · Valuation as of: " + _text(allocation_intelligence.get("valuation_date")),
+            styles["SmallNote"],
+        ),
+        _table(allocation_rows, [49 * mm, 34 * mm, 34 * mm, 25 * mm, 20 * mm]),
+    ])
+    amc = allocation_intelligence.get("amc_concentration") or {}
+    amc_rows = [["AMC", "Portfolio value INR", "Portfolio weight"]]
+    for item in amc.get("amcs") or []:
+        amc_rows.append([
+            Paragraph(_text(item.get("name")), styles["SmallNote"]),
+            _text(item.get("market_value_inr")),
+            _text(item.get("portfolio_weight_pct")),
+        ])
+    if len(amc_rows) == 1:
+        amc_rows.append(["AMC concentration unavailable", "—", "—"])
+    story.extend([
+        Paragraph(
+            "AMC HHI: " + _text(amc.get("hhi_points"))
+            + " · Effective AMC count: " + _text(amc.get("effective_amc_count"))
+            + " · Top 3 AMC share: " + _text(amc.get("top_3_amc_weight_pct")),
+            styles["SmallNote"],
+        ),
+        _table(amc_rows, [75 * mm, 45 * mm, 42 * mm]),
+    ])
+
+    overlap = report.get("overlap_intelligence") or {}
+    duplication = overlap.get("portfolio_duplication") or {}
+    overlap_rows = [["Fund A", "Fund B", "Common ISINs", "Overlap INR", "% of A", "% of B", "Status"]]
+    for item in overlap.get("pairs") or []:
+        overlap_rows.append([
+            Paragraph(_text(item.get("scheme_a_name")), styles["SmallNote"]),
+            Paragraph(_text(item.get("scheme_b_name")), styles["SmallNote"]),
+            _text(item.get("common_isin_count")),
+            _text(item.get("overlap_inr")),
+            _text(item.get("overlap_pct_of_scheme_a_nav")),
+            _text(item.get("overlap_pct_of_scheme_b_nav")),
+            _text(item.get("status")),
+        ])
+    if len(overlap_rows) == 1:
+        overlap_rows.append(["No verified pairwise overlap", "—", "—", "—", "—", "—", _text(overlap.get("status"))])
+    story.extend([
+        Paragraph("Fund overlap and duplicated exposure", styles["SectionHeading"]),
+        Paragraph(
+            "Status: " + _text(overlap.get("status"))
+            + " · Duplicated exposure: " + _text(duplication.get("duplicated_exposure_inr"))
+            + " · Share of gross look-through: " + _text(duplication.get("duplicated_share_of_gross_positive_lookthrough_pct")),
+            styles["SmallNote"],
+        ),
+        _table(overlap_rows, [34 * mm, 34 * mm, 17 * mm, 23 * mm, 18 * mm, 18 * mm, 18 * mm]),
+    ])
+
+    market_cap = report.get("market_cap_intelligence") or {}
+    market_cap_rows = [["Classification", "Exposure INR", "Portfolio weight", "Look-through weight"]]
+    for item in market_cap.get("classified_distribution") or []:
+        market_cap_rows.append([
+            _text(item.get("market_cap_bucket")),
+            _text(item.get("exposure_inr")),
+            _text(item.get("weight_of_total_portfolio_pct")),
+            _text(item.get("weight_of_positive_lookthrough_pct")),
+        ])
+    for item in market_cap.get("unclassified_exposure") or []:
+        market_cap_rows.append([
+            Paragraph("Unclassified · " + _text(item.get("reason")), styles["SmallNote"]),
+            _text(item.get("exposure_inr")),
+            _text(item.get("weight_of_total_portfolio_pct")),
+            _text(item.get("weight_of_positive_lookthrough_pct")),
+        ])
+    if len(market_cap_rows) == 1:
+        market_cap_rows.append(["Market-cap analysis withheld", "—", "—", "—"])
+    story.extend([
+        Paragraph("Underlying market-cap allocation", styles["SectionHeading"]),
+        Paragraph(
+            "Status: " + _text(market_cap.get("status"))
+            + " · Classified coverage: " + _text(market_cap.get("classified_coverage_of_positive_lookthrough_pct"))
+            + " · As of: " + _text(market_cap.get("as_of_date")),
+            styles["SmallNote"],
+        ),
+        _table(market_cap_rows, [58 * mm, 35 * mm, 35 * mm, 35 * mm]),
+    ])
+
     tax = report.get("fifo_tax_lots") or {}
     tax_rows = [
         ["FIFO capital gains metric", "Value"],
