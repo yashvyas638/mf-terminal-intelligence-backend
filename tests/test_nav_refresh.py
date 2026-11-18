@@ -56,7 +56,7 @@ def test_nav_correction_is_audited_and_replay_is_idempotent(monkeypatch):
         revisions = db.execute(
             select(NavObservationRevision).where(
                 NavObservationRevision.scheme_code == 998877,
-                NavObservationRevision.nav_date == date(2026, 11, 10),
+                NavObservationRevision.nav_date == date.today(),
             )
         ).scalars().all()
 
