@@ -394,3 +394,48 @@ def test_allocation_exposes_unclassified_value_and_weight_by_dimension():
         "scheme_count": 1, "market_value_inr": "250.00", "portfolio_weight_pct": "25.0000"
     }
     assert quality["unclassified_by_dimension"]["sub_category"]["market_value_inr"] == "250.00"
+
+
+def test_contribution_plan_enforces_total_budget_and_per_bucket_weight_ceiling():
+    targets = [
+        {"key": "A", "min_pct": "0", "target_pct": "50", "max_pct": "60", "actual_value_inr": "100"},
+        {"key": "B", "min_pct": "0", "target_pct": "50", "max_pct": "60", "actual_value_inr": "900"},
+    ]
+    result = contribution_plan_preview(
+        targets,
+        portfolio_value_inr="1000",
+        contribution_inr="100",
+        max_contribution_inr="100",
+        max_post_weight_pct="40",
+    )
+    by_key = {row["key"]: row for row in result["allocations"]}
+    assert by_key["A"]["contribution_allocation_inr"] == "100.00"
+    assert by_key["B"]["contribution_allocation_inr"] == "0.00"
+    assert result["risk_constraints"]["enforced"] is True
+    assert result["risk_constraints"]["max_post_weight_pct"] == "40"
+
+    with pytest.raises(ValueError, match="exceeds the approved"):
+        contribution_plan_preview(
+            targets,
+            portfolio_value_inr="1000",
+            contribution_inr="100.01",
+            max_contribution_inr="100",
+        )
+
+
+def test_contribution_plan_reconciles_unallocated_contribution_as_cash():
+    targets = [
+        {"key": "A", "min_pct": "0", "target_pct": "50", "max_pct": "60", "actual_value_inr": "500"},
+        {"key": "B", "min_pct": "0", "target_pct": "50", "max_pct": "60", "actual_value_inr": "500"},
+    ]
+    result = contribution_plan_preview(
+        targets,
+        portfolio_value_inr="1000",
+        contribution_inr="100",
+        max_post_weight_pct="40",
+    )
+    assert result["allocated_contribution_inr"] == "0.00"
+    assert result["unallocated_contribution_inr"] == "100.00"
+    cash = next(row for row in result["post_contribution_allocation"] if row["key"] == "__UNALLOCATED_CASH__")
+    assert cash["post_contribution_value_inr"] == "100.00"
+    assert sum(Decimal(row["post_contribution_weight_pct"]) for row in result["post_contribution_allocation"]) == Decimal("100.0000")
