@@ -81,7 +81,7 @@ from app.portfolio_allocation_intelligence import (
     allocation_dimension_key,
 )
 from app.reporting import build_portfolio_report_pdf
-from app.twt_monthly_report import compare_monthly_reports, select_latest_distinct_months
+from app.twt_monthly_report import compare_monthly_reports, is_month_end_valuation_date, select_latest_distinct_months
 from app.smart_sip_regime import assess_smart_sip_regime
 from app.nav_adjustments import (
     NAV_ADJUSTMENT_REGISTRY_VERSION,
@@ -3543,51 +3543,12 @@ def create_portfolio_report_snapshot(
             )
             .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
         ).scalars().all()
-        comparison_snapshots = [{
-            "report_id": row.id,
-            "generated_at": row.generated_at.isoformat(),
-            "report": json.loads(row.content_json),
-        } for row in prior_rows]
-        current_snapshot_marker = {
-            "report_id": None,
-            "generated_at": generated_at.isoformat(),
-            "report": report,
-        }
-        selected_months = select_latest_distinct_months(
-            [current_snapshot_marker, *comparison_snapshots]
-        )
-        if len(selected_months) < 2:
-            report["monthly_comparison"] = {
-                "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
-                "available_month_count": len(selected_months),
-                "required_month_count": 2,
-                "message": "A prior immutable report from a distinct valuation month is required.",
-            }
-        elif selected_months[0].get("report_id") is not None:
-            report["monthly_comparison"] = {
-                "status": "NOT_LATEST_VALUATION_MONTH",
-                "message": "This valuation month is older than a previously saved report; a forward month comparison is not attached.",
-            }
-        else:
-            report["monthly_comparison"] = compare_monthly_reports(
-                selected_months[1],
-                selected_months[0],
-            )
-
-        prior_report_rows = db.execute(
-            select(PortfolioReportSnapshot)
-            .where(
-                PortfolioReportSnapshot.portfolio_id == portfolio_id,
-                PortfolioReportSnapshot.owner_user_id == owner_id,
-            )
-            .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
-        ).scalars().all()
         prior_reports = [{
             "report_id": row.id,
             "generated_at": row.generated_at.isoformat(),
             "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
             "report": json.loads(row.content_json),
-        } for row in prior_report_rows]
+        } for row in prior_rows]
         current_candidate = {
             "report_id": None,
             "generated_at": generated_at.isoformat(),
@@ -3595,7 +3556,31 @@ def create_portfolio_report_snapshot(
             "report": report,
         }
         monthly_periods = select_latest_distinct_months([current_candidate, *prior_reports])
-        if len(monthly_periods) >= 2 and monthly_periods[0].get("report_id") is None:
+        if not is_month_end_valuation_date(valuation.get("valuation_date")):
+            report["monthly_comparison"] = {
+                "status": "CURRENT_REPORT_NOT_MONTH_END",
+                "message": "Month-on-month comparison is available only for valuation dates within the final seven calendar days of the month.",
+                "required_month_end_window_days": 7,
+            }
+        elif not monthly_periods or monthly_periods[0].get("report_id") is not None:
+            report["monthly_comparison"] = {
+                "status": "NOT_LATEST_VALUATION_MONTH" if monthly_periods else "INSUFFICIENT_MONTHLY_SNAPSHOTS",
+                "message": (
+                    "A newer month-end valuation snapshot already exists; this report is not the latest valuation month."
+                    if monthly_periods
+                    else "A prior immutable month-end report from a distinct valuation month is required."
+                ),
+                "required_month_count": 2,
+                "available_month_count": len(monthly_periods),
+            }
+        elif len(monthly_periods) < 2:
+            report["monthly_comparison"] = {
+                "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
+                "required_month_count": 2,
+                "available_month_count": len(monthly_periods),
+                "message": "A prior immutable month-end report from a distinct valuation month is required.",
+            }
+        else:
             report["monthly_comparison"] = compare_monthly_reports(monthly_periods[1], monthly_periods[0])
             report["monthly_comparison"]["previous_snapshot"] = {
                 "report_id": monthly_periods[1].get("report_id"),
@@ -3605,19 +3590,6 @@ def create_portfolio_report_snapshot(
             report["monthly_comparison"]["current_snapshot"] = {
                 "generated_at": generated_at.isoformat(),
                 "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
-            }
-        elif not monthly_periods or monthly_periods[0].get("report_id") is not None:
-            report["monthly_comparison"] = {
-                "status": "CURRENT_REPORT_NOT_MONTH_END",
-                "message": "This report's valuation date is outside the configured month-end window; no month-on-month comparison is attached.",
-                "required_month_end_window_days": 7,
-            }
-        else:
-            report["monthly_comparison"] = {
-                "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
-                "required_month_count": 2,
-                "available_month_count": len(monthly_periods),
-                "message": "A prior immutable month-end report is required for comparison.",
             }
 
         content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
