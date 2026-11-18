@@ -261,12 +261,18 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
 
     def coverage_delta(name: str, old_value: Any, new_value: Any) -> dict[str, Any]:
         old_number, new_number = _decimal(old_value), _decimal(new_value)
+        invalid = any(
+            value is not None and not Decimal("0") <= value <= Decimal("100")
+            for value in (old_number, new_number)
+        )
+        if invalid:
+            old_number = new_number = None
         delta = new_number - old_number if old_number is not None and new_number is not None else None
         return {
             "previous_pct": str(old_number) if old_number is not None else None,
             "current_pct": str(new_number) if new_number is not None else None,
             "change_percentage_points": str(delta) if delta is not None else None,
-            "status": "COMPARABLE" if delta is not None else "COVERAGE_NOT_REPORTED",
+            "status": "WITHHELD_INVALID_SOURCE_VALUE" if invalid else "COMPARABLE" if delta is not None else "COVERAGE_NOT_REPORTED",
         }
 
     old_allocation_evidence = (old_report.get("allocation_intelligence") or {}).get("evidence") or {}
