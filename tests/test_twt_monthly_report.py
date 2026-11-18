@@ -361,3 +361,23 @@ def test_monthly_amc_metrics_withheld_when_hhi_and_effective_count_disagree():
     assert metrics["effective_amc_count"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
     assert metrics["hhi_points"]["change"] is None
     assert metrics["effective_amc_count"]["change"] is None
+
+
+def test_monthly_amc_metrics_withhold_partial_but_contradictory_top_n_evidence():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_amc = current_report["allocation_intelligence"]["amc_concentration"]
+    current_amc["top_1_amc_weight_pct"] = "75"
+    current_amc["top_3_amc_weight_pct"] = "70"
+    current_amc.pop("top_5_amc_weight_pct")
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metrics = result["comparisons"]["amc_concentration_metrics"]
+    assert metrics["top_1_amc_weight_pct"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metrics["top_3_amc_weight_pct"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metrics["top_5_amc_weight_pct"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metrics["top_1_amc_weight_pct"]["change"] is None
