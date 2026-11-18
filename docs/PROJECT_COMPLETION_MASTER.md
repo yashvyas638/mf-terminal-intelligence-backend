@@ -66,3 +66,26 @@ TWT is ready for code review only when all of the following are true:
 6. Migration and CI evidence are attached to PR #135.
 7. Live holdings/classification coverage is either independently verified or prominently marked partial/unavailable.
 8. Release remains blocked pending explicit review and approval; this task does not authorize merge or deployment.
+
+
+## Additional PDF completion work — 2026-11-18
+
+The following work was added after the TWT monthly-comparison and snapshot-integrity changes recorded above:
+
+- `app/reporting.py` now renders separate category, sub-category and asset-class allocation tables from the saved allocation snapshot. It preserves supplied market values and weights, including explicit unclassified rows; it does not recalculate or renormalise them.
+- NAV source provenance now maps the actual snapshot fields `source_type`, `source_url`, `min_nav_date`, `max_nav_date` and `retrieved_at`. The PDF therefore shows a source label, source URL and NAV date range instead of blank source references.
+- Long source references use wrapping in the PDF note style.
+- Added `tests/test_reporting.py` covering allocation table rows, explicit empty states, NAV source URL/date-range mapping and PDF generation from a saved snapshot payload.
+
+Commits for this PDF batch:
+- `7f81ea1` — Complete TWT PDF allocation breakdown and source provenance.
+- `d54348f` — Testable source provenance formatting for TWT report PDFs.
+- `a528679` — Add regression tests for TWT report PDF allocation and provenance.
+
+Latest observed branch head after the subsequent snapshot-integrity and tracker commits: `c3e29f716aa738203ef09d66803f5af762b3cde1`. PR #135 remained open/draft and mergeable at that check. CI run [#1994](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44278535213) was queued when inspected; do not mark this PDF batch validated until that run completes successfully.
+
+### Remaining PDF gates
+- [ ] Confirm the new reporting tests pass on SQLite CI and the full PostgreSQL suite remains green.
+- [ ] Review rendered multi-page PDF visually for table splitting, repeated headers, clipped cells, URL wrapping and footer overlap.
+- [ ] Add/confirm explicit coverage numerator/denominator, retrieval timestamp and methodology-version presentation in the PDF where those values exist in the saved snapshot.
+- [ ] Decide whether to include a frozen prior-month comparison appendix. If added, it must be captured into the report JSON at snapshot creation; the PDF renderer must never query current data or compute a live comparison.
