@@ -5185,6 +5185,7 @@ def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
             "as_of_date": valuation.get("valuation_date"),
             "covered_market_value_inr": allocation["portfolio_market_value_inr"],
             "coverage_pct": "100.0000",
+            "coverage_basis": "ALL_POSITIVELY_VALUED_HOLDINGS; NAV freshness is reported separately below.",
             "scheme_count": allocation["scheme_count"],
             "nav_coverage": {
                 "active_scheme_count": len(active_valuation_rows),
