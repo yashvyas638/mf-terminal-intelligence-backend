@@ -1,1 +1,1 @@
-"""MF Terminal Intelligence API package."""
+"""MF Terminal Intelligence application package."""

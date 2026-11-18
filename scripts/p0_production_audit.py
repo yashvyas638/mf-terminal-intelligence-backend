@@ -231,6 +231,173 @@ def check_public_table_surface(conn) -> tuple[dict[str, dict], list[str]]:
     return report, failures
 
 
+
+def evaluate_tenancy_integrity(
+    *,
+    confirmed_users: int,
+    portfolio_count: int,
+    portfolio_owners: int,
+    portfolios_without_confirmed_owner: int,
+    portfolio_goals: int,
+    goals_with_confirmed_owner: int,
+    goals_without_confirmed_owner: int,
+    goals_with_cross_owner_portfolio_link: int,
+) -> tuple[dict, list[str]]:
+    """Evaluate ownership invariants independently of the live database connection."""
+    evidence = {
+        "confirmed_auth_users": confirmed_users,
+        "portfolios": portfolio_count,
+        "distinct_portfolio_owners": portfolio_owners,
+        "portfolios_without_confirmed_auth_owner": portfolios_without_confirmed_owner,
+        "portfolio_goals": portfolio_goals,
+        "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
+        "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
+        "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
+        "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
+    }
+    failures: list[str] = []
+    if portfolios_without_confirmed_owner:
+        failures.append(
+            "Portfolio ownership integrity failed: one or more portfolios do not belong to a confirmed Auth account."
+        )
+    if goals_without_confirmed_owner:
+        failures.append(
+            "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
+        )
+    if goals_with_cross_owner_portfolio_link:
+        failures.append(
+            "Portfolio-goal linkage integrity failed: one or more goals are linked to a portfolio owned by a different account."
+        )
+    if confirmed_users < 2 or portfolio_owners < 2:
+        failures.append(
+            "P0 tenancy gate failed: two real confirmed accounts and at least two separately owned portfolios are required before operational readiness can pass."
+        )
+    return evidence, failures
+
+
+
+def evaluate_public_default_privileges(rows: list[tuple[str, str, str, str]]) -> tuple[dict, list[str]]:
+    """Fail closed when future public objects inherit client or PUBLIC privileges."""
+    findings = [
+        {
+            "creator_role": str(creator_role),
+            "object_type": str(object_type),
+            "grantee": str(grantee),
+            "privilege": str(privilege),
+        }
+        for creator_role, object_type, grantee, privilege in rows
+    ]
+    failures = [
+        (
+            "Unsafe public default privilege: "
+            f"{item['creator_role']} grants {item['privilege']} to {item['grantee']} "
+            f"on future public {item['object_type']} objects."
+        )
+        for item in findings
+    ]
+    return {"safe": not findings, "findings": findings}, failures
+
+
+def check_public_default_privileges(conn) -> tuple[dict, list[str]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH creators AS (
+                SELECT oid, rolname
+                  FROM pg_roles
+                 WHERE has_schema_privilege(oid, 'public', 'CREATE')
+            ),
+            object_types AS (
+                SELECT unnest(ARRAY['r'::"char", 'S'::"char", 'f'::"char"]) AS object_type
+            ),
+            effective_defaults AS (
+                SELECT creators.rolname AS creator_role,
+                       object_types.object_type,
+                       array_cat(
+                           COALESCE(global_acl.defaclacl, acldefault(object_types.object_type, creators.oid)),
+                           COALESCE(schema_acl.defaclacl, '{}'::aclitem[])
+                       ) AS effective_acl
+                  FROM creators
+                  CROSS JOIN object_types
+                  LEFT JOIN pg_default_acl global_acl
+                    ON global_acl.defaclrole = creators.oid
+                   AND global_acl.defaclnamespace = 0
+                   AND global_acl.defaclobjtype = object_types.object_type
+                  LEFT JOIN pg_default_acl schema_acl
+                    ON schema_acl.defaclrole = creators.oid
+                   AND schema_acl.defaclnamespace = 'public'::regnamespace
+                   AND schema_acl.defaclobjtype = object_types.object_type
+            )
+            SELECT effective_defaults.creator_role,
+                   effective_defaults.object_type,
+                   CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE grantee.rolname END AS grantee,
+                   acl.privilege_type
+              FROM effective_defaults
+              CROSS JOIN LATERAL aclexplode(effective_defaults.effective_acl) acl
+              LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+             WHERE acl.grantee = 0 OR grantee.rolname IN ('anon', 'authenticated')
+             ORDER BY creator_role, object_type, grantee, privilege_type
+            """
+        )
+        rows = cur.fetchall()
+    return evaluate_public_default_privileges(rows)
+
+
+
+def evaluate_backfill_checkpoint_groups(rows: list[tuple[str, str, str | None, int, int]]) -> tuple[dict, list[str]]:
+    """Separate intentionally superseded paused windows from real execution failures."""
+    groups = [
+        {
+            "sampling_mode": str(sampling_mode),
+            "status": str(status),
+            "reason": str(reason) if reason is not None else None,
+            "checkpoints": int(checkpoints),
+            "stale_running": int(stale_running),
+        }
+        for sampling_mode, status, reason, checkpoints, stale_running in rows
+    ]
+    failed = sum(item["checkpoints"] for item in groups if item["status"] == "failed")
+    stale_running = sum(item["stale_running"] for item in groups)
+    superseded_paused = sum(
+        item["checkpoints"]
+        for item in groups
+        if item["status"] == "paused" and item["reason"] == "StorageOptimizedHybridPlan"
+    )
+    evidence = {
+        "groups": groups,
+        "failed_checkpoints": failed,
+        "stale_running_checkpoints": stale_running,
+        "superseded_by_hybrid_plan": superseded_paused,
+    }
+    failures = []
+    if failed:
+        failures.append(f"Historical NAV backfill has {failed} failed checkpoint(s) requiring review.")
+    if stale_running:
+        failures.append(f"Historical NAV backfill has {stale_running} stale running checkpoint(s) requiring recovery.")
+    return evidence, failures
+
+
+def check_backfill_checkpoint_status(conn) -> tuple[dict, list[str]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sampling_mode,
+                   status,
+                   error_class,
+                   count(*) AS checkpoints,
+                   count(*) FILTER (
+                       WHERE status = 'running'
+                         AND updated_at < now() - interval '30 minutes'
+                   ) AS stale_running
+              FROM public.nav_backfill_checkpoints
+             GROUP BY sampling_mode, status, error_class
+             ORDER BY sampling_mode, status, error_class
+            """
+        )
+        rows = cur.fetchall()
+    return evaluate_backfill_checkpoint_groups(rows)
+
+
 def main() -> int:
     database_url = require_env("SUPABASE_DB_URL")
     api_url = require_env("MF_TERMINAL_API_URL").rstrip("/")
@@ -312,33 +479,18 @@ def main() -> int:
                 portfolio_goals, goals_with_confirmed_owner, goals_without_confirmed_owner,
                 goals_with_cross_owner_portfolio_link,
             ) = cur.fetchone()
-            report["checks"]["live_tenancy_evidence"] = {
-                "confirmed_auth_users": confirmed_users,
-                "portfolios": portfolio_count,
-                "distinct_portfolio_owners": portfolio_owners,
-                "portfolios_without_confirmed_auth_owner": portfolios_without_confirmed_owner,
-                "portfolio_goals": portfolio_goals,
-                "goals_with_confirmed_auth_owner": goals_with_confirmed_owner,
-                "goals_without_confirmed_auth_owner": goals_without_confirmed_owner,
-                "goals_with_cross_owner_portfolio_link": goals_with_cross_owner_portfolio_link,
-                "two_account_test_ready": confirmed_users >= 2 and portfolio_owners >= 2,
-            }
-            if portfolios_without_confirmed_owner:
-                report["failures"].append(
-                    "Portfolio ownership integrity failed: one or more portfolios do not belong to a confirmed Auth account."
-                )
-            if goals_without_confirmed_owner:
-                report["failures"].append(
-                    "Portfolio-goal ownership integrity failed: one or more goal records do not belong to a confirmed Auth account."
-                )
-            if goals_with_cross_owner_portfolio_link:
-                report["failures"].append(
-                    "Portfolio-goal linkage integrity failed: one or more goals are linked to a portfolio owned by a different account."
-                )
-            if confirmed_users < 2 or portfolio_owners < 2:
-                report["failures"].append(
-                    "P0 tenancy gate failed: two real confirmed accounts and at least two separately owned portfolios are required before operational readiness can pass."
-                )
+            tenancy_evidence, tenancy_failures = evaluate_tenancy_integrity(
+                confirmed_users=confirmed_users,
+                portfolio_count=portfolio_count,
+                portfolio_owners=portfolio_owners,
+                portfolios_without_confirmed_owner=portfolios_without_confirmed_owner,
+                portfolio_goals=portfolio_goals,
+                goals_with_confirmed_owner=goals_with_confirmed_owner,
+                goals_without_confirmed_owner=goals_without_confirmed_owner,
+                goals_with_cross_owner_portfolio_link=goals_with_cross_owner_portfolio_link,
+            )
+            report["checks"]["live_tenancy_evidence"] = tenancy_evidence
+            report["failures"].extend(tenancy_failures)
 
         private_results = {}
         for table in PRIVATE_TABLES:
@@ -377,6 +529,14 @@ def main() -> int:
             "tables": public_surface,
         }
         report["failures"].extend(surface_failures)
+
+        default_privileges, default_privilege_failures = check_public_default_privileges(conn)
+        report["checks"]["public_default_privileges"] = default_privileges
+        report["failures"].extend(default_privilege_failures)
+
+        backfill_evidence, backfill_failures = check_backfill_checkpoint_status(conn)
+        report["checks"]["historical_nav_backfill"] = backfill_evidence
+        report["failures"].extend(backfill_failures)
 
     report["result"] = "FAIL" if report["failures"] else ("PASS_WITH_WARNINGS" if report["warnings"] else "PASS")
     print(json.dumps(report, indent=2, default=str), flush=True)
