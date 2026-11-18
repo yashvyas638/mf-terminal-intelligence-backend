@@ -42,7 +42,7 @@ Add these repository Actions secrets under GitHub → Settings → Secrets and v
 
 All six backup secrets are required. The workflow fails before connecting to production unless both the database/encryption configuration and the durable R2/S3 destination are present. Daily encrypted copies use the `mf-terminal-intelligence/daily/` prefix; the first run of each month also writes a monthly copy under `mf-terminal-intelligence/monthly/`. Configure R2 lifecycle rules to expire daily objects after 45 days and monthly objects after 400 days. Keep the bucket private and scope the access key to this bucket only.
 
-After adding the required secrets, open Actions → Supabase Free-Tier Encrypted Backup → Run workflow. A successful run must show export, checksum verification, encryption, GitHub artifact upload, R2 upload and R2 `head-object` verification as green. Until that first run succeeds, there is no completed automated backup.
+After adding the required secrets, open Actions → Supabase Free-Tier Encrypted Backup → Run workflow. A successful run must show export, checksum verification, encryption, GitHub artifact upload, R2 upload, R2 `head-object` verification, remote download and encrypted-object SHA-256 verification as green. Until that first run succeeds, there is no completed automated backup.
 
 ### Restore procedure
 
@@ -103,7 +103,7 @@ Workflow: `.github/workflows/p0-production-readiness.yml`
 
 The read-only audit checks:
 
-- Render `/health` (including the validated `build_commit` fingerprint) and authenticated `/v1/nav/status`.
+- Render `/health` (including a validated full 40-character hexadecimal `build_commit` deployment fingerprint) and authenticated `/v1/nav/status`.
 - Supabase Alembic revision and production connection.
 - RLS and restrictive deny policies on the five backend-only tables.
 - No direct anon/authenticated table privileges and retained `service_role` read access.
@@ -122,7 +122,7 @@ Add these repository Actions secrets:
 
 The public Render URL is configured directly in the workflow; it does not need to be stored as a secret.
 
-The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It intentionally reports a warning—not a false pass—when fewer than two confirmed accounts or portfolio owners exist. Real two-account isolation still requires two real accounts and representative data owned by each account.
+The audit runs daily at 22:30 UTC (04:00 IST), ahead of the 23:30 UTC (05:00 IST) backup, and can be started manually. It fails the P0 gate when fewer than two confirmed accounts or separately owned portfolios exist; it must never manufacture test users or portfolio owners. Real two-account isolation still requires two real accounts and representative data owned by each account.
 
 ## 4. Verified project state (2026-11-16)
 
@@ -148,7 +148,7 @@ The P0 audit and encrypted-backup workflows exist on default `main`, but the lat
 | Isolated restore | Not run | No verified encrypted backup exists |
 | NAV freshness/scheduler | Blocked | Latest stored NAV date 2026-11-11; refresh workflow is candidate-only |
 | Render deployment mapping | Not verified | Blueprint identity/plan/startup mismatch; actual service not inspected |
-| Branch integration | Blocked | PR #1 is 604 commits ahead, 53 behind, 145 changed files and currently not mergeable |
+| Branch integration | In progress | Reconcile default-branch operational files with the feature branch, resolve add/add conflicts, then verify mergeability and the complete CI run. |
 
 ## 5. Current limits and next P0 gate
 
