@@ -3331,10 +3331,15 @@ def create_portfolio_report_snapshot(
             continue
         try:
             drift = get_portfolio_allocation_drift(portfolio_id, dimension)
-            if drift.get("valuation_date") != valuation.get("valuation_date") or Decimal(str(drift.get("portfolio_value_inr"))) != Decimal(str(valuation.get("current_value"))):
+            if (
+                drift.get("valuation_date") != valuation.get("valuation_date")
+                or Decimal(str(drift.get("portfolio_value_inr"))) != Decimal(str(valuation.get("current_value")))
+                or drift.get("effective_from") != policy.get("effective_from")
+                or drift.get("target_version") != policy.get("version")
+            ):
                 drift = {
                     "status": "WITHHELD_SNAPSHOT_MISMATCH",
-                    "message": "Target drift valuation did not match the primary report valuation snapshot.",
+                    "message": "Target policy version or valuation did not match the policy and valuation captured at the start of this report.",
                     "effective_from": policy.get("effective_from"),
                     "target_version": policy.get("version"),
                 }
