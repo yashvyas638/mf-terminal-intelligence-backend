@@ -321,3 +321,11 @@ Commits:
 - `31fb3b1` — Render month-on-month historical risk deltas in TWT PDF.
 
 Current validation: CI runs on the branch have been queued in GitHub Actions; the exact latest head must be checked before marking this complete. Visual PDF pagination review remains outstanding.
+
+
+### Display-weight rounding reconciliation — 2026-11-18
+
+- The post-contribution allocation now reconciles its four-decimal displayed weights to exactly 100.0000%.
+- Any display-only rounding residual is assigned to the explicit unallocated-cash row when present, rather than increasing a fund bucket's displayed risk weight.
+- Commit: `1c1dbcb` — Reconcile displayed contribution weights to exactly 100 percent.
+- Latest implementation head at this update: `1c1dbcb997b1c9bd3170b82ee9d7aa8d341b59d1`; CI remains pending.
