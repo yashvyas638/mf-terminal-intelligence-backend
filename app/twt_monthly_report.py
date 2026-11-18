@@ -501,8 +501,8 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     old_risk_metrics = old_risk.get("metrics") if isinstance(old_risk.get("metrics"), dict) else old_risk
     new_risk_metrics = new_risk.get("metrics") if isinstance(new_risk.get("metrics"), dict) else new_risk
     for metric_name, (minimum, maximum) in risk_bounds.items():
-        # portfolio_risk_metrics emits these fields at the risk object's top level.
-        # Retain nested-metrics fallback for older immutable snapshots.
+        # The report API stores portfolio_risk_metrics output under risk.metrics.
+        # Direct metric fields are accepted as a compatibility fallback.
         old_metric = _decimal(old_risk_metrics.get(metric_name))
         new_metric = _decimal(new_risk_metrics.get(metric_name))
         invalid_metric = any(
