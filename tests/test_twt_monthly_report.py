@@ -105,10 +105,15 @@ def test_month_selection_excludes_mid_month_valuation_snapshots():
 
 def test_month_end_window_includes_final_seven_days_only():
     assert is_month_end_valuation_date("2026-10-31")
-    assert is_month_end_valuation_date("2026-10-24")
-    assert not is_month_end_valuation_date("2026-10-23")
+    assert is_month_end_valuation_date("2026-10-25")
+    assert not is_month_end_valuation_date("2026-10-24")
     assert not is_month_end_valuation_date("2026-10-15")
+    assert is_month_end_valuation_date("2026-11-24")
+    assert not is_month_end_valuation_date("2026-11-23")
+    assert is_month_end_valuation_date("2024-02-23")
+    assert not is_month_end_valuation_date("2024-02-22")
     assert not is_month_end_valuation_date("not-a-date")
+    assert not is_month_end_valuation_date("2026-10-31", window_days=0)
 
 
 
