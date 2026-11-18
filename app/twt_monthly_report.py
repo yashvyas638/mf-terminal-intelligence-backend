@@ -145,6 +145,38 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         "current_inr": str(new_value) if new_value is not None else None,
         "change_inr": str(new_value - old_value) if old_value is not None and new_value is not None else None,
     }
+
+    old_overlap = old_report.get("overlap_intelligence") or {}
+    new_overlap = new_report.get("overlap_intelligence") or {}
+    old_dup = old_overlap.get("portfolio_duplication") or {}
+    new_dup = new_overlap.get("portfolio_duplication") or {}
+    old_dup_value = _decimal(old_dup.get("duplicated_exposure_inr"))
+    new_dup_value = _decimal(new_dup.get("duplicated_exposure_inr"))
+    if old_overlap.get("status") == "AVAILABLE" and new_overlap.get("status") == "AVAILABLE" and old_dup_value is not None and new_dup_value is not None:
+        comparisons["portfolio_duplication"] = {
+            "status": "COMPARABLE",
+            "previous_inr": str(old_dup_value),
+            "current_inr": str(new_dup_value),
+            "change_inr": str(new_dup_value - old_dup_value),
+        }
+    else:
+        comparisons["portfolio_duplication"] = {
+            "status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE",
+            "previous_inr": None,
+            "current_inr": None,
+            "change_inr": None,
+        }
+
+    risk_changes = {}
+    for metric_name in ("annualized_volatility", "max_drawdown", "historical_var_95", "historical_cvar_95"):
+        old_metric = _decimal(((old_report.get("risk") or {}).get("metrics") or {}).get(metric_name))
+        new_metric = _decimal(((new_report.get("risk") or {}).get("metrics") or {}).get(metric_name))
+        risk_changes[metric_name] = {
+            "previous": str(old_metric) if old_metric is not None else None,
+            "current": str(new_metric) if new_metric is not None else None,
+            "change": str(new_metric - old_metric) if old_metric is not None and new_metric is not None else None,
+            "status": "COMPARABLE" if old_metric is not None and new_metric is not None else "WITHHELD_OR_NOT_COMPARABLE",
+        }
     return {
         "status": "AVAILABLE",
         "previous_period": previous["period"],
@@ -152,6 +184,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         "previous_valuation_date": (old_report.get("valuation") or {}).get("valuation_date"),
         "current_valuation_date": (new_report.get("valuation") or {}).get("valuation_date"),
         "comparisons": comparisons,
+        "risk_changes": risk_changes,
         "limitations": [
             "The newest saved report for each distinct valuation month is compared; multiple snapshots in one month do not create a month-on-month period.",
             "INR and percentage-point changes are calculated only where both immutable snapshots contain the required source values.",
