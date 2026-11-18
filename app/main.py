@@ -5262,11 +5262,29 @@ def portfolio_fund_overlap_matrix(
             rows = db.execute(
                 select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
             ).scalars().all()
+            total_positive_weight = sum(
+                (Decimal(str(row.weight_pct)) for row in rows if Decimal(str(row.weight_pct)) > 0),
+                Decimal("0"),
+            )
+            valid_isin_weight = sum(
+                (
+                    Decimal(str(row.weight_pct))
+                    for row in rows
+                    if row.is_isin and row.security_id and Decimal(str(row.weight_pct)) > 0
+                ),
+                Decimal("0"),
+            )
+            disclosure_coverage_pct = (
+                valid_isin_weight / total_positive_weight * Decimal("100")
+                if total_positive_weight > 0 else None
+            )
             funds.append({
                 "scheme_code": str(scheme_code),
                 "scheme_name": scheme.scheme_name if scheme else str(scheme_code),
                 "portfolio_value_inr": str(item["market_value"]),
-                "disclosure_coverage_pct": None,
+                "disclosure_coverage_pct": (
+                    str(disclosure_coverage_pct) if disclosure_coverage_pct is not None else None
+                ),
                 "disclosure_as_of_date": disclosure.as_of_date.isoformat(),
                 "disclosure_age_days": age_days,
                 "holdings": [{
@@ -5319,7 +5337,7 @@ def portfolio_fund_overlap_matrix(
         "methodology_version": result["methodology_version"],
         "warnings": [
             "Overlap is based only on positive, common ISIN holdings in the included verified disclosures.",
-            "Disclosure scheme coverage is a count of schemes with verified disclosures, not a claim that every underlying holding is disclosed.",
+            "Scheme coverage counts verified disclosures; each pair also carries valid-ISIN positive-weight coverage of reported holdings.",
             "Pairwise overlap values are withheld for any pair containing a stale disclosure; observed subset duplication is withheld when portfolio disclosure coverage is incomplete.",
             "Non-ISIN holdings are not cross-matched.",
             "Holdings overlap is not return correlation.",
