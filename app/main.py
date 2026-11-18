@@ -5537,7 +5537,7 @@ def get_portfolio_allocation_drift(
     portfolio_id: int,
     dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"],
 ) -> dict[str, Any]:
-    """Compare actual portfolio values with the latest effective target bands."""
+    """Compare actual portfolio values with target bands effective on the valuation date."""
     require_authenticated_user()
     valuation = portfolio_valuation(portfolio_id, None)
     total, actual = _portfolio_dimension_values(portfolio_id, dimension, valuation)
