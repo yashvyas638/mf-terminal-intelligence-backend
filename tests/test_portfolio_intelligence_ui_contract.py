@@ -13,7 +13,7 @@ def test_portfolio_intelligence_page_has_all_primary_workspaces():
         "amcMetrics", "targetDimension", "targetEffectiveFrom", "targetEditor",
         "saveTargets", "driftTable", "previewContribution", "contributionResult",
         "sectorBars", "securityTable", "overlapTable", "marketCapBars",
-        "riskMetrics", "reportList",
+        "riskMetrics", "reportList", "monthlyComparison", "comparisonStatus",
     }
     for element_id in required_ids:
         assert f'id="{element_id}"' in html, element_id
@@ -29,6 +29,7 @@ def test_portfolio_intelligence_page_has_all_primary_workspaces():
         "/market-cap-allocation",
         "/risk?days=1095",
         "/reports",
+        "/monthly-comparison",
         "/v1/reports/",
     ):
         assert endpoint in js, endpoint
@@ -59,6 +60,7 @@ def test_allocation_policy_and_lookthrough_endpoints_are_wired_to_refresh():
     js = Path("app/static/portfolio-intelligence.js").read_text()
     assert "loadAllocationIntelligence(id)" in js
     assert "loadOverlapAndMarketCap(id)" in js
+    assert "loadMonthlyComparison(id)" in js
     assert 'api("/v1/portfolios/"+id+"/allocation")' in js
     assert 'api("/v1/portfolios/"+id+"/overlap-matrix")' in js
     assert 'api("/v1/portfolios/"+id+"/market-cap-allocation")' in js
