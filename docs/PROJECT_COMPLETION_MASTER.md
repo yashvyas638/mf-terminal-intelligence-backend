@@ -653,3 +653,18 @@ Commits:
 - `4d84a4e` — Test invalid monthly historical risk source values.
 
 **Validation:** code and regression tests are committed; exact latest-head CI is still the release gate. No merge, deployment or production data changes.
+
+
+### TWT risk comparison report-schema integration fix — 2026-11-18
+
+Tracing the monthly report against the actual portfolio risk engine revealed a schema mismatch: `portfolio_risk_metrics` returns risk metrics at the top level of the `risk` object, while the monthly comparison reader only looked under `risk.metrics`. This silently withheld all risk deltas for normally generated snapshots.
+
+- Monthly comparison now reads the actual top-level risk fields.
+- Retains nested `risk.metrics` fallback for older immutable snapshots.
+- Added an integration-shaped regression with the exact top-level schema emitted by the risk engine and assertions for volatility, drawdown, VaR and CVaR deltas.
+
+Commits:
+- `ca76d6d` — Read risk deltas from actual portfolio report schema.
+- `b2dabe3` — Test monthly risk deltas against actual report schema.
+
+**Validation:** committed; exact current-head CI is required before acceptance. No merge, deployment or production data changes.
