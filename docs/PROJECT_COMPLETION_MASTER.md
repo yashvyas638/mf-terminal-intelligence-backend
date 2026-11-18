@@ -557,3 +557,24 @@ Commits:
 - `acea17d` — Test invalid and duplicate monthly comparison identifiers.
 
 **Validation:** code and tests are committed; current-head CI must complete before this is marked passed. No merge, deployment or production data changes.
+
+
+### TWT monthly source-value validation hardening — 2026-11-18
+
+A follow-up audit found that monthly comparison deltas accepted impossible percentage values and could compare AMC concentration metrics even when allocation evidence was not in an allowed state. The risk lookback check also relied on Python's integer type check, which treats booleans as integers.
+
+- Monthly allocation percentage deltas now withhold source values outside 0–100.
+- Data-coverage percentage deltas now validate the same 0–100 bounds.
+- AMC concentration comparisons now require allowed allocation status and validate AMC weights (0–100), HHI (0–10,000), and effective AMC count (>0).
+- Boolean lookback windows are rejected even though `bool` subclasses `int` in Python.
+- Added regressions for out-of-range allocation and coverage percentages, invalid AMC status/HHI, and boolean risk lookback.
+
+Commits:
+- `bb8c282` — Validate monthly comparison percentage source bounds.
+- `7d5c239` — Test invalid monthly percentages and risk lookback types.
+- `3c4f3d2` — Gate AMC deltas on valid allocation evidence.
+- `e84cac9` — Test AMC monthly comparison evidence and bounds.
+- `8b37f50` — Validate TWT monthly coverage percentage bounds.
+- `0cfad63` — Test invalid monthly coverage percentage values.
+
+**Validation:** committed implementation and regression coverage; no test pass is claimed until the exact current-head CI completes. No merge, deployment or production data changes.
