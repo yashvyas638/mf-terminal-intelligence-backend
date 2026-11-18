@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, Numeric, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -195,6 +195,9 @@ class Portfolio(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        Index("uq_portfolio_id_owner_user", "id", "owner_user_id", unique=True),
+    )
 
 
 class PortfolioAllocationTarget(Base):
@@ -202,7 +205,7 @@ class PortfolioAllocationTarget(Base):
 
     __tablename__ = "portfolio_allocation_targets"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=False)
+    portfolio_id: Mapped[int] = mapped_column(Integer, nullable=False)
     owner_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
     dimension: Mapped[str] = mapped_column(String(32), nullable=False)
     target_key: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -214,6 +217,12 @@ class PortfolioAllocationTarget(Base):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["portfolio_id", "owner_user_id"],
+            ["portfolios.id", "portfolios.owner_user_id"],
+            ondelete="CASCADE",
+            name="fk_portfolio_target_owner",
+        ),
         UniqueConstraint("portfolio_id", "dimension", "target_key", "effective_from", "version", name="uq_portfolio_target_version_key"),
         CheckConstraint("dimension IN ('ASSET_CLASS', 'CATEGORY', 'SUB_CATEGORY', 'MARKET_CAP', 'AMC', 'SCHEME', 'SECTOR')", name="ck_portfolio_target_dimension"),
         CheckConstraint("min_pct >= 0 AND min_pct <= target_pct AND target_pct <= max_pct AND max_pct <= 100", name="ck_portfolio_target_band_bounds"),
