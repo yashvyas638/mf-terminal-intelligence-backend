@@ -2131,6 +2131,35 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF")
     with SessionLocal() as db:
+        current_snapshot = db.get(PortfolioReportSnapshot, report_id)
+        assert current_snapshot is not None
+        prior_report = json.loads(current_snapshot.content_json)
+        prior_generated_at = datetime.now(timezone.utc).replace(day=1) - timedelta(days=1)
+        prior_report["generated_at"] = prior_generated_at.isoformat()
+        prior_value = (Decimal(str(prior_report["valuation"]["current_value"])) / Decimal("2")).quantize(Decimal("0.01"))
+        prior_report["valuation"]["current_value"] = str(prior_value)
+        prior_json = json.dumps(prior_report, ensure_ascii=False, allow_nan=False, sort_keys=True)
+        db.add(PortfolioReportSnapshot(
+            portfolio_id=portfolio_id,
+            owner_user_id=user_id,
+            generated_at=prior_generated_at,
+            report_version="portfolio-report-v1",
+            content_json=prior_json,
+            content_sha256=hashlib.sha256(prior_json.encode("utf-8")).hexdigest(),
+            source_max_nav_date=current_snapshot.source_max_nav_date,
+        ))
+        db.commit()
+        assert db.query(PortfolioReportSnapshot).filter_by(portfolio_id=portfolio_id).count() == 2
+
+    monthly = client.get(f"/v1/portfolios/{portfolio_id}/monthly-review", headers=headers)
+    assert monthly.status_code == 200, monthly.text
+    monthly_json = monthly.json()
+    assert monthly_json["status"] in {"COMPARISON_AVAILABLE", "PARTIAL_COMPARISON"}
+    assert monthly_json["previous_month"]["month"] != monthly_json["current_month"]["month"]
+    assert Decimal(monthly_json["portfolio_value_change"]) > 0
+    assert monthly_json["amc_weight_changes"][0]["name"] == "Example Asset Management"
+
+    with SessionLocal() as db:
         assert db.query(PortfolioReportSnapshot).filter_by(id=report_id).count() == 1
 
     incomplete = client.post(
