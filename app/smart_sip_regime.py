@@ -122,12 +122,22 @@ def assess_smart_sip_regime(
 
     try:
         recent = window(90)
-        returns = [recent[i][1] / recent[i - 1][1] - 1
-                   for i in range(1, len(recent)) if recent[i - 1][1] > 0]
+        returns = []
+        for index in range(1, len(recent)):
+            previous_value = recent[index - 1][1]
+            if previous_value <= 0:
+                continue
+            ratio = recent[index][1] / previous_value
+            if not isfinite(ratio):
+                raise ValueError("non-finite benchmark return ratio")
+            daily_return = ratio - 1
+            if not isfinite(daily_return):
+                raise ValueError("non-finite daily benchmark return")
+            returns.append(daily_return)
         volatility = (pstdev(returns) * sqrt(float(config["annualisation_days"])) * 100
                       if len(returns) >= 20 else None)
         dd52, dd3y, mom63, mom126 = drawdown(w52), drawdown(w3y), momentum(63), momentum(126)
-    except (OverflowError, ValueError, ZeroDivisionError):
+    except (OverflowError, ValueError, ZeroDivisionError, AttributeError):
         result["market_opportunity"]["reason"] = "INVALID_DERIVED_SIGNAL"
         result["limitations"].append("Derived benchmark signal exceeded safe numeric limits and was withheld.")
         return result
