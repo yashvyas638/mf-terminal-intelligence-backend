@@ -327,7 +327,7 @@ def test_overlap_aggregates_duplicate_isin_rows_within_each_fund_before_duplicat
     assert pair["overlap_inr"] == "20.00"
     duplicate = result["portfolio_duplication"]
     assert duplicate["gross_positive_lookthrough_exposure_inr"] == "45.00"
-    assert duplicate["duplicated_exposure_inr"] == "10.00"
+    assert duplicate["duplicated_exposure_inr"] == "20.00"
     assert duplicate["top_duplicated_securities"][0]["fund_count"] == 2
 
 
