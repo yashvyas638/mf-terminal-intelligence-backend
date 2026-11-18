@@ -125,6 +125,24 @@ def test_monthly_target_drift_withholds_when_policy_version_changes():
     assert section["items"] == []
 
 
+
+def test_monthly_target_drift_withholds_when_policy_effective_date_changes():
+    previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5), version=3)
+    current_report = _with_target_drift(_report("2026-10-30", 900, 600, 66.6667), version=3)
+    current_report["target_policy_snapshot"]["dimensions"][0]["effective_from"] = "2026-02-01"
+    current_report["target_drift_snapshot"]["CATEGORY"]["effective_from"] = "2026-02-01"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["target_drift"]
+    assert section["status"] == "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH"
+    assert section["items"] == []
+
+
+
 def test_monthly_target_drift_withholds_incomplete_or_unreconciled_snapshot():
     previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5))
     current_report = _with_target_drift(
