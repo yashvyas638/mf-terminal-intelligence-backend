@@ -121,8 +121,8 @@ def test_portfolio_intelligence_cache_keys_and_lookthrough_diagnosis_match_api_c
     html = Path("app/static/portfolio-intelligence.html").read_text()
     js = Path("app/static/portfolio-intelligence.js").read_text()
 
-    assert 'portfolio-intelligence.css?v=3' in html
-    assert 'portfolio-intelligence.js?v=3' in html
+    assert 'portfolio-intelligence.css?v=4' in html
+    assert 'portfolio-intelligence.js?v=4' in html
     assert 'l.security_concentration?.isin_identity_coverage_pct' in js
     assert 'l.concentration?.isin_identity_coverage_pct' not in js
 
