@@ -679,3 +679,13 @@ A final trace through the report assembly confirmed that the canonical saved-rep
 - Existing nested-risk regression cases continue to cover the canonical report shape.
 
 No additional production change or release claim is made from this clarification.
+
+
+### TWT latest implementation and validation checkpoint — 2026-11-18
+
+- Monthly comparison now rejects negative INR source values, malformed market-cap rows and out-of-range historical risk metrics, with regression coverage.
+- Risk comparison supports the canonical saved report `risk.metrics` structure and a direct-field compatibility fallback. The canonical nested schema was traced through report assembly and is already covered by the existing tests.
+- The focused TWT monthly comparison test module now contains 29 test functions.
+- Latest observed PR #135 head before this tracker update: `4c268b9a709ba1ec8e26ee878483d29e058d5253`; open, draft, mergeable.
+- Latest observed CI run #2305 / run ID `44283468553`: SQLite, PostgreSQL and AMFI validation jobs are all queued. No pass is claimed.
+- This update does not authorize merge or deployment. Production data, migrations and Render were not changed.
