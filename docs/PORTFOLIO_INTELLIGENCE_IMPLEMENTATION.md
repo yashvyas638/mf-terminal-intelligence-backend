@@ -81,6 +81,32 @@ Target sets must cover the exact current valued keys in the chosen dimension, ha
 
 Contribution preview allocates new cash to positive target gaps only, capped at the remaining target deficits. It does not execute trades, propose sells, or yet apply separate AMC, sector, liquidity or risk-budget caps.
 
+## Smart SIP market context
+
+The Smart SIP panel is independent of target allocation. It uses only an imported official NSE Indices TRI series and requires all of the following:
+
+- Fresh, source-hashed TRI observations with enough history for the configured 52-week and 3-year windows.
+- A verified underweight state from the user's saved target policy and fresh portfolio valuation.
+- Explicit user approval for an additional contribution budget in that preview request.
+- Every configured market gate: drawdown trigger, positive/acceptable momentum floor and volatility ceiling.
+
+Configuration is intentionally required; the API does not ship a hidden default threshold. Configure these environment variables only after the regime policy has been reviewed:
+
+- `SMART_SIP_MAX_OBSERVATION_AGE_DAYS`
+- `SMART_SIP_MIN_OBSERVATIONS_52W`
+- `SMART_SIP_MIN_OBSERVATIONS_3Y`
+- `SMART_SIP_DRAWDOWN_TOPUP_THRESHOLD_PCT`
+- `SMART_SIP_MOMENTUM_FLOOR_PCT`
+- `SMART_SIP_VOLATILITY_CEILING_PCT`
+- `SMART_SIP_ANNUALISATION_DAYS`
+
+Owner-scoped APIs:
+
+- `GET /v1/benchmarks/tri-options`
+- `POST /v1/portfolios/{portfolio_id}/smart-sip/preview`
+
+If policy thresholds, verified benchmark history, portfolio underweight evidence or explicit risk-budget approval are missing, the result is `NOT_ASSESSED` or `NOT_ELIGIBLE` and the decision remains `CONTINUE_PLANNED_SIP`. This engine never edits an SIP mandate, executes a transaction or creates an order.
+
 ## Monthly snapshots
 
 Each new immutable report snapshot now stores:
