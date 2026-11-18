@@ -61,6 +61,10 @@ def _with_target_drift(report, *, version=3, equity_actual="70", equity_drift="5
             "dimension": "CATEGORY",
             "version": version,
             "effective_from": "2026-01-01",
+            "targets": [
+                {"key": "Equity", "target_pct": "65"},
+                {"key": "Debt", "target_pct": "35"},
+            ],
         }],
     }
     report["target_drift_snapshot"] = {
@@ -69,8 +73,8 @@ def _with_target_drift(report, *, version=3, equity_actual="70", equity_drift="5
             "target_version": version,
             "effective_from": "2026-01-01",
             "targets": [
-                {"key": "Equity", "actual_weight_pct": equity_actual, "drift_percentage_points": equity_drift},
-                {"key": "Debt", "actual_weight_pct": debt_actual, "drift_percentage_points": debt_drift},
+                {"key": "Equity", "actual_weight_pct": equity_actual, "target_pct": "65", "drift_percentage_points": equity_drift},
+                {"key": "Debt", "actual_weight_pct": debt_actual, "target_pct": "35", "drift_percentage_points": debt_drift},
             ],
         },
     }
