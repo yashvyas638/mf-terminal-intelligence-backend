@@ -702,3 +702,19 @@ No additional production change or release claim is made from this clarification
 - Static asset cache keys advanced to v5.
 - Commits in this batch: `ce44e93`, `093e75c`, `dd4b457`, `c33312e`, `fc072c8`, `6aa7c69`, `792f087`, `6f87440`, `c173f68`, `c71f38a`, `365b16b`, `770f3f5`, plus tracker update `10905ae`.
 - Validation: pending exact-head GitHub Actions; do not treat this work as test-passed until the SQLite, PostgreSQL and AMFI jobs complete successfully. Visual PDF pagination review remains open. No merge, deployment or production data changes.
+
+
+### TWT immutable target-band cross-check — 2026-11-18
+
+A deeper audit of monthly target-drift comparison found that it verified target bucket identities, target totals and drift arithmetic, but did not prove that each frozen drift row's minimum / preferred / maximum band still matched the immutable target-policy snapshot. A drift row could therefore be internally arithmetically consistent while representing a different target band from the policy version being compared.
+
+- The comparison now validates every policy bucket has a unique non-empty key and a valid 0–100 min ≤ target ≤ max band.
+- Every drift row must match the frozen policy's min, preferred target and max values exactly, in addition to matching its immutable version/effective date.
+- Bucket keys must match exactly; target values must sum to 100%; actual weights must sum to 100%; and drift must reconcile to actual minus preferred target within the documented rounding tolerance.
+- Added a regression where the drift rows are self-consistent and both target totals remain 100%, but the rows silently diverge from the immutable policy bands. The comparison now withholds this case.
+
+Commits:
+- `b8bdcfa` — Match frozen drift rows to immutable target policy bands.
+- `c948a4b` — Test immutable target-band snapshot consistency.
+
+**Validation:** changes and regression coverage are committed. Exact latest-head CI remains pending; no test pass is claimed. No merge, deployment, production migration or production data change.
