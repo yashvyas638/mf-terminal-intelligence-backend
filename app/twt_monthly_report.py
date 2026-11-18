@@ -229,6 +229,82 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     else:
         comparisons["market_cap"] = _compare(old_mc, new_mc, key_field="market_cap_bucket", value_fields=("exposure_inr", "weight_of_total_portfolio_pct"))
 
+    # Target drift is comparable only when the exact same immutable policy
+    # version applies in both months. A changed policy is not portfolio drift.
+    def target_drift_rows(report: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
+        policies = (report.get("target_policy_snapshot") or {}).get("dimensions")
+        snapshots = report.get("target_drift_snapshot")
+        if not isinstance(policies, list) or not isinstance(snapshots, dict):
+            return None
+        policy_by_dimension: dict[str, dict[str, Any]] = {}
+        for policy in policies:
+            if not isinstance(policy, dict):
+                return None
+            dimension = str(policy.get("dimension") or "").strip()
+            if not dimension or dimension in policy_by_dimension:
+                return None
+            policy_by_dimension[dimension] = policy
+        result: dict[str, dict[str, Any]] = {}
+        for dimension, drift in snapshots.items():
+            if not isinstance(drift, dict) or drift.get("status") != "AVAILABLE":
+                continue
+            policy = policy_by_dimension.get(dimension)
+            version = drift.get("target_version")
+            effective_from = drift.get("effective_from")
+            if (not policy or version is None or effective_from is None
+                    or str(policy.get("version")) != str(version)
+                    or str(policy.get("effective_from")) != str(effective_from)):
+                return None
+            targets = drift.get("targets")
+            if not isinstance(targets, list) or not targets:
+                return None
+            seen: set[str] = set()
+            weight_total = Decimal("0")
+            for target in targets:
+                if not isinstance(target, dict):
+                    return None
+                key = str(target.get("key") or "").strip()
+                actual = _decimal(target.get("actual_weight_pct"))
+                drift_pp = _decimal(target.get("drift_percentage_points"))
+                if (not key or key in seen or actual is None or drift_pp is None
+                        or not Decimal("0") <= actual <= Decimal("100")
+                        or not Decimal("-100") <= drift_pp <= Decimal("100")):
+                    return None
+                seen.add(key)
+                weight_total += actual
+                result[f"{dimension}:{key}"] = {
+                    "key": f"{dimension}:{key}",
+                    "actual_weight_pct": str(actual),
+                    "drift_pct": str(drift_pp),
+                }
+            if abs(weight_total - Decimal("100")) > Decimal("0.05"):
+                return None
+        return result
+
+    old_target_rows = target_drift_rows(old_report)
+    new_target_rows = target_drift_rows(new_report)
+    if old_target_rows is None or new_target_rows is None:
+        comparisons["target_drift"] = {
+            "status": "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH",
+            "items": [],
+            "reason": "Target drift requires complete, reconciled snapshots under the same immutable policy version and effective date.",
+        }
+    elif set(old_target_rows) != set(new_target_rows):
+        comparisons["target_drift"] = {
+            "status": "WITHHELD_TARGET_SET_CHANGED",
+            "items": [],
+            "reason": "Target bucket identities changed between snapshots; policy drift cannot be isolated from allocation movement.",
+        }
+    else:
+        target_comparison = _compare(
+            list(old_target_rows.values()), list(new_target_rows.values()),
+            key_field="key", value_fields=("actual_weight_pct", "drift_pct"),
+        )
+        for item in target_comparison.get("items", []):
+            metrics = item.get("metrics") or {}
+            metrics["drift_percentage_points"] = metrics.pop("drift_pct", {})
+        comparisons["target_drift"] = target_comparison
+
     old_value = _decimal((old_report.get("valuation") or {}).get("current_value"))
     new_value = _decimal((new_report.get("valuation") or {}).get("current_value"))
     invalid_portfolio_value = any(
