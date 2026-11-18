@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 import csv
+import re
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Iterable, Mapping
 from io import StringIO
 
 METHODOLOGY_VERSION = "portfolio-allocation-v1.0.0"
+ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{10}$")
 CENT = Decimal("0.01")
 FOUR_DP = Decimal("0.0001")
 ZERO = Decimal("0")
