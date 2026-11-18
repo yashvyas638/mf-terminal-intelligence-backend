@@ -81,3 +81,13 @@ def test_market_cap_lookthrough_is_explicitly_withheld_without_verified_security
     assert 'd.market_cap_allocation||{}' in js
     assert 'market_cap_allocation' in js
     assert "scheme categories are not used as a proxy" in html.lower()
+
+
+def test_portfolio_wide_overlap_panel_is_loaded_and_explains_pairwise_non_additivity():
+    html = Path("app/static/portfolio-intelligence.html").read_text()
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    assert 'id="portfolioOverlap"' in html
+    assert '"/v1/portfolios/"+id+"/holdings-overlap"' in js
+    assert "function renderPortfolioOverlap(data)" in js
+    assert "Pairwise overlap figures are not additive" in js
+    assert "isin_coverage_pct" in js
