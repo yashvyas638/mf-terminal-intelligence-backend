@@ -70,6 +70,7 @@ def test_monthly_comparison_reports_rupee_and_percentage_point_changes():
     market_cap = result["comparisons"]["market_cap"]["items"]
     assert any(row["key"] == "UNCLASSIFIED:UNCLASSIFIED_STALE_MAPPING" for row in market_cap)
     assert result["comparisons"]["overlap_pairs"]["items"][0]["metrics"]["overlap_inr"]["change_inr"] == "0.00"
+    assert result["comparisons"]["overlap_pairs"]["items"][0]["metrics"]["overlap_pct_of_scheme_a_nav"]["change_percentage_points"] == "0.0000"
     assert result["comparisons"]["portfolio_duplication"]["change_inr"] == "0.00"
 
 
