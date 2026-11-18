@@ -2461,3 +2461,33 @@ def test_transaction_audit_checks_portfolio_ownership_before_transaction_lookup(
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "personal session required"
+
+def test_portfolio_overlap_checks_owner_before_reading_valuation(monkeypatch):
+    class EmptySession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    valuation_called = False
+
+    def forbidden_valuation(*args, **kwargs):
+        nonlocal valuation_called
+        valuation_called = True
+        raise AssertionError("valuation must not run before portfolio ownership is checked")
+
+    def reject_owner(*args, **kwargs):
+        raise main.HTTPException(status_code=404, detail="Portfolio not found")
+
+    monkeypatch.setattr(main, "require_authenticated_user", lambda: "user-a")
+    monkeypatch.setattr(main, "SessionLocal", EmptySession)
+    monkeypatch.setattr(main, "_require_portfolio_owner", reject_owner)
+    monkeypatch.setattr(main, "portfolio_valuation", forbidden_valuation)
+
+    with pytest.raises(main.HTTPException) as exc_info:
+        main.portfolio_fund_overlap_matrix(987654)
+
+    assert exc_info.value.status_code == 404
+    assert valuation_called is False
+
