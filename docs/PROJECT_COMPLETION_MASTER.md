@@ -282,3 +282,27 @@ Additional commits:
 - `f5a0495` — Test sub-paisa deficit and fractional-paisa handling.
 
 Latest observed branch head: `f5a04951cce7b7b8db5e8e46edc7a8b92c5120fe`. CI runs for this exact head were queued when checked; no pass is claimed yet.
+
+
+## TWT allocation report and PDF finalisation pass — 2026-11-18
+
+- PDF allocation evidence now includes the unclassified market value/weight and fresh-NAV coverage alongside scheme count.
+- AMC summary includes top-1/top-3/top-5 concentration, HHI and effective AMC count.
+- Pairwise overlap appendix now shows both funds' disclosure dates, coverage percentages and matched ISIN exposure amounts; the main pair table retains overlap value, common-ISIN count and per-fund overlap ratios.
+- Frozen monthly PDF tables now include scheme presence (new/continuing/exited), scheme/category/sub-category/asset-class/AMC/sector/market-cap movements, pairwise overlap movement, portfolio duplication and data-coverage movement.
+- Snapshot source provenance binds NAV ingestion snapshot IDs to the exact NAV observation dates used in the valuation, rather than looking up a potentially newer observation after report calculation.
+- Monthly comparison API verifies stored SHA-256 hashes before parsing/comparing snapshots and withholds on integrity failure.
+- Monthly comparison is withheld across missing calendar months; December versus October is not labelled as one-month movement.
+- API integration coverage creates September/October month-end snapshots, checks the frozen comparison in report JSON, exercises the monthly comparison endpoint, changes NAV after snapshot creation and confirms the saved report remains stable.
+- PDF regression tests were aligned to the explicit presence-status column.
+
+Commits in this pass include:
+- 30ae695 — Include fund-level overlap coverage and matched exposure in TWT PDF.
+- dcd764c — Show unclassified allocation and NAV coverage in TWT PDF.
+- 685c8f2 — Bind NAV source IDs to the exact observation date frozen in report valuation.
+- 14f4b52 — Verify snapshot SHA-256 before serving monthly comparison.
+- e1433bb — Test SHA-256 validation before TWT snapshot comparison.
+- 0d5d4bf — Exercise TWT monthly-comparison API against frozen month-end snapshots.
+- fbe50de — Align PDF monthly comparison tests with presence-status column.
+
+**Validation status:** source and test changes are committed; current-head CI remains queued at the last inspection. Do not mark SQLite, PostgreSQL, lint or PDF pagination as passed until the current PR head's workflow completes. Visual PDF pagination review and independent live holdings/classification-source verification remain open.
