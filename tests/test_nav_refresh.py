@@ -16,7 +16,7 @@ from app.db import NavObservation, NavObservationRevision, SessionLocal, engine,
 def _amfi_response(nav: str):
     body = (
         "Scheme Code;ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n"
-        f"998877;INF000000001;INF000000002;Correction Test Fund;{nav};10-Nov-2026\n"
+        f"998877;INF000000001;INF000000002;Correction Test Fund;{nav};{date.today().strftime('%d-%b-%Y')}\n"
     )
     raw = body.encode("utf-8")
     return SimpleNamespace(
