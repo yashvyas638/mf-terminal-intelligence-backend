@@ -96,6 +96,11 @@ def portfolio_allocation(schemes: Iterable[Mapping[str, Any]]) -> dict[str, Any]
         ]
 
     ordered = sorted(normalized, key=lambda row: (-row["market_value_inr"], row["scheme_code"]))
+    segment_totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    subcategory_totals: dict[tuple[str, str], Decimal] = defaultdict(lambda: ZERO)
+    for row in normalized:
+        segment_totals[row["category_group"]] += row["market_value_inr"]
+        subcategory_totals[(row["category_group"], row["sub_category"])] += row["market_value_inr"]
     return {
         "methodology_version": METHODOLOGY_VERSION,
         "portfolio_market_value_inr": _money(total),
@@ -109,6 +114,11 @@ def portfolio_allocation(schemes: Iterable[Mapping[str, Any]]) -> dict[str, Any]
             "asset_class": row["asset_class"],
             "market_value_inr": _money(row["market_value_inr"]),
             "portfolio_weight_pct": _pct(row["market_value_inr"], total),
+            "segment_weight_pct": _pct(row["market_value_inr"], segment_totals[row["category_group"]]),
+            "subcategory_weight_within_segment_pct": _pct(
+                subcategory_totals[(row["category_group"], row["sub_category"])],
+                segment_totals[row["category_group"]],
+            ),
         } for row in ordered],
         "by_category": group("category_group"),
         "by_sub_category": group("sub_category"),
@@ -118,6 +128,138 @@ def portfolio_allocation(schemes: Iterable[Mapping[str, Any]]) -> dict[str, Any]
             "classification_basis": "EXPLICIT_SCHEME_METADATA_ONLY",
             "unclassified_scheme_count": sum(1 for row in normalized if row["category_group"] == "UNCLASSIFIED" or row["asset_class"] == "UNCLASSIFIED"),
         },
+    }
+
+
+def market_cap_allocation(
+    securities: Iterable[Mapping[str, Any]],
+    classifications: Iterable[Mapping[str, Any]],
+    *,
+    as_of_date: Any,
+    portfolio_value_inr: Any,
+    max_classification_age_days: int = 180,
+) -> dict[str, Any]:
+    """Classify look-through exposure only from verified, effective-dated ISIN mappings.
+
+    A classification is eligible when its effective date covers the requested
+    as-of date and its source as-of date is within the configured age. Missing,
+    stale, non-ISIN and conflicting mappings remain explicit unclassified
+    buckets. No company market cap is inferred from a security or fund name.
+    """
+    from datetime import date, datetime
+
+    def as_date(value: Any, field: str):
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        try:
+            return date.fromisoformat(str(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field} must be an ISO date") from exc
+
+    as_of = as_date(as_of_date, "as_of_date")
+    portfolio_value = _d(portfolio_value_inr, "portfolio_value_inr")
+    assert portfolio_value is not None
+    if portfolio_value <= ZERO:
+        raise ValueError("portfolio_value_inr must be positive")
+    if not isinstance(max_classification_age_days, int) or not 0 <= max_classification_age_days <= 3650:
+        raise ValueError("max_classification_age_days must be between 0 and 3650")
+
+    allowed = {"LARGE_CAP", "MID_CAP", "SMALL_CAP", "OTHER"}
+    by_isin: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in classifications:
+        if str(row.get("verification_status", "")).upper() != "VERIFIED":
+            continue
+        isin = str(row.get("security_id") or "").strip().upper()
+        if not isin or not bool(row.get("is_isin", True)):
+            continue
+        bucket = str(row.get("market_cap_bucket") or "").upper()
+        if bucket not in allowed:
+            raise ValueError(f"unsupported market-cap bucket: {bucket}")
+        effective_from = as_date(row.get("effective_from"), "effective_from")
+        effective_to = as_date(row["effective_to"], "effective_to") if row.get("effective_to") else None
+        source_as_of = as_date(row.get("source_as_of_date"), "source_as_of_date")
+        source_hash = str(row.get("source_sha256") or "").lower()
+        if len(source_hash) != 64 or any(ch not in "0123456789abcdef" for ch in source_hash):
+            raise ValueError("verified classification requires a valid SHA-256 source hash")
+        if not str(row.get("source_url") or "").strip():
+            raise ValueError("verified classification requires a source URL")
+        if effective_to and effective_to < effective_from:
+            raise ValueError("classification effective_to cannot precede effective_from")
+        by_isin[isin].append({
+            "bucket": bucket,
+            "effective_from": effective_from,
+            "effective_to": effective_to,
+            "source_as_of_date": source_as_of,
+            "source_url": str(row["source_url"]),
+            "source_sha256": source_hash,
+        })
+
+    totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    total_positive = ZERO
+    classified = ZERO
+    source_rows = []
+    for security in securities:
+        value = _d(security.get("lookthrough_value"), "lookthrough_value")
+        assert value is not None
+        if value <= ZERO:
+            continue
+        total_positive += value
+        isin = str(security.get("security_id") or "").strip().upper()
+        if not bool(security.get("is_isin")) or not isin:
+            totals["UNCLASSIFIED_NON_ISIN"] += value
+            continue
+        candidates = [
+            item for item in by_isin.get(isin, [])
+            if item["effective_from"] <= as_of
+            and (item["effective_to"] is None or item["effective_to"] >= as_of)
+        ]
+        if not candidates:
+            totals["UNCLASSIFIED_NO_EFFECTIVE_MAPPING"] += value
+            continue
+        latest_start = max(item["effective_from"] for item in candidates)
+        latest = [item for item in candidates if item["effective_from"] == latest_start]
+        distinct = {(item["bucket"], item["source_sha256"]) for item in latest}
+        if len(distinct) > 1:
+            raise ValueError(f"conflicting verified classifications for {isin} on {as_of.isoformat()}")
+        chosen = latest[0]
+        age = (as_of - chosen["source_as_of_date"]).days
+        if age < 0 or age > max_classification_age_days:
+            totals["UNCLASSIFIED_STALE_MAPPING"] += value
+            continue
+        totals[chosen["bucket"]] += value
+        classified += value
+        source_rows.append({
+            "security_id": isin,
+            "market_cap_bucket": chosen["bucket"],
+            "source_as_of_date": chosen["source_as_of_date"].isoformat(),
+            "classification_age_days": age,
+            "source_url": chosen["source_url"],
+            "source_sha256": chosen["source_sha256"],
+        })
+
+    ordered = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
+    return {
+        "methodology_version": METHODOLOGY_VERSION,
+        "as_of_date": as_of.isoformat(),
+        "basis": "VERIFIED_EFFECTIVE_DATED_ISIN_CLASSIFICATIONS",
+        "portfolio_value_inr": _money(portfolio_value),
+        "positive_lookthrough_exposure_inr": _money(total_positive),
+        "classified_exposure_inr": _money(classified),
+        "classified_coverage_of_positive_lookthrough_pct": _pct(classified, total_positive),
+        "classified_distribution": [
+            {"market_cap_bucket": bucket, "exposure_inr": _money(value), "weight_of_total_portfolio_pct": _pct(value, portfolio_value), "weight_of_positive_lookthrough_pct": _pct(value, total_positive)}
+            for bucket, value in ordered if bucket in allowed
+        ],
+        "unclassified_exposure": [
+            {"reason": bucket, "exposure_inr": _money(value), "weight_of_total_portfolio_pct": _pct(value, portfolio_value), "weight_of_positive_lookthrough_pct": _pct(value, total_positive)}
+            for bucket, value in ordered if bucket not in allowed
+        ],
+        "sources": source_rows,
+        "limitations": [
+            "Only verified, effective-dated ISIN classifications are used.",
+            "Non-ISIN, missing and stale classifications remain unclassified; no partial subset is silently normalised to the full portfolio.",
+            "Market-cap classifications are only as reliable and current as their cited source artifacts.",
+        ],
     }
 
 
