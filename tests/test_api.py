@@ -2167,6 +2167,11 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert frozen_comparison["status"] == "AVAILABLE"
     assert frozen_comparison["previous_period"] == previous_period_end.strftime("%Y-%m")
     assert frozen_comparison["current_period"] == as_of.strftime("%Y-%m")
+    monthly_api = client.get(f"/v1/portfolios/{portfolio_id}/monthly-comparison", headers=headers)
+    assert monthly_api.status_code == 200, monthly_api.text
+    assert monthly_api.json()["status"] == "AVAILABLE"
+    assert monthly_api.json()["previous_period"] == previous_period_end.strftime("%Y-%m")
+    assert monthly_api.json()["current_period"] == as_of.strftime("%Y-%m")
     assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
     assert report_detail.json()["integrity_status"] == "VERIFIED"
     pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
