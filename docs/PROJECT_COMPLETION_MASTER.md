@@ -773,6 +773,35 @@ Commits:
 **Validation:** committed, pending exact-head SQLite/PostgreSQL CI. No merge, deployment or production data changes.
 
 
+### TWT duplication evidence shape validation — 2026-11-18
+
+A robustness audit found that malformed nested overlap / portfolio-duplication snapshot values could raise an attribute error while the monthly report was being assembled, rather than returning a clear withheld comparison.
+
+- Non-object overlap sections are normalized to unavailable evidence.
+- Portfolio-duplication metrics must be an object before reconciliation; malformed shapes are withheld as `WITHHELD_INVALID_SOURCE_VALUE`.
+- Added a regression for a list-shaped duplication snapshot to ensure the comparison fails closed instead of raising.
+
+Commits:
+- `54fd4b1` — Fail closed on malformed overlap duplication evidence.
+- `70cd4ec` — Test malformed duplication snapshot handling.
+
+**Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
+
+
+### TWT pairwise overlap amount integrity — 2026-11-18
+
+Pairwise overlap percentage fields were already range-checked, but a negative or missing overlap INR amount could still enter a monthly comparison as a numeric delta.
+
+- Pair identity normalization now requires a finite, non-negative overlap amount before either directional percentage or INR movement is compared.
+- Invalid pair evidence withholds the pairwise overlap section instead of publishing a negative overlap amount.
+- Added a regression for a negative overlap INR source value.
+
+Commits:
+- `052b585` — Reject negative or missing monthly overlap amounts.
+- `f5a3e6c` — Test negative monthly overlap amount rejection.
+
+**Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
+
 ## Supabase database-size remediation — 2026-11-18
 
 - Read-only live database inspection measured the application database at 519,689,907 bytes (~496 MiB), above the 500 MB Free-plan database-size quota; all cluster databases total 534,966,133 bytes (~510 MiB).
