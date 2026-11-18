@@ -4,6 +4,7 @@ import pytest
 
 from app.portfolio_allocation_intelligence import (
     allocation_drift,
+    allocation_dimension_key,
     amc_concentration,
     contribution_plan_preview,
     holdings_overlap_matrix,
@@ -11,6 +12,28 @@ from app.portfolio_allocation_intelligence import (
     parse_market_cap_classification_csv,
     portfolio_allocation,
 )
+
+
+
+def test_allocation_dimension_keys_match_canonical_portfolio_taxonomy():
+    scheme = {
+        "scheme_code": 123,
+        "category_group": "Equity",
+        "category": "ELSS-Tax Saver Fund",
+        "asset_class": "Equity",
+        "amc": None,
+    }
+    assert allocation_dimension_key("CATEGORY", scheme) == "Equity"
+    assert allocation_dimension_key("SUB_CATEGORY", scheme) == "ELSS Tax Saver Fund"
+    assert allocation_dimension_key("ASSET_CLASS", scheme) == "Equity"
+    assert allocation_dimension_key("AMC", scheme) == "UNCLASSIFIED"
+    assert allocation_dimension_key("SCHEME", scheme) == "123"
+
+    # Unknown or invalid metadata must use the same explicit bucket as analytics.
+    unknown = {**scheme, "category": "Marketing label", "asset_class": "Debt"}
+    assert allocation_dimension_key("SUB_CATEGORY", unknown) == "UNCLASSIFIED"
+    assert allocation_dimension_key("ASSET_CLASS", unknown) == "UNCLASSIFIED"
+
 
 
 def test_portfolio_allocation_reconciles_market_value_and_preserves_unknown_taxonomy():
