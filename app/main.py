@@ -3409,11 +3409,12 @@ def create_portfolio_report_snapshot(
     with SessionLocal() as db:
         portfolio = _require_portfolio_owner(db, portfolio_id)
         holdings = valuation.get("holdings", [])
-        current_value = float(valuation.get("current_value") or 0)
+        current_value = Decimal(str(valuation.get("current_value") or "0"))
         for holding in holdings:
+            holding_value = Decimal(str(holding["market_value"])) if holding.get("market_value") is not None else None
             holding["weight_pct"] = (
-                round(float(holding["market_value"]) / current_value * 100, 4)
-                if current_value > 0 and holding.get("market_value") is not None else None
+                float((holding_value / current_value * Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+                if current_value > 0 and holding_value is not None else None
             )
             holding["freshness_status"] = holding.get("nav_freshness")
         source_snapshot_ids = set()
@@ -3505,11 +3506,29 @@ def create_portfolio_report_snapshot(
             "fifo_tax_lots": tax_lots,
             "sources": sources,
             "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
+            "input_snapshot_ids": {
+                "nav_ingestion_snapshot_ids": sorted(source_snapshot_ids),
+                "holdings_disclosure_ids": sorted({
+                    source.get("disclosure_id")
+                    for source in lookthrough.get("sources", [])
+                    if source.get("disclosure_id") is not None
+                }),
+                "market_cap_source_sha256": sorted({
+                    source.get("source_sha256")
+                    for source in market_cap_intelligence.get("sources", [])
+                    if source.get("source_sha256")
+                }),
+            },
             "limitations": limitations,
             "methodology": {
                 "valuation": "Latest accepted AMFI NAV multiplied by remaining units.",
                 "risk": "Exact common NAV dates; no forward-fill; current weights held constant.",
                 "capital_gains": "FIFO lot matching with recorded charges; pre-tax only.",
+                "allocation": (allocation_intelligence.get("allocation") or {}).get("methodology_version"),
+                "overlap": (overlap_intelligence.get("portfolio_duplication") or {}).get("methodology_version")
+                    or overlap_intelligence.get("methodology_version"),
+                "market_cap": market_cap_intelligence.get("methodology_version"),
+                "snapshot": "portfolio-report-v1; immutable JSON with SHA-256 integrity digest.",
             },
         }
         content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
