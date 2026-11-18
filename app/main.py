@@ -3555,6 +3555,15 @@ def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
     ]:
         old_rows = rows_at(previous, path, key_field, value_field)
         new_rows = rows_at(current, path, key_field, value_field)
+        if name == "market_cap":
+            for report, rows in ((previous, old_rows), (current, new_rows)):
+                if rows is None:
+                    continue
+                market_cap_section = report.get("market_cap_intelligence") or {}
+                rows.extend([{
+                    key_field: "UNCLASSIFIED:" + str(item.get("reason")),
+                    value_field: item.get("weight_of_total_portfolio_pct"),
+                } for item in market_cap_section.get("unclassified_exposure") or []])
         old_status = (
             previous.get("market_cap_intelligence", {}).get("status")
             if name == "market_cap" else
@@ -3569,7 +3578,7 @@ def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
             if name == "sector" else
             current.get("allocation_intelligence", {}).get("status")
         )
-        if old_rows is None or new_rows is None or old_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE"} or new_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE"}:
+        if old_rows is None or new_rows is None or old_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE", "PARTIAL_CLASSIFICATION_COVERAGE"} or new_status not in {"AVAILABLE", "COMPLETE", "PARTIAL_LOOKTHROUGH_COVERAGE", "PARTIAL_CLASSIFICATION_COVERAGE"}:
             comparisons[name] = {"status": "WITHHELD_OR_NOT_COMPARABLE", "items": []}
         else:
             comparisons[name] = compare_rows({"previous": old_rows, "current": new_rows}, name, key_field, value_field)
