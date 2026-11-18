@@ -3685,6 +3685,30 @@ def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
         else:
             comparisons[name] = compare_rows({"previous": old_rows, "current": new_rows}, name, key_field, value_field)
 
+    def target_drift_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+        rows = []
+        for dimension, drift in (report.get("target_drift_snapshot") or {}).items():
+            if drift.get("status") != "AVAILABLE":
+                continue
+            for item in drift.get("targets") or []:
+                rows.append({
+                    "key": dimension + ":" + str(item.get("key")),
+                    "value": item.get("drift_percentage_points"),
+                })
+        return rows
+
+    previous_target_drift = target_drift_rows(previous)
+    current_target_drift = target_drift_rows(current)
+    if previous_target_drift and current_target_drift:
+        comparisons["target_drift"] = compare_rows(
+            {"previous": previous_target_drift, "current": current_target_drift},
+            "target_drift_percentage_points",
+            "key",
+            "value",
+        )
+    else:
+        comparisons["target_drift"] = {"status": "WITHHELD_OR_NO_SAVED_TARGETS", "items": []}
+
     def metric(report: dict[str, Any], *path: str):
         node: Any = report
         for part in path:
