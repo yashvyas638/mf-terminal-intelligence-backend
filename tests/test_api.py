@@ -2695,3 +2695,17 @@ def test_target_policy_and_drift_are_selected_as_of_portfolio_valuation_date(mon
     assert drift.json()["valuation_date"] == "2026-11-18"
     assert drift.json()["policy_as_of_date"] == "2026-11-18"
     assert drift.json()["targets"][0]["target_pct"] == "100.0000"
+
+    contribution = client.post(
+        f"/v1/portfolios/{portfolio_id}/contribution-plan/preview",
+        headers=headers,
+        json={
+            "dimension": "ASSET_CLASS",
+            "contribution_inr": "10",
+            "max_contribution_inr": "10",
+            "max_post_weight_pct": "100",
+        },
+    )
+    assert contribution.status_code == 200
+    assert contribution.json()["policy_as_of_date"] == "2026-11-18"
+    assert contribution.json()["effective_from"] == "2026-11-01"
