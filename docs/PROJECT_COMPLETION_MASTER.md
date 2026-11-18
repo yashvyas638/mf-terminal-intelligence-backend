@@ -689,3 +689,16 @@ No additional production change or release claim is made from this clarification
 - Latest observed PR #135 head before this tracker update: `4c268b9a709ba1ec8e26ee878483d29e058d5253`; open, draft, mergeable.
 - Latest observed CI run #2305 / run ID `44283468553`: SQLite, PostgreSQL and AMFI validation jobs are all queued. No pass is claimed.
 - This update does not authorize merge or deployment. Production data, migrations and Render were not changed.
+
+
+## TWT target-drift month-on-month completion — 2026-11-18
+
+- Monthly report comparison now includes target allocation drift only when both frozen reports contain the same immutable target-policy version and effective date for every configured dimension.
+- Each compared dimension must have a complete target set, unique bucket keys, valid actual weights and drift values, and actual weights reconciling to 100%. Changed bucket identities, changed policy versions, missing dimensions or incomplete snapshots are explicitly withheld.
+- The comparison exposes actual-weight percentage-point movement and target-drift percentage-point movement separately. Drift is not represented as INR.
+- Portfolio Intelligence now renders previous/current drift and the pp delta, alongside actual allocation weights.
+- TWT PDF includes a dedicated target-drift movement table with previous/current drift pp, pp change and actual weights; withheld evidence includes its reason.
+- Regression coverage added for comparable same-policy movement, policy-version changes, incomplete/reconciliation failures, PDF formatting and UI rendering.
+- Static asset cache keys advanced to v5.
+- Commits in this batch: `ce44e93`, `093e75c`, `dd4b457`, `c33312e`, `fc072c8`, `6aa7c69`, `792f087`, `6f87440`.
+- Validation: pending exact-head GitHub Actions; do not treat this work as test-passed until the SQLite, PostgreSQL and AMFI jobs complete successfully. Visual PDF pagination review remains open. No merge, deployment or production data changes.
