@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [main, audit/production-foundation, ui/portfolio-intelligence, feature/auth-onboarding-and-session-fixes, feature/research-layer-integration, feature/research-layer-integration-sync, feature/research-layer-integration-verified, fix/0009-production-trigger-reconciliation, fix/nav-corporate-action-quality]
+    branches: [main, audit/production-foundation, ui/portfolio-intelligence, 'feature/*', 'fix/*']
   pull_request:
-    branches: [main, audit/production-foundation]
+    branches: [main, audit/production-foundation, ui/portfolio-intelligence]
   workflow_dispatch:
 permissions:
   contents: read
