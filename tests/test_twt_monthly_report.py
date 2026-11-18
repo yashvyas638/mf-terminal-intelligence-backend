@@ -96,6 +96,11 @@ def test_monthly_target_drift_compares_only_same_immutable_policy_and_reports_pp
     assert equity["metrics"]["drift_percentage_points"]["current"] == "10"
     assert equity["metrics"]["drift_percentage_points"]["change_percentage_points"] == "5"
     assert equity["metrics"]["actual_weight_pct"]["change_percentage_points"] == "5"
+    debt = next(item for item in section["items"] if item["key"] == "CATEGORY:Debt")
+    assert debt["metrics"]["drift_percentage_points"]["previous"] == "-5"
+    assert debt["metrics"]["drift_percentage_points"]["current"] == "-10"
+    assert debt["metrics"]["drift_percentage_points"]["change_percentage_points"] == "-5"
+    assert debt["metrics"]["drift_percentage_points"]["status"] == "COMPARABLE"
 
 
 def test_monthly_target_drift_withholds_when_policy_version_changes():
