@@ -212,3 +212,20 @@ Commits:
 - `22092c1` — Test missing month gap withholding for TWT comparison.
 
 The latest observed CI run before these commits was [#2076](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44279549073), queued against a later branch head. Recheck CI against the exact current PR head before marking this change validated.
+
+
+## Snapshot integrity gate for monthly comparisons — 2026-11-18
+
+- Added `decode_verified_snapshot` to verify SHA-256 before parsing saved report JSON.
+- Report creation now withholds the frozen monthly comparison if any previous owner-scoped snapshot fails integrity verification; it does not silently skip a corrupted latest snapshot and compare against an older month.
+- The monthly comparison API likewise returns `SNAPSHOT_INTEGRITY_FAILURE` and the affected snapshot IDs instead of using unverified JSON.
+- Added unit coverage for valid hashes, mismatched hashes and malformed JSON.
+
+Commits:
+- `17fd08b` — Verify immutable report hashes before monthly comparisons.
+- `6838842` — Withhold frozen comparison when prior report snapshot hash fails.
+- `14f4b52` — Verify snapshot SHA-256 before serving monthly comparison.
+- `e1433bb` — Test SHA-256 validation before TWT snapshot comparison.
+- `8e8f4e4` — Keep TWT monthly test imports lint compliant.
+
+Validation remains pending for the latest exact branch head. CI must pass SQLite, PostgreSQL, lint and the AMFI read-only validation jobs.
