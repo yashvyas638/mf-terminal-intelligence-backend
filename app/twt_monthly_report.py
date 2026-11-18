@@ -268,12 +268,23 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
             policy_targets = policy.get("targets")
             if not isinstance(policy_targets, list) or not policy_targets:
                 return None
-            policy_keys = {
-                str(item.get("key") or "").strip()
-                for item in policy_targets if isinstance(item, dict)
-            }
-            if len(policy_keys) != len(policy_targets) or "" in policy_keys:
-                return None
+            policy_by_key: dict[str, dict[str, Any]] = {}
+            for item in policy_targets:
+                if not isinstance(item, dict):
+                    return None
+                policy_key = str(item.get("key") or "").strip()
+                if not policy_key or policy_key in policy_by_key:
+                    return None
+                policy_by_key[policy_key] = item
+                minimum = _decimal(item.get("min_pct"))
+                preferred = _decimal(item.get("target_pct"))
+                maximum = _decimal(item.get("max_pct"))
+                if (
+                    minimum is None or preferred is None or maximum is None
+                    or not Decimal("0") <= minimum <= preferred <= maximum <= Decimal("100")
+                ):
+                    return None
+            policy_keys = set(policy_by_key)
             seen: set[str] = set()
             weight_total = Decimal("0")
             preferred_total = Decimal("0")
@@ -283,12 +294,25 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                 key = str(target.get("key") or "").strip()
                 actual = _decimal(target.get("actual_weight_pct"))
                 target_pct = _decimal(target.get("target_pct"))
+                minimum = _decimal(target.get("min_pct"))
+                maximum = _decimal(target.get("max_pct"))
                 drift_pp = _decimal(target.get("drift_percentage_points"))
-                if (not key or key in seen or actual is None or target_pct is None or drift_pp is None
-                        or not Decimal("0") <= actual <= Decimal("100")
-                        or not Decimal("0") <= target_pct <= Decimal("100")
-                        or not Decimal("-100") <= drift_pp <= Decimal("100")
-                        or abs((actual - target_pct) - drift_pp) > Decimal("0.05")):
+                policy_target = policy_by_key.get(key)
+                policy_minimum = _decimal(policy_target.get("min_pct")) if policy_target else None
+                policy_preferred = _decimal(policy_target.get("target_pct")) if policy_target else None
+                policy_maximum = _decimal(policy_target.get("max_pct")) if policy_target else None
+                if (
+                    not key or key in seen or policy_target is None
+                    or actual is None or minimum is None or target_pct is None
+                    or maximum is None or drift_pp is None
+                    or not Decimal("0") <= actual <= Decimal("100")
+                    or not Decimal("0") <= minimum <= target_pct <= maximum <= Decimal("100")
+                    or not Decimal("-100") <= drift_pp <= Decimal("100")
+                    or abs((actual - target_pct) - drift_pp) > Decimal("0.05")
+                    or minimum != policy_minimum
+                    or target_pct != policy_preferred
+                    or maximum != policy_maximum
+                ):
                     return None
                 seen.add(key)
                 weight_total += actual
