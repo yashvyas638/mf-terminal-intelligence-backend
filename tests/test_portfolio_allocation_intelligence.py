@@ -286,3 +286,23 @@ def test_overlap_freshness_gate_withholds_missing_age_and_rejects_invalid_age():
             [{**funds[0], "disclosure_age_days": 1.5}],
             max_disclosure_age_days=45,
         )
+
+
+def test_holdings_disclosure_coverage_uses_positive_isin_weight_over_all_positive_weight():
+    from app.portfolio_allocation_intelligence import holdings_disclosure_coverage
+
+    assert holdings_disclosure_coverage([
+        {"is_isin": True, "weight_pct": "70"},
+        {"is_isin": False, "weight_pct": "20"},
+        {"is_isin": False, "weight_pct": "10"},
+        {"is_isin": True, "weight_pct": "-5"},
+    ]) == "70.0000"
+
+
+def test_holdings_disclosure_coverage_returns_none_without_positive_reported_weight():
+    from app.portfolio_allocation_intelligence import holdings_disclosure_coverage
+
+    assert holdings_disclosure_coverage([
+        {"is_isin": True, "weight_pct": "0"},
+        {"is_isin": False, "weight_pct": "-2"},
+    ]) is None
