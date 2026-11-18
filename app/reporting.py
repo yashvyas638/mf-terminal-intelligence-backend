@@ -229,6 +229,35 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         _table(amc_rows, [75 * mm, 45 * mm, 42 * mm]),
     ])
 
+    target_policy = report.get("target_policy_snapshot") or {}
+    target_drift = report.get("target_drift_snapshot") or {}
+    target_rows = [["Dimension", "Effective date", "Version", "Bucket", "Actual %", "Target band", "Drift pp", "Status"]]
+    policy_by_dimension = {item.get("dimension"): item for item in target_policy.get("dimensions") or []}
+    for dimension, drift in target_drift.items():
+        policy = policy_by_dimension.get(dimension) or {}
+        for item in drift.get("targets") or []:
+            target_rows.append([
+                _text(dimension),
+                _text(policy.get("effective_from")),
+                _text(policy.get("version")),
+                Paragraph(_text(item.get("key")), styles["SmallNote"]),
+                _text(item.get("actual_weight_pct")),
+                _text(item.get("min_pct")) + "–" + _text(item.get("max_pct")) + " · target " + _text(item.get("target_pct")),
+                _text(item.get("drift_percentage_points")),
+                _text(item.get("status")),
+            ])
+    if len(target_rows) == 1:
+        target_rows.append(["No saved target policy", "—", "—", "—", "—", "—", "—", "—"])
+    story.extend([
+        Paragraph("Target policy and allocation drift", styles["SectionHeading"]),
+        Paragraph(
+            "Saved policy dimensions: " + _text(len(policy_by_dimension))
+            + " · Versions are immutable; drift is withheld when valuation does not reconcile.",
+            styles["SmallNote"],
+        ),
+        _table(target_rows, [20 * mm, 20 * mm, 12 * mm, 38 * mm, 17 * mm, 31 * mm, 14 * mm, 20 * mm]),
+    ])
+
     overlap = report.get("overlap_intelligence") or {}
     duplication = overlap.get("portfolio_duplication") or {}
     overlap_rows = [["Fund A", "Fund B", "Common ISINs", "Overlap INR", "% of A", "% of B", "Status"]]
