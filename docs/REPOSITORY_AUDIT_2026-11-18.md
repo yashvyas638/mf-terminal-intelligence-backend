@@ -45,6 +45,7 @@ The repository blueprint includes `unset MIGRATION_DATABASE_URL` before Uvicorn,
 - Revision 0029 deliberately fails closed unless the migration identity can alter default privileges for every role with CREATE on `public`. The current inspected `postgres` identity cannot manage `supabase_admin` defaults.
 - Do not bypass this check, grant unsupported role membership, or apply 0030 independently.
 - No production Alembic migration was applied during this audit.
+- The Supabase CLI migration-history listing and Alembic's `public.alembic_version` are separate migration systems; do not treat a Supabase CLI migration record as proof that the Alembic chain advanced.
 
 ### Backup and recovery
 
