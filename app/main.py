@@ -3428,8 +3428,10 @@ def create_portfolio_report_snapshot(
             if code:
                 latest = db.execute(
                     select(NavObservation)
-                    .where(NavObservation.scheme_code == code)
-                    .order_by(desc(NavObservation.nav_date))
+                    .where(
+                        NavObservation.scheme_code == code,
+                        NavObservation.nav_date == date.fromisoformat(nav_date) if nav_date else False,
+                    )
                     .limit(1)
                 ).scalar_one_or_none()
                 if latest is not None:
