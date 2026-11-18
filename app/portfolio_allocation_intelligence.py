@@ -24,7 +24,6 @@ HUNDRED = Decimal("100")
 def allocation_dimension_key(dimension: str, scheme: Mapping[str, Any]) -> str:
     """Return the same canonical bucket key used by portfolio allocation analytics."""
     from app.fund_taxonomy import (
-        SCHEME_GROUP_ASSET_CLASS,
         canonical_asset_class,
         canonical_group,
         canonical_subcategory,
@@ -34,7 +33,7 @@ def allocation_dimension_key(dimension: str, scheme: Mapping[str, Any]) -> str:
     if dimension == "ASSET_CLASS":
         return canonical_asset_class(group, scheme.get("asset_class")) or "UNCLASSIFIED"
     if dimension == "CATEGORY":
-        return SCHEME_GROUP_ASSET_CLASS.get(group or "") or group or "UNCLASSIFIED"
+        return group or "UNCLASSIFIED"
     if dimension == "SUB_CATEGORY":
         return canonical_subcategory(group, scheme.get("category")) or "UNCLASSIFIED"
     if dimension == "AMC":
