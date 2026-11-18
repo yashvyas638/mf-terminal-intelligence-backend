@@ -740,3 +740,18 @@ Commits:
 - `596c31d` — Correct overlap PDF regression fixture.
 
 **Validation:** source and regression tests are committed. Exact latest-head CI remains required; no local test pass is claimed. No merge, deployment or production data change.
+
+
+### TWT monthly risk-window type integrity — 2026-11-18
+
+A risk-comparison edge case allowed a valid integer lookback on the previous snapshot to compare against a boolean or float on the current snapshot when Python equality considered the values equal (for example, `1 == True` or `365 == 365.0`). Risk deltas must use the same explicitly typed positive integer window on both snapshots.
+
+- Both previous and current lookback values must now be positive integers and must not be booleans.
+- Comparability is withheld when either side uses a boolean, float, missing, non-positive or different window.
+- Added regressions for the mixed boolean/integer and float/integer equality edge cases.
+
+Commits:
+- `47cd5fa` — Validate both monthly risk lookback window types.
+- `99f3509` — Test mixed monthly risk lookback value types.
+
+**Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
