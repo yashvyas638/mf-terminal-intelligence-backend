@@ -75,6 +75,7 @@ from app.portfolio_allocation_intelligence import (
     amc_concentration,
     contribution_plan_preview,
     holdings_overlap_matrix,
+    holdings_disclosure_coverage,
     market_cap_allocation,
     parse_market_cap_classification_csv,
     portfolio_allocation,
@@ -5257,18 +5258,19 @@ def portfolio_fund_overlap_matrix(
             rows = db.execute(
                 select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
             ).scalars().all()
+            holding_rows = [{
+                "security_id": row.security_id,
+                "is_isin": row.is_isin,
+                "weight_pct": str(row.weight_pct),
+            } for row in rows]
             funds.append({
                 "scheme_code": str(scheme_code),
                 "scheme_name": scheme.scheme_name if scheme else str(scheme_code),
                 "portfolio_value_inr": str(item["market_value"]),
-                "disclosure_coverage_pct": None,
+                "disclosure_coverage_pct": holdings_disclosure_coverage(holding_rows),
                 "disclosure_as_of_date": disclosure.as_of_date.isoformat(),
                 "disclosure_age_days": age_days,
-                "holdings": [{
-                    "security_id": row.security_id,
-                    "is_isin": row.is_isin,
-                    "weight_pct": str(row.weight_pct),
-                } for row in rows],
+                "holdings": holding_rows,
             })
     result = holdings_overlap_matrix(funds)
     result["portfolio_id"] = portfolio_id
