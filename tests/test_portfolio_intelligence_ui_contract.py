@@ -65,6 +65,7 @@ def test_allocation_policy_and_lookthrough_endpoints_are_wired_to_refresh():
     assert "loadAllocationIntelligence(id)" in js
     assert "loadOverlapAndMarketCap(id)" in js
     assert "loadMonthlyComparison(id)" in js
+    assert 'target_drift:"Target drift · pp"' in js
     assert 'api("/v1/portfolios/"+id+"/allocation")' in js
     assert 'api("/v1/portfolios/"+id+"/overlap-matrix")' in js
     assert 'api("/v1/portfolios/"+id+"/market-cap-allocation")' in js
