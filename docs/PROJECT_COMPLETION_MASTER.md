@@ -1,7 +1,7 @@
 # MF Terminal — Project Completion Master
 
 Last audited: 2026-11-18  
-Scope of this execution: **TWT Mutual Fund Allocation Report — October 2026**  
+Scope of this execution: **TWT Mutual Fund Allocation Report — October 2026, plus Smart SIP and contribution-routing backend hardening**  
 Working branch: `ui/portfolio-intelligence`  
 Pull request: [#135](https://github.com/yashvyas638/mf-terminal-intelligence-backend/pull/135)  
 Release boundary: isolated branch only; no merge, production migration, production data write, or Render deployment.
@@ -50,7 +50,7 @@ The requested path `docs/PROJECT_COMPLETION_MASTER.md` did not exist in the insp
 ## Explicit non-goals
 
 - No UI polish, redesign, visual refresh or duplicate dashboard.
-- No Smart SIP expansion or automated contribution execution.
+- No automated contribution execution. Smart SIP remains an evidence-gated, non-executing preview; this follow-up adds backend budget/routing guardrails only.
 - No recommendation to buy, sell, switch or copy another investor's portfolio.
 - No production database migration, production data import, secret change, deployment or PR merge.
 
@@ -229,3 +229,40 @@ Commits:
 - `8e8f4e4` — Keep TWT monthly test imports lint compliant.
 
 Validation remains pending for the latest exact branch head. CI must pass SQLite, PostgreSQL, lint and the AMFI read-only validation jobs.
+
+
+## Smart SIP, contribution routing and database integrity follow-up — 2026-11-18
+
+**Scope:** backend only. Reuse the existing Smart SIP engine, target policy, contribution preview and API routes. No duplicate engine, UI redesign, production migration, deployment or transaction execution.
+
+### Changes committed to `ui/portfolio-intelligence`
+
+- Allocation target ownership is now enforced by a composite database foreign key from `(portfolio_id, owner_user_id)` to the matching portfolio identity. Migration `0032_target_owner_fk` preflights existing rows and aborts on missing parents or owner mismatches before adding the constraint.
+- Contribution preview accepts an optional explicit total contribution ceiling (`max_contribution_inr`) and a per-bucket post-weight ceiling (`max_post_weight_pct`). Requests exceeding the approved total ceiling fail with HTTP 422; the weight ceiling can only tighten the saved target.
+- Any unallocated contribution is now represented explicitly as `__UNALLOCATED_CASH__` in the post-contribution allocation so the displayed weights reconcile to 100% instead of silently omitting cash.
+- Smart SIP approval now requires both the approval flag and a positive INR amount. A bare approval boolean is not treated as a usable additional-contribution budget.
+- Added calculation tests for risk ceilings, over-budget rejection and unallocated-cash reconciliation; database tests for mismatched portfolio ownership; API tests for contribution caps/no transaction writes and Smart SIP budget approval.
+
+### Commits in this follow-up
+
+- `8baed9f` — Enforce portfolio target owner consistency in the ORM model.
+- `690ca9c` — Add composite owner foreign-key migration `0032_target_owner_fk`.
+- `5db7122` — Test database rejection of mismatched target ownership.
+- `b54a4d4` — Add contribution budget/weight ceilings and cash reconciliation.
+- `bc98de3` — Expose contribution risk caps and require a Smart SIP INR budget.
+- `99d28eb` — Test contribution risk caps and cash reconciliation.
+- `d3dfd4f` — Test Smart SIP explicit budget approval.
+- `be3aacb` — Add contribution API tests for risk caps and preview-only behaviour.
+
+### Validation status and remaining constraints
+
+- [ ] Full SQLite CI on the exact latest PR head.
+- [ ] Full PostgreSQL CI including migration 0032 on the exact latest PR head.
+- [ ] Confirm the database mismatch-owner regression fails without the new composite FK and passes with migration 0032.
+- [ ] Confirm the contribution API test returns HTTP 422 above the approved cap and never writes a transaction.
+- [ ] Review migration 0032 against a PostgreSQL database with existing allocation target rows; production remains read-only until separately approved.
+- [ ] Add cross-dimension routing constraints before describing the planner as a full fund-level optimiser. The current preview evaluates one saved dimension at a time; it does not combine AMC, scheme, sector, security, liquidity or tax constraints across dimensions.
+- [ ] Wire the new INR budget input into the UI in a separate UI task. Until then, a boolean-only Smart SIP approval intentionally remains ineligible for an additional top-up.
+- [ ] Review rounding-boundary cases where a very small target deficit is below one paisa; the contribution planner must never exceed the configured cap because of residual rounding.
+
+**Current disposition:** implementation and regression tests committed; CI was queued at the latest observed head and is not yet a pass. Smart SIP remains preview-only, and no buy order, SIP mandate, portfolio transaction or cash movement is created.
