@@ -74,7 +74,6 @@ from app.portfolio_allocation_intelligence import (
     amc_concentration,
     contribution_plan_preview,
     holdings_overlap_matrix,
-    market_cap_allocation,
     portfolio_allocation,
 )
 from app.reporting import build_portfolio_report_pdf
@@ -5149,7 +5148,10 @@ def get_portfolio_allocation_drift(
         "max_pct": str(row.max_pct),
         "actual_value_inr": str(actual.get(row.target_key, Decimal("0"))),
     } for row in targets]
-    result = allocation_drift(payload, portfolio_value_inr=total)
+    try:
+        result = allocation_drift(payload, portfolio_value_inr=total)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     result.update({
         "portfolio_id": portfolio_id,
         "dimension": dimension,
@@ -5188,11 +5190,14 @@ def preview_portfolio_contribution_plan(
         "max_pct": str(row.max_pct),
         "actual_value_inr": str(actual.get(row.target_key, Decimal("0"))),
     } for row in targets]
-    result = contribution_plan_preview(
-        target_inputs,
-        portfolio_value_inr=total,
-        contribution_inr=payload.contribution_inr,
-    )
+    try:
+        result = contribution_plan_preview(
+            target_inputs,
+            portfolio_value_inr=total,
+            contribution_inr=payload.contribution_inr,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     result.update({
         "portfolio_id": portfolio_id,
         "dimension": payload.dimension,
