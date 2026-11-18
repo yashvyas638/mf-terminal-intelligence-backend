@@ -479,7 +479,11 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                 return None
             scheme_a = str(row.get("scheme_a") or "").strip()
             scheme_b = str(row.get("scheme_b") or "").strip()
-            if not scheme_a or not scheme_b or scheme_a == scheme_b:
+            overlap_amount = _decimal(row.get("overlap_inr"))
+            if (
+                not scheme_a or not scheme_b or scheme_a == scheme_b
+                or overlap_amount is None or overlap_amount < 0
+            ):
                 return None
             pair = dict(row)
             if scheme_a > scheme_b:
