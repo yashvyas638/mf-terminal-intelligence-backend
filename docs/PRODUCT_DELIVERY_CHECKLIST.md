@@ -49,3 +49,42 @@ This is the release-control checklist for the nine product capabilities requeste
 - Live Supabase signup/login/email delivery and deployed browser E2E are not yet verified. Latest live-provider browser flows, report downloads and user-facing UI remain release-gated. The connected project audit found owner-scoped RLS policies on portfolio tables; the four RLS-enabled/no-policy INFO findings (migration metadata, ingestion snapshots, NAV corrections and backfill checkpoints) have no grants to anon/authenticated/PUBLIC, so they remain closed to client roles.
 - Latest NAV ingestion and parser fixtures exist. Historical date-window planning, checkpoint schema, atomic persistence and an isolated bounded HTTP adapter now exist. Adapter HTTP tests use mocks; the official AMFI historical request contract is still not live-validated and production backfill is not enabled.
 - Fund Explorer has classification filters and pagination. Per-user watchlists and global metric-ranked screener APIs are implemented; ranking is across all matching stored snapshots before pagination. Daily research snapshot refresh is wired after NAV ingestion, but a production refresh run and sufficient history are still unverified.
+
+
+## TWT mutual-fund allocation report — implementation audit (2026-11-18)
+
+The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch. This delivery checklist is the available product-level master tracker and is updated here rather than creating a second competing tracker.
+
+### Verified existing foundations
+
+- **Scheme allocation:** the Portfolio Intelligence page calculates scheme weights from current market value when valuation is complete. Incomplete valuation suppresses the weight display.
+- **Underlying holdings / sector look-through:** the owner-scoped `GET /v1/portfolios/{id}/lookthrough` endpoint uses only VERIFIED disclosures, reports missing/stale disclosure coverage, aggregates ISIN securities and sectors, and returns a security-concentration object. It is not a market-cap report.
+- **Overlap foundation:** the allocation-intelligence specification documents a pairwise common-ISIN overlap engine. The current portfolio UI does not expose a portfolio-wide overlap matrix or weighted duplication view.
+- **Snapshots and PDF:** owner-scoped immutable portfolio report snapshots, SHA-256 integrity verification, report history and server-side PDF export exist. These are general portfolio reports, not yet the complete TWT allocation report.
+- **Responsive baseline:** the Portfolio Intelligence stylesheet has breakpoints at 1100px, 760px and 480px. Static DOM audit found 48 unique IDs, no duplicate IDs and no missing IDs referenced by its JavaScript. This is not a substitute for browser/device E2E.
+
+### Fixes committed on `audit/production-foundation`
+
+- `2e73dd962afdc07f8bd63d126c3c522bd86402ac` — corrected look-through concentration percentages. API values are already percentage points; the UI had divided ISIN coverage and top-1/5/10 weights by 100, displaying values 100 times too small. Also corrected the diagnosis panel to read `security_concentration`, the actual API response key.
+- `68312f997ec181b6b336d4ec53bcf1eeced7305b` — added regression assertions for those rendering contracts.
+- `44074b9b21c6cb0376f2cd83edf5c2709b338bc2` — corrected PDF holding rows to derive weights from the complete portfolio value and read the actual `nav_freshness` field. Weights remain withheld for incomplete valuation.
+- `f5c18188ab13b0a268386e36bd26c3d5266075f7` — added PDF regression tests for complete/incomplete valuation, invalid inputs and PDF signature.
+
+### Remaining TWT acceptance gates
+
+| Capability | Status | Evidence still required |
+|---|---|---|
+| Fund / segment / category allocation | Partial | Add category and segment rollups with both total-portfolio weight and within-segment contribution; reconcile to portfolio value and verified classification coverage. |
+| Underlying market-cap look-through | Not implemented | No effective-dated, source-hashed security market-cap classification pipeline or large/mid/small/unclassified portfolio aggregation was found in the candidate API. Do not infer market cap from scheme category. |
+| Fund overlap | Partial foundation | Add owner-scoped portfolio overlap matrix, common-security detail, matched-ISIN coverage, disclosure dates and a tested non-double-counting portfolio duplication metric. |
+| AMC concentration | Not implemented | Add verified AMC mapping and market-value-weighted AMC exposure, top-1/3/5, HHI and effective AMC count. |
+| Month-on-month comparison | Not implemented | Add comparable monthly snapshots and flow/market-movement/source-refresh attribution; the current monthly review screen is a framework, not a comparison engine. |
+| TWT report rendering / PDF | Partial | Build the dedicated report from the above metrics, align on-screen and PDF values, include provenance/coverage/limitations and test real multi-page exports. Current PDF is a general portfolio report. |
+| Responsive / browser verification | Partial | Static checks only. Run authenticated browser E2E at desktop, tablet and mobile widths, including empty, partial, stale and failed API states. |
+
+### Validation and release boundary
+
+- The latest commits above are on `audit/production-foundation`; no changes were made to `main`, production data, secrets or Render configuration.
+- The branch is substantially divergent from `main` (comparison observed 631 commits ahead and 57 behind). Do not merge the entire branch without a deliberate reconciliation plan.
+- The connected GitHub status endpoint returned no status checks for the latest fix commit, and the available workflow-run lookup returned no PR-triggered runs. The test files have been committed, but execution of the new tests and full SQLite/PostgreSQL CI is **not yet verified**.
+- Live Supabase/Auth, real disclosure coverage, actual browser downloads and production PDF rendering remain unverified. No production deployment is authorised by this audit.
