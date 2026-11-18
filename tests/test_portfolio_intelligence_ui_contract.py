@@ -126,6 +126,17 @@ def test_portfolio_intelligence_cache_keys_and_lookthrough_diagnosis_match_api_c
     assert 'l.security_concentration?.isin_identity_coverage_pct' in js
     assert 'l.concentration?.isin_identity_coverage_pct' not in js
 
+
+def test_monthly_target_drift_renderer_uses_percentage_point_fields():
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+
+    assert 'if(key==="target_drift")' in js
+    assert 'metrics.drift_percentage_points' in js
+    assert 'metrics.actual_weight_pct' in js
+    assert 'metricPp(drift.change_percentage_points)' in js
+    assert 'Target drift · pp' in js
+
+
 def test_lookthrough_percentages_are_not_divided_twice_before_display():
     js = Path("app/static/portfolio-intelligence.js").read_text()
 
