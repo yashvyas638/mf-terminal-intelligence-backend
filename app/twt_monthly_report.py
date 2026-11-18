@@ -82,7 +82,11 @@ def _compare(
             if field.endswith("_inr") or field in {"market_value", "lookthrough_value"}:
                 metric["change_inr"] = str(change) if change is not None else None
             metrics[field] = metric
-        items.append({"key": key, "metrics": metrics})
+        items.append({
+            "key": key,
+            "presence_status": "NEW" if before is None else "EXITED" if after is None else "CONTINUING",
+            "metrics": metrics,
+        })
     return {"status": "COMPARABLE", "items": items}
 
 
@@ -148,6 +152,18 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
 
     old_overlap = old_report.get("overlap_intelligence") or {}
     new_overlap = new_report.get("overlap_intelligence") or {}
+    old_pairs, new_pairs = old_overlap.get("pairs"), new_overlap.get("pairs")
+    if old_overlap.get("status") == "AVAILABLE" and new_overlap.get("status") == "AVAILABLE" and isinstance(old_pairs, list) and isinstance(new_pairs, list):
+        old_pairs = [{**row, "pair_key": str(row.get("scheme_a")) + ":" + str(row.get("scheme_b"))} for row in old_pairs]
+        new_pairs = [{**row, "pair_key": str(row.get("scheme_a")) + ":" + str(row.get("scheme_b"))} for row in new_pairs]
+        comparisons["overlap_pairs"] = _compare(
+            old_pairs,
+            new_pairs,
+            key_field="pair_key",
+            value_fields=("overlap_inr", "overlap_pct_of_scheme_a_nav", "overlap_pct_of_scheme_b_nav"),
+        )
+    else:
+        comparisons["overlap_pairs"] = {"status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE", "items": []}
     old_dup = old_overlap.get("portfolio_duplication") or {}
     new_dup = new_overlap.get("portfolio_duplication") or {}
     old_dup_value = _decimal(old_dup.get("duplicated_exposure_inr"))
