@@ -718,3 +718,25 @@ Commits:
 - `c948a4b` — Test immutable target-band snapshot consistency.
 
 **Validation:** changes and regression coverage are committed. Exact latest-head CI remains pending; no test pass is claimed. No merge, deployment, production migration or production data change.
+
+
+### TWT PDF completeness and withheld-metric visibility — 2026-11-18
+
+A PDF acceptance pass found two presentation/data-integrity gaps:
+
+- The scheme allocation PDF table silently truncated portfolios after 40 schemes. It now renders every scheme in the immutable report snapshot; the table paginates rather than omitting the remaining scheme rows.
+- Monthly PDF row status previously reflected only the INR metric. A percentage-point metric could be withheld as invalid while the row still displayed `COMPARABLE`. The displayed row status now reflects all included metrics (including both directional overlap denominators).
+
+Regression coverage:
+- A 45-scheme fixture asserts all 45 schemes reach the PDF table.
+- A monthly row fixture asserts invalid percentage-point evidence is visibly withheld even when INR remains comparable.
+- Existing overlap PDF fixture now supplies explicit status for both directional metrics.
+
+Commits:
+- `c045c88` — Include every scheme in TWT allocation PDF.
+- `608104c` — Test PDF portfolios above 40 schemes.
+- `44f6003` — Show withheld monthly metric status in PDF.
+- `3f8c75f` — Test withheld monthly metric status visibility.
+- `596c31d` — Correct overlap PDF regression fixture.
+
+**Validation:** source and regression tests are committed. Exact latest-head CI remains required; no local test pass is claimed. No merge, deployment or production data change.
