@@ -337,3 +337,20 @@ Current validation: CI runs on the branch have been queued in GitHub Actions; th
 - Added a regression test for the infeasible risk-policy case.
 - Commits: `0be261e` (reject conflicting ceiling/minimum policy), `ee1d583` (test infeasible risk-policy rejection).
 - CI for the exact current head remains pending.
+
+
+## Monthly comparison UI contract fix — 2026-11-18
+
+The frontend monthly comparison renderer was still reading the previous flat API shape (`previous_value`, `current_value`, `change`) while the current backend returns nested metric objects (`row.metrics`, `previous`, `current`, `change_inr`, `change_percentage_points`). This would have rendered blank or misleading monthly comparison rows despite correct backend calculations.
+
+- Reworked `renderMonthlyComparison` to consume nested metric objects and show INR deltas separately from percentage-point deltas.
+- Added scheme, sub-category and pairwise overlap sections; added portfolio value, duplication, AMC concentration, data coverage and risk summaries.
+- Added DOM contract regression assertions for the nested monthly comparison response shape.
+- Restored the exact allocation heading string expected by the existing PDF contract test.
+
+Commits:
+- `d129d53` — Render nested TWT monthly comparison metrics correctly in UI.
+- `b50a4d4` — Preserve TWT PDF section heading contract.
+- `ae21eb0` — Guard TWT monthly comparison UI against API metric shape drift.
+
+Current head validation is pending. CI must pass JavaScript validation, UI contract tests, PDF tests, SQLite and PostgreSQL suites.
