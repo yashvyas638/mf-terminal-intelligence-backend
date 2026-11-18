@@ -236,6 +236,25 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
             _table(segment_rows, [68 * mm, 38 * mm, 35 * mm, 24 * mm]),
         ])
 
+    overlap = report.get("holdings_overlap") or {}
+    overlap_rows = [["Fund A", "Fund B", "Overlap", "Common ISINs", "Status"]]
+    fund_names = {item.get("scheme_code"): item.get("scheme_name") for item in overlap.get("funds") or []}
+    for item in overlap.get("pairs") or []:
+        overlap_rows.append([
+            Paragraph(_text(fund_names.get(item.get("scheme_a"), item.get("scheme_a"))), styles["SmallNote"]),
+            Paragraph(_text(fund_names.get(item.get("scheme_b"), item.get("scheme_b"))), styles["SmallNote"]),
+            _text(item.get("overlap_pct")) + ("%" if item.get("overlap_pct") is not None else ""),
+            _text(item.get("common_isin_count")),
+            _text(item.get("status")),
+        ])
+    if len(overlap_rows) == 1:
+        overlap_rows.append(["No comparable fund pairs", "—", "—", "—", _text(overlap.get("status") or "NOT_AVAILABLE")])
+    story.extend([
+        Paragraph("Portfolio-wide fund overlap", styles["SectionHeading"]),
+        Paragraph("Pairwise overlap is calculated from common positive-weight ISINs using the lower scheme weight. Pairwise percentages are not additive; a security held by three funds appears in three pairs.", styles["SmallNote"]),
+        _table(overlap_rows, [43 * mm, 43 * mm, 25 * mm, 25 * mm, 27 * mm]),
+    ])
+
     market_cap = lookthrough.get("market_cap_allocation") or {}
     story.extend([
         Paragraph("Market-cap look-through", styles["SectionHeading"]),
