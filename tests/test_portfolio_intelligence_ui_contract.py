@@ -63,3 +63,12 @@ def test_portfolio_intelligence_renders_amc_and_classification_allocations():
     assert 'd.category_allocation||[]' in js
     assert 'd.asset_class_allocation||[]' in js
     assert 'top_3_weight_of_observed_pct' in js
+
+
+def test_monthly_review_is_loaded_and_shows_explicit_insufficient_history_state():
+    html = Path("app/static/portfolio-intelligence.html").read_text()
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    assert 'id="monthlyReview"' in html
+    assert '"/monthly-review"' in js
+    assert 'INSUFFICIENT_MONTHLY_SNAPSHOTS' in js
+    assert 'change_percentage_points' in js
