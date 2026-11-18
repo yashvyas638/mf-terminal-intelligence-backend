@@ -48,7 +48,19 @@ def select_latest_distinct_months(
         period = _period_key(report)
         if period and period not in selected:
             selected[period] = {**snapshot, "period": period}
-    return sorted(selected.values(), key=lambda item: item["period"], reverse=True)[:2]
+    ordered = sorted(selected.values(), key=lambda item: item["period"], reverse=True)[:2]
+    if len(ordered) == 2:
+        latest_month = date.fromisoformat(ordered[0]["period"] + "-01")
+        previous_month = date.fromisoformat(ordered[1]["period"] + "-01")
+        expected_previous = (
+            date(latest_month.year - 1, 12, 1)
+            if latest_month.month == 1
+            else date(latest_month.year, latest_month.month - 1, 1)
+        )
+        # Do not label a multi-month gap as month-on-month movement.
+        if previous_month != expected_previous:
+            return ordered[:1]
+    return ordered
 
 
 def _decimal(value: Any) -> Decimal | None:
