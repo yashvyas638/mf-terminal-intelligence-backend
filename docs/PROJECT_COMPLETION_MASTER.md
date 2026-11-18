@@ -611,3 +611,19 @@ Commits:
 - `d2c31a7` — Fail closed on any inconsistent AMC source metric.
 
 **Validation:** implementation and regression tests are committed. GitHub Actions has not reported a run or completed status for the exact latest head; no test pass is claimed. PR #135 remains open and draft. No merge, deployment, production migration or production data change was performed.
+
+### Look-through percentage display scaling — 2026-11-18
+
+A data-to-UI audit found that the backend already returns look-through concentration weights as percentage points (0–100), while the UI divided them by 100 before passing them to a formatter that does not multiply. This understated ISIN identity coverage and top-1/top-5/top-10 security concentration by 100x.
+
+- Removed the extra division for ISIN identity coverage and top-N observed-positive weights.
+- Bumped portfolio intelligence CSS/JS cache keys to `v=4` so clients cannot retain the previous renderer after deployment.
+- Added regression coverage for percentage scaling and the new asset cache key.
+
+Commits:
+- `c077170` — Correct look-through percentage display scaling.
+- `57b25da` — Test look-through percentage display scaling.
+- `fe9d494` — Refresh portfolio intelligence asset cache after UI fix.
+- `aea2ca0` — Assert latest portfolio intelligence asset cache key.
+
+Validation pending on exact latest branch SHA. No merge or deployment.
