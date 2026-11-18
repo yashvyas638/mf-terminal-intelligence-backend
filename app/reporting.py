@@ -273,7 +273,10 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
             "Status: " + _text(allocation_intelligence.get("status"))
             + " · Valuation as of: " + _text(allocation_intelligence.get("valuation_date"))
             + " · Schemes: " + _text(allocation.get("scheme_count"))
-            + " · Unclassified schemes: " + _text((allocation.get("data_quality") or {}).get("unclassified_scheme_count")),
+            + " · Unclassified schemes: " + _text((allocation.get("data_quality") or {}).get("unclassified_scheme_count"))
+            + " · Unclassified value INR: " + _text((allocation.get("data_quality") or {}).get("unclassified_market_value_inr"))
+            + " · Unclassified weight: " + _text((allocation.get("data_quality") or {}).get("unclassified_weight_pct"))
+            + " · Fresh NAV coverage: " + _text((allocation_intelligence.get("evidence") or {}).get("nav_coverage", {}).get("fresh_nav_coverage_pct")),
             styles["SmallNote"],
         ),
         _table(allocation_rows, [49 * mm, 34 * mm, 34 * mm, 25 * mm, 20 * mm]),
@@ -298,7 +301,9 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         Paragraph(
             "AMC HHI: " + _text(amc.get("hhi_points"))
             + " · Effective AMC count: " + _text(amc.get("effective_amc_count"))
-            + " · Top 3 AMC share: " + _text(amc.get("top_3_amc_weight_pct")),
+            + " · Top 1 / 3 / 5 AMC share: " + _text(amc.get("top_1_amc_weight_pct"))
+            + " / " + _text(amc.get("top_3_amc_weight_pct"))
+            + " / " + _text(amc.get("top_5_amc_weight_pct")),
             styles["SmallNote"],
         ),
         _table(amc_rows, [75 * mm, 45 * mm, 42 * mm]),
