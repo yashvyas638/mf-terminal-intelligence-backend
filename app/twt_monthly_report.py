@@ -231,7 +231,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
 
     # Target drift is comparable only when the exact same immutable policy
     # version applies in both months. A changed policy is not portfolio drift.
-    def target_drift_rows(report: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
+    def target_drift_rows(report: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[str, str]]] | None:
         policies = (report.get("target_policy_snapshot") or {}).get("dimensions")
         snapshots = report.get("target_drift_snapshot")
         if not isinstance(policies, list) or not isinstance(snapshots, dict):
@@ -252,6 +252,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         if set(snapshots) != set(policy_by_dimension):
             return None
         result: dict[str, dict[str, Any]] = {}
+        policy_identity: dict[str, tuple[str, str]] = {}
         for dimension, drift in snapshots.items():
             if not isinstance(drift, dict) or drift.get("status") != "AVAILABLE":
                 return None
@@ -262,6 +263,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                     or str(policy.get("version")) != str(version)
                     or str(policy.get("effective_from")) != str(effective_from)):
                 return None
+            policy_identity[dimension] = (str(version), str(effective_from))
             targets = drift.get("targets")
             if not isinstance(targets, list) or not targets:
                 return None
@@ -325,7 +327,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
             if (seen != policy_keys or abs(weight_total - Decimal("100")) > Decimal("0.05")
                     or abs(preferred_total - Decimal("100")) > Decimal("0.05")):
                 return None
-        return result if result else None
+        return (result, policy_identity) if result else None
 
     old_target_rows = target_drift_rows(old_report)
     new_target_rows = target_drift_rows(new_report)
@@ -335,7 +337,13 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
             "items": [],
             "reason": "Target drift requires complete, reconciled snapshots under the same immutable policy version and effective date.",
         }
-    elif set(old_target_rows) != set(new_target_rows):
+    elif old_target_rows[1] != new_target_rows[1]:
+        comparisons["target_drift"] = {
+            "status": "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH",
+            "items": [],
+            "reason": "Target policy version or effective date changed between snapshots; policy changes cannot be reported as portfolio drift.",
+        }
+    elif set(old_target_rows[0]) != set(new_target_rows[0]):
         comparisons["target_drift"] = {
             "status": "WITHHELD_TARGET_SET_CHANGED",
             "items": [],
@@ -343,7 +351,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         }
     else:
         target_comparison = _compare(
-            list(old_target_rows.values()), list(new_target_rows.values()),
+            list(old_target_rows[0].values()), list(new_target_rows[0].values()),
             key_field="key", value_fields=("actual_weight_pct", "drift_percentage_points"),
         )
         for item in target_comparison.get("items", []):
