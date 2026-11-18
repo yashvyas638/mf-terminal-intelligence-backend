@@ -3313,6 +3313,32 @@ def create_portfolio_report_snapshot(
         market_cap_intelligence = get_portfolio_market_cap_allocation(portfolio_id, 180, 180)
     except HTTPException as exc:
         market_cap_intelligence = {"status": "WITHHELD", "message": str(exc.detail)}
+    try:
+        target_policy_snapshot = get_portfolio_allocation_targets(portfolio_id)
+    except HTTPException as exc:
+        target_policy_snapshot = {"status": "WITHHELD", "message": str(exc.detail), "dimensions": []}
+    target_drift_snapshot = {}
+    for policy in target_policy_snapshot.get("dimensions", []):
+        dimension = policy.get("dimension")
+        if dimension not in {"ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"}:
+            continue
+        try:
+            drift = get_portfolio_allocation_drift(portfolio_id, dimension)
+            if drift.get("valuation_date") != valuation.get("valuation_date") or Decimal(str(drift.get("portfolio_value_inr"))) != Decimal(str(valuation.get("current_value"))):
+                drift = {
+                    "status": "WITHHELD_SNAPSHOT_MISMATCH",
+                    "message": "Target drift valuation did not match the primary report valuation snapshot.",
+                    "effective_from": policy.get("effective_from"),
+                    "target_version": policy.get("version"),
+                }
+            target_drift_snapshot[dimension] = drift
+        except HTTPException as exc:
+            target_drift_snapshot[dimension] = {
+                "status": "WITHHELD",
+                "message": str(exc.detail),
+                "effective_from": policy.get("effective_from"),
+                "target_version": policy.get("version"),
+            }
 
     # Derived sections query the same latest NAV store independently. Compare
     # their valuation anchors before freezing the report; never combine
@@ -3454,6 +3480,8 @@ def create_portfolio_report_snapshot(
             "allocation_intelligence": allocation_intelligence,
             "overlap_intelligence": overlap_intelligence,
             "market_cap_intelligence": market_cap_intelligence,
+            "target_policy_snapshot": target_policy_snapshot,
+            "target_drift_snapshot": target_drift_snapshot,
             "snapshot_consistency": {
                 "baseline_valuation_value_inr": str(baseline_value),
                 "baseline_valuation_date": baseline_date,
