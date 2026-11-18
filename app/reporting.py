@@ -231,11 +231,32 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         ])
     if len(security_rows) == 1:
         security_rows.append(["No verified look-through holdings", "—", "—", "—", "—", "—"])
+    lookthrough_coverage = lookthrough.get("coverage") or {}
+    nav_coverage = (report.get("allocation_intelligence") or {}).get("evidence", {}).get("nav_coverage") or {}
     story.extend([
         Paragraph("Underlying holdings look-through", styles["SectionHeading"]),
         Paragraph(
-            "Coverage: " + _text((lookthrough.get("coverage") or {}).get("status"))
-            + " · Fresh covered weight: " + _text((lookthrough.get("coverage") or {}).get("fresh_covered_weight_pct")),
+            "Disclosure coverage: " + _text(lookthrough_coverage.get("status"))
+            + " · Covered value INR: " + _text(lookthrough_coverage.get("covered_market_value"))
+            + " · Fresh covered value INR: " + _text(lookthrough_coverage.get("fresh_covered_market_value"))
+            + " · Stale covered value INR: " + _text(lookthrough_coverage.get("stale_covered_market_value"))
+            + " · Covered weight: " + _text(lookthrough_coverage.get("covered_weight_pct"))
+            + " · Fresh covered weight: " + _text(lookthrough_coverage.get("fresh_covered_weight_pct")),
+            styles["SmallNote"],
+        ),
+        Paragraph(
+            "Disclosure gaps: missing " + _text(len(lookthrough_coverage.get("missing_disclosure_scheme_codes") or []))
+            + " schemes · stale " + _text(len(lookthrough_coverage.get("stale_disclosure_scheme_codes") or []))
+            + " schemes · missing NAV " + _text(len(lookthrough_coverage.get("missing_nav_scheme_codes") or []))
+            + " schemes · stale NAV " + _text(len(lookthrough_coverage.get("stale_nav_scheme_codes") or []))
+            + " schemes",
+            styles["SmallNote"],
+        ),
+        Paragraph(
+            "NAV freshness: " + _text(nav_coverage.get("fresh_nav_scheme_count"))
+            + " / " + _text(nav_coverage.get("active_scheme_count"))
+            + " active schemes fresh (" + _text(nav_coverage.get("fresh_nav_coverage_pct"))
+            + "%) · Maximum allowed NAV age: " + _text(nav_coverage.get("maximum_allowed_nav_age_days")) + " days",
             styles["SmallNote"],
         ),
         _table(security_rows, [44 * mm, 25 * mm, 31 * mm, 24 * mm, 22 * mm, 12 * mm]),
@@ -403,8 +424,16 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         Paragraph("Underlying market-cap allocation", styles["SectionHeading"]),
         Paragraph(
             "Status: " + _text(market_cap.get("status"))
+            + " · Classified exposure INR: " + _text(market_cap.get("classified_exposure_inr"))
+            + " / Positive look-through INR: " + _text(market_cap.get("positive_lookthrough_exposure_inr"))
             + " · Classified coverage: " + _text(market_cap.get("classified_coverage_of_positive_lookthrough_pct"))
+            + " · Unclassified exposure INR: " + _text(market_cap.get("unclassified_exposure_inr"))
             + " · As of: " + _text(market_cap.get("as_of_date")),
+            styles["SmallNote"],
+        ),
+        Paragraph(
+            "Reconciliation: " + _text((market_cap.get("reconciliation") or {}).get("status"))
+            + " · Difference INR: " + _text((market_cap.get("reconciliation") or {}).get("difference_inr")),
             styles["SmallNote"],
         ),
         _table(market_cap_rows, [58 * mm, 35 * mm, 35 * mm, 35 * mm]),
