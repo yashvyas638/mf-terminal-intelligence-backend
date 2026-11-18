@@ -178,3 +178,22 @@ No production SQL writes were issued. SQL used for this audit was read-only SELE
 - The live service is configured for automatic deploys from `audit/production-foundation`. No Render environment or service settings were changed because this is production infrastructure and the required secret values are not available for safe configuration.
 - After the audit tracker commit, the PR branch continued receiving parallel commits. Latest subsequently observed PR #135 head: `2539941757fda3a38f5fbc790bbdd54f38b4b5d8`. CI run `44279169927` (CI) was still queued with PostgreSQL, SQLite and AMFI source-validation jobs queued. Do not mark current-head tests passed.
 - Audit evidence commit: `b8434b896ac91d16535b396d574f1eb6295c6724`. This commit adds the production-readiness audit section to this master tracker.
+
+
+## Month-end eligibility and comparison deduplication — 2026-11-18
+
+A branch audit found that the snapshot creation path had two overlapping monthly-comparison blocks after parallel edits. The later block overwrote the earlier result. This was consolidated into one owner-scoped prior-snapshot query and one comparison decision.
+
+- Month-end comparison eligibility is now explicit and shared through `is_month_end_valuation_date`: only valuation dates in the final seven calendar days of the month qualify.
+- `select_latest_distinct_months` excludes mid-month snapshots, so the monthly API cannot accidentally compare arbitrary mid-month reports.
+- Snapshot creation distinguishes `CURRENT_REPORT_NOT_MONTH_END`, `INSUFFICIENT_MONTHLY_SNAPSHOTS`, and `NOT_LATEST_VALUATION_MONTH`; it only freezes a comparison when the current report is an eligible month-end snapshot and a prior distinct month exists.
+- API regression fixture now uses two distinct month-end dates; boundary tests cover month-end, seven days before month-end, eight days before month-end and invalid dates.
+- Duplicate snapshot query/overwrite logic removed from `app/main.py`.
+
+Commits:
+- `d1d571f` — Consolidate frozen TWT comparison and enforce month-end eligibility.
+- `43ef2c7` — Test immutable TWT comparison using month-end valuation snapshots.
+- `aa78bfa` — Expose shared month-end eligibility rule for TWT snapshots.
+- `544933c` — Test month-end eligibility boundaries for TWT comparisons.
+
+Latest observed PR head for this batch: `544933cd19829e2b0951bf724756d2281e48af80`. CI run [#2064](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44279404527) was queued when checked; current-head tests are not yet marked passed.
