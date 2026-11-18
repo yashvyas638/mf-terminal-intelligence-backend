@@ -507,9 +507,31 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         comparisons["overlap_pairs"] = {"status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE", "items": []}
     old_dup = old_overlap.get("portfolio_duplication") or {}
     new_dup = new_overlap.get("portfolio_duplication") or {}
+
+    def duplication_snapshot_is_consistent(snapshot: dict[str, Any]) -> bool:
+        duplicated = _decimal(snapshot.get("duplicated_exposure_inr"))
+        gross = _decimal(snapshot.get("gross_positive_lookthrough_exposure_inr"))
+        share = _decimal(snapshot.get("duplicated_share_of_gross_positive_lookthrough_pct"))
+        if duplicated is None or gross is None or duplicated < 0 or gross < 0 or duplicated > gross:
+            return False
+        if gross == 0:
+            return duplicated == 0 and share is None
+        if share is None or not Decimal("0") <= share <= Decimal("100"):
+            return False
+        expected_share = duplicated / gross * Decimal("100")
+        return abs(expected_share - share) <= Decimal("0.05")
+
     old_dup_value = _decimal(old_dup.get("duplicated_exposure_inr"))
     new_dup_value = _decimal(new_dup.get("duplicated_exposure_inr"))
-    if old_overlap.get("status") == "AVAILABLE" and new_overlap.get("status") == "AVAILABLE" and old_dup_value is not None and new_dup_value is not None:
+    duplication_evidence_available = (
+        old_overlap.get("status") == "AVAILABLE"
+        and new_overlap.get("status") == "AVAILABLE"
+    )
+    duplication_evidence_invalid = not (
+        duplication_snapshot_is_consistent(old_dup)
+        and duplication_snapshot_is_consistent(new_dup)
+    )
+    if duplication_evidence_available and not duplication_evidence_invalid:
         comparisons["portfolio_duplication"] = {
             "status": "COMPARABLE",
             "previous_inr": str(old_dup_value),
@@ -518,7 +540,10 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         }
     else:
         comparisons["portfolio_duplication"] = {
-            "status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE",
+            "status": (
+                "WITHHELD_INVALID_SOURCE_VALUE" if duplication_evidence_invalid
+                else "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE"
+            ),
             "previous_inr": None,
             "current_inr": None,
             "change_inr": None,
