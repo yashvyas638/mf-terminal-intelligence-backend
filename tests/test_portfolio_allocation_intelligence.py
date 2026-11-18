@@ -334,6 +334,9 @@ def test_overlap_labels_partial_isin_coverage_and_withholds_stale_disclosures():
     ], max_disclosure_age_days=180)
     assert stale["pairs"][0]["status"] == "WITHHELD_STALE_OR_UNDATED_DISCLOSURE"
     assert stale["pairs"][0]["overlap_inr"] is None
+    # Only the fresh fund contributes to portfolio-wide duplication totals.
+    assert stale["portfolio_duplication"]["gross_positive_lookthrough_exposure_inr"] == "20.00"
+    assert stale["portfolio_duplication"]["duplicated_exposure_inr"] == "0.00"
 
 def test_overlap_aggregates_duplicate_isin_rows_within_each_fund_before_duplication():
     result = holdings_overlap_matrix([
