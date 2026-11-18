@@ -463,6 +463,16 @@ def market_cap_allocation(
         })
 
     ordered = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
+    source_summary: dict[str, dict[str, Any]] = {}
+    for source in source_rows:
+        source_hash = source["source_sha256"]
+        entry = source_summary.setdefault(source_hash, {
+            "source_url": source["source_url"],
+            "source_sha256": source_hash,
+            "source_as_of_date": source["source_as_of_date"],
+            "classified_security_count": 0,
+        })
+        entry["classified_security_count"] += 1
     return {
         "methodology_version": METHODOLOGY_VERSION,
         "as_of_date": as_of.isoformat(),
@@ -479,7 +489,7 @@ def market_cap_allocation(
             {"reason": bucket, "exposure_inr": _money(value), "weight_of_total_portfolio_pct": _pct(value, portfolio_value), "weight_of_positive_lookthrough_pct": _pct(value, total_positive)}
             for bucket, value in ordered if bucket not in allowed
         ],
-        "sources": source_rows,
+        "sources": sorted(source_summary.values(), key=lambda item: item["source_sha256"]),
         "limitations": [
             "Only verified, effective-dated ISIN classifications are used.",
             "Non-ISIN, missing and stale classifications remain unclassified; no partial subset is silently normalised to the full portfolio.",
