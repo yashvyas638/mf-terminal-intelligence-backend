@@ -495,3 +495,11 @@ Commits:
 - `ca8b510` — Test both directional overlap deltas in TWT PDF.
 
 Validation remains pending on the latest branch head; no test pass is claimed until CI completes. Visual PDF pagination review remains open.
+
+
+### TWT execution checkpoint — latest observed PR head
+
+- Latest PR #135 head verified: `1c6741446a9b0aa510fd0746d1346dd0e6fe4393` (draft, open, mergeable=true).
+- This head includes the exact seven-calendar-day month-end boundary correction, snapshot detail/PDF SHA-256 fail-closed checks, stale-disclosure exclusion from portfolio duplication totals, canonical pair identity comparison, and both directional overlap-ratio PDF deltas.
+- Latest observed CI run: [#2175](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44281293794). SQLite, PostgreSQL and AMFI validation jobs are still **queued**; no test pass is claimed. Combined commit status currently has no completed status checks.
+- Visual multi-page PDF review and live source-coverage verification remain open. PR is not approved, merged or deployed. No production database or Render changes were made.
