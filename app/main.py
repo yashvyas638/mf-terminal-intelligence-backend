@@ -3370,7 +3370,7 @@ def create_portfolio_report_snapshot(
         for source in (market_cap_intelligence.get("sources") or []):
             sources.append({
                 "source_type": "VERIFIED_MARKET_CAP_CLASSIFICATION",
-                "title": source.get("security_id") + " · " + source.get("market_cap_bucket"),
+                "title": "Market-cap classification source · " + str(source.get("classified_security_count")) + " ISINs",
                 "url": source.get("source_url"),
                 "source_sha256": source.get("source_sha256"),
                 "as_of_date": source.get("source_as_of_date"),
