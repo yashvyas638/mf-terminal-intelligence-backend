@@ -5586,7 +5586,7 @@ def preview_portfolio_contribution_plan(
     portfolio_id: int,
     payload: ContributionPlanRequest,
 ) -> dict[str, Any]:
-    """Preview a contribution-only allocation against the latest saved target set."""
+    """Preview a contribution-only allocation against targets effective on the valuation date."""
     require_authenticated_user()
     valuation = portfolio_valuation(portfolio_id, None)
     total, actual = _portfolio_dimension_values(portfolio_id, payload.dimension, valuation)
