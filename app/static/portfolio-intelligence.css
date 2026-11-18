@@ -13,3 +13,10 @@
 .comparison-meta{grid-column:1/-1;color:var(--muted);font-size:10px;padding:0 2px 4px}
 @media(max-width:900px){.comparison-grid{grid-template-columns:1fr}}
 @media(max-width:560px){.comparison-row{grid-template-columns:minmax(0,1fr) auto;gap:6px}.comparison-row small{grid-column:1/-1;grid-row:2}.comparison-row b{grid-column:2;grid-row:1}}
+
+.smart-sip-panel{border-color:#35516e;background:linear-gradient(145deg,rgba(20,34,56,.86),rgba(16,26,41,.94))}
+.smart-sip-panel .panel-head{align-items:flex-start}
+.approval-control{display:flex!important;flex-direction:row!important;align-items:center;gap:9px;max-width:340px;line-height:1.4;color:var(--soft)!important}
+.approval-control input{width:16px;height:16px;accent-color:var(--blue);flex:0 0 auto}
+.smart-sip-panel .target-controls{align-items:end}
+@media(max-width:700px){.smart-sip-panel .target-controls{grid-template-columns:1fr}.approval-control{max-width:none}}
