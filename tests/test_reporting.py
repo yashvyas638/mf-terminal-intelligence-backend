@@ -225,3 +225,52 @@ def test_monthly_target_drift_pdf_shows_withheld_reason_without_values():
 
     assert rows[1][0].text == "Policy changed"
     assert rows[1][1:] == ["—", "—", "—", "—", "—", "Withheld"]
+
+
+def test_twt_pdf_includes_all_scheme_rows_beyond_previous_40_row_limit(monkeypatch):
+    import app.reporting as reporting
+
+    captured_scheme_rows = []
+    original_table = reporting._table
+
+    def capture_table(rows, widths=None):
+        if rows and rows[0] == ["Scheme / allocation group", "Category", "AMC", "Value INR", "Portfolio %"]:
+            captured_scheme_rows.extend(rows)
+        return original_table(rows, widths)
+
+    monkeypatch.setattr(reporting, "_table", capture_table)
+    schemes = [
+        {
+            "scheme_code": str(1000 + index),
+            "scheme_name": f"Scheme {index + 1}",
+            "category_group": "Equity",
+            "amc": "Test AMC",
+            "market_value_inr": "1000.00",
+            "portfolio_weight_pct": "2.0000",
+        }
+        for index in range(45)
+    ]
+
+    pdf = reporting.build_portfolio_report_pdf({
+        "portfolio_name": "Large scheme portfolio",
+        "report_version": "portfolio-report-v1",
+        "generated_at": "2026-11-18T00:00:00+00:00",
+        "valuation": {"current_value": "45000", "holdings": []},
+        "allocation_intelligence": {
+            "status": "AVAILABLE",
+            "valuation_date": "2026-11-17",
+            "allocation": {
+                "scheme_count": 45,
+                "schemes": schemes,
+                "by_category": [],
+                "by_sub_category": [],
+                "by_asset_class": [],
+                "data_quality": {"unclassified_scheme_count": 0},
+            },
+            "amc_concentration": {},
+        },
+    })
+
+    assert pdf.startswith(b"%PDF")
+    assert len(captured_scheme_rows) == 46
+    assert captured_scheme_rows[-1][0].text == "Scheme 45"
