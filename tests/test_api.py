@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db import Portfolio, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioImportBatch, ApiRateLimitBucket, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, engine, init_db
+from app.db import Portfolio, PortfolioAllocationTarget, PortfolioReportSnapshot, BenchmarkIndex, BenchmarkObservation, BenchmarkObservationRevision, FundHolding, FundHoldingDisclosure, FundResearchSnapshot, FundWatchlistItem, IngestionSnapshot, NavObservation, PortfolioTransaction, PortfolioTransactionAudit, PortfolioTransactionIdempotency, PortfolioImportBatch, ApiRateLimitBucket, PortfolioGoal, Scheme, SchemeBenchmarkAssignment, SessionLocal, engine, init_db
 from app.main import app
 from app.nav_ingest import parse_amfi_nav_text
 
@@ -2580,3 +2580,70 @@ def test_market_cap_allocation_checks_owner_before_reading_valuation(monkeypatch
 
     assert exc_info.value.status_code == 404
     assert valuation_called is False
+
+
+def test_contribution_preview_enforces_explicit_risk_caps_and_never_writes_transactions(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    init_db()
+    client = TestClient(app)
+    headers = {"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"}
+    created = client.post("/v1/portfolios", headers=headers, json={"name": "Contribution Risk Preview"})
+    assert created.status_code == 201
+    portfolio_id = created.json()["id"]
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        portfolio = db.get(Portfolio, portfolio_id)
+        db.add(PortfolioAllocationTarget(
+            portfolio_id=portfolio_id,
+            owner_user_id=portfolio.owner_user_id,
+            dimension="ASSET_CLASS",
+            target_key="EQUITY",
+            min_pct="0",
+            target_pct="100",
+            max_pct="100",
+            effective_from=date(2026, 1, 1),
+            version=1,
+            priority=100,
+            created_at=now,
+        ))
+        db.commit()
+
+    monkeypatch.setattr(main, "portfolio_valuation", lambda *_: {
+        "valuation_status": "COMPLETE",
+        "valuation_date": "2026-11-18",
+        "valuation_freshness": "FRESH",
+        "stale_nav_scheme_codes": [],
+        "current_value": "1000.00",
+    })
+    monkeypatch.setattr(
+        main,
+        "_portfolio_dimension_values",
+        lambda *_: (Decimal("1000.00"), {"EQUITY": Decimal("1000.00")}),
+    )
+    url = f"/v1/portfolios/{portfolio_id}/contribution-plan/preview"
+
+    over_budget = client.post(url, headers=headers, json={
+        "dimension": "ASSET_CLASS",
+        "contribution_inr": "100",
+        "max_contribution_inr": "50",
+    })
+    assert over_budget.status_code == 422
+    assert "exceeds the approved" in over_budget.json()["detail"]
+
+    accepted = client.post(url, headers=headers, json={
+        "dimension": "ASSET_CLASS",
+        "contribution_inr": "40",
+        "max_contribution_inr": "50",
+        "max_post_weight_pct": "40",
+    })
+    assert accepted.status_code == 200
+    result = accepted.json()
+    assert result["risk_constraints"]["enforced"] is True
+    assert result["allocated_contribution_inr"] == "0.00"
+    assert result["unallocated_contribution_inr"] == "40.00"
+    assert any(row["key"] == "__UNALLOCATED_CASH__" for row in result["post_contribution_allocation"])
+    assert sum(Decimal(row["post_contribution_weight_pct"]) for row in result["post_contribution_allocation"]) == Decimal("100.0000")
+    with SessionLocal() as db:
+        assert db.query(PortfolioTransaction).filter(PortfolioTransaction.portfolio_id == portfolio_id).count() == 0
