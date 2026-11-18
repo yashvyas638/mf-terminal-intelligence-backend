@@ -14,6 +14,8 @@ def test_portfolio_intelligence_page_has_all_primary_workspaces():
         "saveTargets", "driftTable", "previewContribution", "contributionResult",
         "sectorBars", "securityTable", "overlapTable", "marketCapBars",
         "riskMetrics", "reportList", "monthlyComparison", "comparisonStatus",
+        "smartSipBenchmark", "smartSipDimension", "smartSipBudgetApproved",
+        "runSmartSip", "smartSipResult", "smartSipStatus",
     }
     for element_id in required_ids:
         assert f'id="{element_id}"' in html, element_id
@@ -30,6 +32,8 @@ def test_portfolio_intelligence_page_has_all_primary_workspaces():
         "/risk?days=1095",
         "/reports",
         "/monthly-comparison",
+        "/benchmarks/tri-options",
+        "/smart-sip/preview",
         "/v1/reports/",
     ):
         assert endpoint in js, endpoint
