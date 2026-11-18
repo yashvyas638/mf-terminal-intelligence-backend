@@ -771,3 +771,18 @@ Commits:
 - `69e4b0f` — Test portfolio duplication source reconciliation.
 
 **Validation:** committed, pending exact-head SQLite/PostgreSQL CI. No merge, deployment or production data changes.
+
+
+### TWT duplication evidence shape validation — 2026-11-18
+
+A robustness audit found that malformed nested overlap / portfolio-duplication snapshot values could raise an attribute error while the monthly report was being assembled, rather than returning a clear withheld comparison.
+
+- Non-object overlap sections are normalized to unavailable evidence.
+- Portfolio-duplication metrics must be an object before reconciliation; malformed shapes are withheld as `WITHHELD_INVALID_SOURCE_VALUE`.
+- Added a regression for a list-shaped duplication snapshot to ensure the comparison fails closed instead of raising.
+
+Commits:
+- `54fd4b1` — Fail closed on malformed overlap duplication evidence.
+- `70cd4ec` — Test malformed duplication snapshot handling.
+
+**Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
