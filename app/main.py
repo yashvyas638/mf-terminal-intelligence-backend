@@ -3307,7 +3307,7 @@ def create_portfolio_report_snapshot(
     valuation = portfolio_valuation(portfolio_id, None)
     risk = portfolio_historical_risk(portfolio_id, days, None)
     tax_lots = portfolio_fifo_tax_lots(portfolio_id, None)
-    lookthrough = portfolio_holdings_lookthrough(portfolio_id, 180)
+    lookthrough = portfolio_holdings_lookthrough(portfolio_id, 180, 20000)
     try:
         allocation_intelligence = portfolio_allocation_intelligence(portfolio_id)
     except HTTPException as exc:
