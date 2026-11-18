@@ -137,3 +137,35 @@ def test_snapshot_json_is_decoded_only_when_sha256_matches():
     assert decode_verified_snapshot(content, digest) == payload
     assert decode_verified_snapshot(content, "0" * 64) is None
     assert decode_verified_snapshot("{broken", digest) is None
+
+def test_monthly_overlap_pair_identity_is_order_independent_and_keeps_directional_denominators():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    previous_report["overlap_intelligence"]["pairs"] = [{
+        "scheme_a": "1001", "scheme_b": "1002",
+        "overlap_inr": "40.00",
+        "overlap_pct_of_scheme_a_nav": "4.0000",
+        "overlap_pct_of_scheme_b_nav": "8.0000",
+    }]
+    current_report["overlap_intelligence"]["pairs"] = [{
+        "scheme_a": "1002", "scheme_b": "1001",
+        "overlap_inr": "45.00",
+        "overlap_pct_of_scheme_a_nav": "9.0000",
+        "overlap_pct_of_scheme_b_nav": "4.5000",
+    }]
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+    pair_rows = result["comparisons"]["overlap_pairs"]["items"]
+
+    assert len(pair_rows) == 1
+    pair = pair_rows[0]
+    assert pair["key"] == "1001:1002"
+    assert pair["presence_status"] == "CONTINUING"
+    assert pair["metrics"]["overlap_inr"]["change_inr"] == "5.00"
+    assert pair["metrics"]["overlap_pct_of_scheme_a_nav"]["previous"] == "4.0000"
+    assert pair["metrics"]["overlap_pct_of_scheme_a_nav"]["current"] == "4.5000"
+    assert pair["metrics"]["overlap_pct_of_scheme_b_nav"]["previous"] == "8.0000"
+    assert pair["metrics"]["overlap_pct_of_scheme_b_nav"]["current"] == "9.0000"
