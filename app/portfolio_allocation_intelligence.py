@@ -294,9 +294,12 @@ def contribution_plan_preview(
     deficits: dict[str, Decimal] = {}
     effective_target_weights: dict[str, Decimal] = {}
     for key, target_row in target_rows.items():
+        minimum_weight = _d(target_row["min_pct"], "min_pct")
         target_weight = _d(target_row["target_pct"], "target_pct")
         current = current_values[key]
-        assert target_weight is not None and current is not None
+        assert minimum_weight is not None and target_weight is not None and current is not None
+        if max_weight is not None and max_weight < minimum_weight:
+            raise ValueError(f"max_post_weight_pct conflicts with the saved minimum target for {key}")
         # The requested risk ceiling may tighten, but never loosen, the saved target.
         effective_weight = min(target_weight, max_weight) if max_weight is not None else target_weight
         effective_target_weights[key] = effective_weight
