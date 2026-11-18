@@ -140,6 +140,11 @@ The current NAV table stores one effective value per scheme/date. If AMFI republ
 CI applies migrations and runs tests independently against SQLite and PostgreSQL 16, including financial CHECK constraints, append-only audit triggers, import idempotency and advisory locking. A separate scheduled/manual workflow validates the public AMFI response without writing to any database. These checks do not replace verification against the actual Supabase project or Render deployment.
 
 
+
+## Repository guide
+
+For the canonical architecture, authentication/request flow, credential boundaries, folder map, development workflow, release evidence and remaining production gates, see [Repository Guide](docs/REPOSITORY_GUIDE.md). Read it before starting new work or merging an integration branch.
+
 ## Product roadmap and engineering governance
 
 The product is developed in seven gated phases. Read these documents before changing scope:
