@@ -5662,14 +5662,32 @@ def preview_smart_sip_regime(
     valuation = portfolio_valuation(portfolio_id, None)
     try:
         drift = get_portfolio_allocation_drift(portfolio_id, payload.dimension)
-        underweight = any(row.get("status") == "UNDERWEIGHT" for row in drift.get("targets", []))
+        valuation_verified = (
+            valuation.get("valuation_status") == "COMPLETE"
+            and valuation.get("valuation_freshness") == "FRESH"
+            and bool(valuation.get("valuation_date"))
+            and drift.get("valuation_date") == valuation.get("valuation_date")
+        )
+        underweight_buckets = [
+            row.get("key") for row in drift.get("targets", [])
+            if row.get("status") == "UNDERWEIGHT"
+        ]
+        need_verified = drift.get("status") == "AVAILABLE" and valuation_verified
         portfolio_need = {
-            "status": "UNDERWEIGHT" if underweight else "NOT_UNDERWEIGHT",
-            "verified": drift.get("status") == "AVAILABLE" and drift.get("valuation_date") == valuation.get("valuation_date"),
+            "status": (
+                "UNDERWEIGHT" if need_verified and underweight_buckets
+                else "NOT_UNDERWEIGHT" if need_verified
+                else "WITHHELD"
+            ),
+            "verified": need_verified,
+            "reason": (
+                None if need_verified
+                else "PORTFOLIO_VALUATION_NOT_COMPLETE_AND_FRESH_OR_DATE_MISMATCH"
+            ),
             "dimension": payload.dimension,
             "effective_from": drift.get("effective_from"),
             "target_version": drift.get("target_version"),
-            "underweight_buckets": [row.get("key") for row in drift.get("targets", []) if row.get("status") == "UNDERWEIGHT"],
+            "underweight_buckets": underweight_buckets if need_verified else [],
         }
     except HTTPException as exc:
         portfolio_need = {"status": "WITHHELD", "verified": False, "reason": str(exc.detail), "dimension": payload.dimension}
