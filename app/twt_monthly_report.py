@@ -496,9 +496,13 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         "historical_var_95": (Decimal("0"), Decimal("1")),
         "historical_cvar_95": (Decimal("0"), Decimal("1")),
     }
+    old_risk_metrics = old_risk.get("metrics") if isinstance(old_risk.get("metrics"), dict) else old_risk
+    new_risk_metrics = new_risk.get("metrics") if isinstance(new_risk.get("metrics"), dict) else new_risk
     for metric_name, (minimum, maximum) in risk_bounds.items():
-        old_metric = _decimal((old_risk.get("metrics") or {}).get(metric_name))
-        new_metric = _decimal((new_risk.get("metrics") or {}).get(metric_name))
+        # portfolio_risk_metrics emits these fields at the risk object's top level.
+        # Retain nested-metrics fallback for older immutable snapshots.
+        old_metric = _decimal(old_risk_metrics.get(metric_name))
+        new_metric = _decimal(new_risk_metrics.get(metric_name))
         invalid_metric = any(
             value is not None and (value < minimum or (maximum is not None and value > maximum))
             for value in (old_metric, new_metric)
