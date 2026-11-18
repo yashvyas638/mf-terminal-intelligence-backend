@@ -244,10 +244,12 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
             if not dimension or dimension in policy_by_dimension:
                 return None
             policy_by_dimension[dimension] = policy
+        if set(snapshots) != set(policy_by_dimension):
+            return None
         result: dict[str, dict[str, Any]] = {}
         for dimension, drift in snapshots.items():
             if not isinstance(drift, dict) or drift.get("status") != "AVAILABLE":
-                continue
+                return None
             policy = policy_by_dimension.get(dimension)
             version = drift.get("target_version")
             effective_from = drift.get("effective_from")
@@ -279,7 +281,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                 }
             if abs(weight_total - Decimal("100")) > Decimal("0.05"):
                 return None
-        return result
+        return result if result else None
 
     old_target_rows = target_drift_rows(old_report)
     new_target_rows = target_drift_rows(new_report)
