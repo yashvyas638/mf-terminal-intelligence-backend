@@ -1342,7 +1342,8 @@ def test_global_fund_screener_ranks_before_pagination_and_enforces_operator_refr
     monkeypatch.setattr(main, "_research_snapshots_are_current", lambda: True)
     init_db()
     now = datetime.now(timezone.utc)
-    as_of = date.today()
+    # Exercise TWT comparison with a prior month-end valuation snapshot.
+    as_of = date.today().replace(day=1) - timedelta(days=1)
     scheme_codes = (999983, 999984, 99999999, 99999998, 99999997)
     with SessionLocal() as db:
         snapshot = IngestionSnapshot(
