@@ -236,3 +236,13 @@ def test_market_cap_classification_csv_parser_rejects_invalid_isin_duplicate_and
             "ISIN,Market Cap Bucket,Effective From,Source As Of Date\n"
             "INE002A01018,MEGA_CAP,2026-01-01,2026-10-31\n"
         )
+
+
+
+def test_overlap_matrix_has_a_hard_fund_count_limit():
+    funds = [
+        {"scheme_code": str(index), "portfolio_value_inr": "1", "disclosure_coverage_pct": "100", "holdings": []}
+        for index in range(201)
+    ]
+    with pytest.raises(ValueError, match="limited to 200"):
+        holdings_overlap_matrix(funds)
