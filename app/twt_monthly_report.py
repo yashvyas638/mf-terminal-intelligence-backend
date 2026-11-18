@@ -104,8 +104,27 @@ def _compare(
     key_field: str,
     value_fields: tuple[str, ...],
 ) -> dict[str, Any]:
-    old = {str(row.get(key_field)): row for row in previous}
-    new = {str(row.get(key_field)): row for row in current}
+    def keyed(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]] | None:
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                return None
+            raw_key = row.get(key_field)
+            if raw_key is None or not str(raw_key).strip():
+                return None
+            key = str(raw_key).strip()
+            if key in result:
+                return None
+            result[key] = row
+        return result
+
+    old, new = keyed(previous), keyed(current)
+    if old is None or new is None:
+        return {
+            "status": "WITHHELD_DUPLICATE_OR_INVALID_KEYS",
+            "items": [],
+            "reason": "Monthly comparison requires unique, non-empty identifiers in both immutable snapshots.",
+        }
     items = []
     for key in sorted(set(old) | set(new)):
         before, after = old.get(key), new.get(key)
