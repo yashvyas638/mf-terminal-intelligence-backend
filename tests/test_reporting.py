@@ -5,6 +5,7 @@ from app.reporting import (
     _allocation_group_rows,
     _source_reference_row,
     _monthly_comparison_rows,
+    _monthly_target_drift_rows,
     build_portfolio_report_pdf,
 )
 
@@ -181,3 +182,46 @@ def test_monthly_overlap_pdf_rows_include_both_funds_percentage_point_changes():
         "Item", "Previous INR", "Current INR", "Change INR", "Change pp A", "Change pp B", "Presence", "Status",
     ]
     assert rows[1][4:8] == ["0.5", "1.0", "CONTINUING", "COMPARABLE"]
+
+
+def test_monthly_target_drift_pdf_uses_percentage_points_not_inr():
+    rows = _monthly_target_drift_rows({
+        "comparisons": {
+            "target_drift": {
+                "status": "COMPARABLE",
+                "items": [{
+                    "key": "CATEGORY:Equity",
+                    "presence_status": "CONTINUING",
+                    "metrics": {
+                        "drift_percentage_points": {
+                            "previous": "5", "current": "10",
+                            "change_percentage_points": "5", "status": "COMPARABLE",
+                        },
+                        "actual_weight_pct": {"previous": "70", "current": "75"},
+                    },
+                }],
+            },
+        },
+    })
+
+    assert rows[0] == [
+        "Dimension / bucket", "Previous drift pp", "Current drift pp",
+        "Change pp", "Previous actual %", "Current actual %", "Status",
+    ]
+    assert rows[1][0].text == "CATEGORY:Equity"
+    assert rows[1][1:] == ["5", "10", "5", "70", "75", "COMPARABLE"]
+
+
+def test_monthly_target_drift_pdf_shows_withheld_reason_without_values():
+    rows = _monthly_target_drift_rows({
+        "comparisons": {
+            "target_drift": {
+                "status": "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH",
+                "reason": "Policy changed",
+                "items": [],
+            },
+        },
+    })
+
+    assert rows[1][0].text == "Policy changed"
+    assert rows[1][1:] == ["—", "—", "—", "—", "—", "Withheld"]
