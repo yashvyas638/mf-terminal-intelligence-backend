@@ -5590,17 +5590,21 @@ def preview_portfolio_contribution_plan(
     require_authenticated_user()
     valuation = portfolio_valuation(portfolio_id, None)
     total, actual = _portfolio_dimension_values(portfolio_id, payload.dimension, valuation)
-    today = datetime.now(timezone.utc).date()
+    valuation_date = valuation.get("valuation_date")
+    try:
+        effective_as_of = date.fromisoformat(str(valuation_date))
+    except (TypeError, ValueError):
+        raise HTTPException(409, "A valid portfolio valuation date is required to select effective contribution targets") from None
     with SessionLocal() as db:
         portfolio = _require_portfolio_owner(db, portfolio_id)
         rows = db.execute(select(PortfolioAllocationTarget).where(
             PortfolioAllocationTarget.portfolio_id == portfolio_id,
             PortfolioAllocationTarget.owner_user_id == portfolio.owner_user_id,
             PortfolioAllocationTarget.dimension == payload.dimension,
-            PortfolioAllocationTarget.effective_from <= today,
+            PortfolioAllocationTarget.effective_from <= effective_as_of,
         ).order_by(desc(PortfolioAllocationTarget.effective_from), desc(PortfolioAllocationTarget.version), PortfolioAllocationTarget.priority)).scalars().all()
     if not rows:
-        raise HTTPException(404, f"No effective {payload.dimension} target set is configured")
+        raise HTTPException(404, f"No {payload.dimension} target set is effective on valuation date {effective_as_of.isoformat()}")
     effective = rows[0].effective_from
     effective_version = rows[0].version
     targets = [row for row in rows if row.effective_from == effective and row.version == effective_version]
@@ -5627,6 +5631,7 @@ def preview_portfolio_contribution_plan(
         "effective_from": effective.isoformat(),
         "target_version": effective_version,
         "valuation_date": valuation.get("valuation_date"),
+        "policy_as_of_date": effective_as_of.isoformat(),
         "valuation_freshness": valuation.get("valuation_freshness"),
     })
     return result
