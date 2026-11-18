@@ -133,11 +133,16 @@ def _compare(
             old_value = _decimal(before.get(field)) if before else None
             new_value = _decimal(after.get(field)) if after else None
             is_percentage = field.endswith("_pct") or "_pct_" in field
+            is_inr = field.endswith("_inr") or field in {"market_value", "lookthrough_value"}
             invalid_percentage = is_percentage and any(
                 value is not None and not Decimal("0") <= value <= Decimal("100")
                 for value in (old_value, new_value)
             )
-            if invalid_percentage:
+            invalid_amount = is_inr and any(
+                value is not None and value < Decimal("0")
+                for value in (old_value, new_value)
+            )
+            if invalid_percentage or invalid_amount:
                 old_value = new_value = None
             change = new_value - old_value if old_value is not None and new_value is not None else None
             metric = {
@@ -145,7 +150,7 @@ def _compare(
                 "current": str(new_value) if new_value is not None else None,
                 "change": str(change) if change is not None else None,
                 "status": (
-                    "WITHHELD_INVALID_SOURCE_VALUE" if invalid_percentage
+                    "WITHHELD_INVALID_SOURCE_VALUE" if invalid_percentage or invalid_amount
                     else "COMPARABLE" if change is not None
                     else "NOT_COMPARABLE_MISSING_SOURCE"
                 ),
@@ -197,14 +202,24 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     def market_cap_rows(report: dict[str, Any]) -> list[dict[str, Any]] | None:
         section = report.get("market_cap_intelligence") or {}
         rows = section.get("classified_distribution")
-        if not isinstance(rows, list):
+        unclassified = section.get("unclassified_exposure") or []
+        if not isinstance(rows, list) or not isinstance(unclassified, list):
             return None
-        result = [{"market_cap_bucket": row.get("market_cap_bucket"), "weight_of_total_portfolio_pct": row.get("weight_of_total_portfolio_pct"), "exposure_inr": row.get("exposure_inr")} for row in rows]
+        if any(not isinstance(row, dict) for row in [*rows, *unclassified]):
+            return None
+        result = [
+            {
+                "market_cap_bucket": row.get("market_cap_bucket"),
+                "weight_of_total_portfolio_pct": row.get("weight_of_total_portfolio_pct"),
+                "exposure_inr": row.get("exposure_inr"),
+            }
+            for row in rows
+        ]
         result.extend({
             "market_cap_bucket": "UNCLASSIFIED:" + str(row.get("reason")),
             "weight_of_total_portfolio_pct": row.get("weight_of_total_portfolio_pct"),
             "exposure_inr": row.get("exposure_inr"),
-        } for row in section.get("unclassified_exposure") or [])
+        } for row in unclassified)
         return result
 
     old_mc, new_mc = market_cap_rows(old_report), market_cap_rows(new_report)
@@ -216,11 +231,16 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
 
     old_value = _decimal((old_report.get("valuation") or {}).get("current_value"))
     new_value = _decimal((new_report.get("valuation") or {}).get("current_value"))
+    invalid_portfolio_value = any(
+        value is not None and value < Decimal("0")
+        for value in (old_value, new_value)
+    )
+    value_comparable = old_value is not None and new_value is not None and not invalid_portfolio_value
     comparisons["portfolio_value"] = {
-        "status": "COMPARABLE" if old_value is not None and new_value is not None else "NOT_COMPARABLE",
-        "previous_inr": str(old_value) if old_value is not None else None,
-        "current_inr": str(new_value) if new_value is not None else None,
-        "change_inr": str(new_value - old_value) if old_value is not None and new_value is not None else None,
+        "status": "WITHHELD_INVALID_SOURCE_VALUE" if invalid_portfolio_value else "COMPARABLE" if value_comparable else "NOT_COMPARABLE",
+        "previous_inr": str(old_value) if value_comparable else None,
+        "current_inr": str(new_value) if value_comparable else None,
+        "change_inr": str(new_value - old_value) if value_comparable else None,
     }
 
     old_amc = (old_report.get("allocation_intelligence") or {}).get("amc_concentration") or {}
