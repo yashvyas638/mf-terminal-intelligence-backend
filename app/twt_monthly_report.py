@@ -4,6 +4,7 @@ Comparisons consume immutable report JSON only; they never revalue a portfolio.
 """
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
@@ -15,9 +16,15 @@ def _period_key(report: dict[str, Any]) -> str | None:
     if not raw:
         return None
     try:
-        return date.fromisoformat(str(raw)[:10]).strftime("%Y-%m")
+        valuation_date = date.fromisoformat(str(raw)[:10])
     except ValueError:
         return None
+    month_end = date(valuation_date.year, valuation_date.month, monthrange(valuation_date.year, valuation_date.month)[1])
+    # NAV publication can lag the final calendar day; accept only the final
+    # seven calendar days as a month-end valuation window.
+    if (month_end - valuation_date).days > 7:
+        return None
+    return valuation_date.strftime("%Y-%m")
 
 
 def select_latest_distinct_months(
@@ -108,12 +115,12 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     for name, path, key_field, value_fields in specs:
         old_rows, new_rows = _rows(old_report, path), _rows(new_report, path)
         old_status = (
-            old_report.get("lookthrough", {}).get("coverage", {}).get("status")
-            if name == "sector" else old_report.get("allocation_intelligence", {}).get("status")
+            (old_report.get("lookthrough") or {}).get("coverage", {}).get("status")
+            if name == "sector" else (old_report.get("allocation_intelligence") or {}).get("status")
         )
         new_status = (
-            new_report.get("lookthrough", {}).get("coverage", {}).get("status")
-            if name == "sector" else new_report.get("allocation_intelligence", {}).get("status")
+            (new_report.get("lookthrough") or {}).get("coverage", {}).get("status")
+            if name == "sector" else (new_report.get("allocation_intelligence") or {}).get("status")
         )
         allowed = {"COMPLETE", "PARTIAL_MISSING_DISCLOSURES", "PARTIAL_STALE_DISCLOSURES"} if name == "sector" else allocation_statuses
         if old_rows is None or new_rows is None or old_status not in allowed or new_status not in allowed:
