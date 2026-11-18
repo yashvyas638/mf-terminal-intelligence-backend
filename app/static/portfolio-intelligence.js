@@ -57,7 +57,13 @@ function renderMonthlyComparison(d){
   const sections=Object.entries(sectionLabels).map(([key,label])=>{
     const data=d.comparisons?.[key]||{},fields=sectionFields[key],rows=data.items||[];
     const content=rows.length?rows.map(row=>{
-      const metrics=row.metrics||{},value=metrics[fields[0]]||{},weight=metrics[fields[1]]||{},weightB=fields[2]?metrics[fields[2]]||{}:null;
+      const metrics=row.metrics||{};
+      if(key==="target_drift"){
+        const drift=metrics.drift_percentage_points||{},actual=metrics.actual_weight_pct||{};
+        const change=drift.change_percentage_points==null?"—":metricPp(drift.change_percentage_points);
+        return '<div class="comparison-row"><span>'+esc(row.key)+' · '+esc(row.presence_status||"")+'</span><small>Drift '+metricPp(drift.previous)+' → '+metricPp(drift.current)+' · Δ '+change+' · Actual '+pct(actual.previous)+' → '+pct(actual.current)+'</small><b>'+esc(drift.status||data.status||"—")+'</b></div>';
+      }
+      const value=metrics[fields[0]]||{},weight=metrics[fields[1]]||{},weightB=fields[2]?metrics[fields[2]]||{}:null;
       const delta=value.change_inr??value.change;
       const changeText=value.status==="COMPARABLE"?metricMoney(delta):"Not comparable";
       const ppText=weight.change_percentage_points==null?"": " · "+metricPp(weight.change_percentage_points)+(weightB&&weightB.change_percentage_points!=null?" / "+metricPp(weightB.change_percentage_points)+" (A/B)":"");
