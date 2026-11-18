@@ -5314,6 +5314,36 @@ def verify_market_cap_classification_batch(
     }
 
 
+@app.post("/v1/market-cap/classifications/{source_sha256}/reject")
+def reject_market_cap_classification_batch(
+    source_sha256: str,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Reject a pending source batch so none of its rows can enter analysis."""
+    require_operator_api_key(x_api_key)
+    if len(source_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in source_sha256.lower()):
+        raise HTTPException(422, "source_sha256 must be a 64-character SHA-256 hex digest")
+    with SessionLocal() as db:
+        rows = db.execute(select(SecurityMarketCapClassification).where(
+            SecurityMarketCapClassification.source_sha256 == source_sha256.lower(),
+        )).scalars().all()
+        if not rows:
+            raise HTTPException(404, "Classification source batch not found")
+        if any(row.verification_status == "VERIFIED" for row in rows):
+            raise HTTPException(409, "A verified classification batch cannot be rejected; submit a superseding source batch")
+        rejected_at = datetime.now(timezone.utc)
+        for row in rows:
+            row.verification_status = "REJECTED"
+            row.verified_at = rejected_at
+        db.commit()
+    return {
+        "source_sha256": source_sha256.lower(),
+        "rejected_rows": len(rows),
+        "verification_status": "REJECTED",
+        "rejected_at": rejected_at.isoformat(),
+    }
+
+
 @app.get("/v1/portfolios/{portfolio_id}/market-cap-allocation")
 def get_portfolio_market_cap_allocation(
     portfolio_id: int,
