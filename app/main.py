@@ -3697,6 +3697,28 @@ def compare_latest_portfolio_reports(portfolio_id: int) -> dict[str, Any]:
                 })
         return rows
 
+    previous_duplication = (previous.get("overlap_intelligence") or {}).get("portfolio_duplication") or {}
+    current_duplication = (current.get("overlap_intelligence") or {}).get("portfolio_duplication") or {}
+    previous_overlap_status = (previous.get("overlap_intelligence") or {}).get("status")
+    current_overlap_status = (current.get("overlap_intelligence") or {}).get("status")
+    old_duplicate_value = previous_duplication.get("duplicated_exposure_inr")
+    new_duplicate_value = current_duplication.get("duplicated_exposure_inr")
+    if previous_overlap_status == "AVAILABLE" and current_overlap_status == "AVAILABLE" and old_duplicate_value is not None and new_duplicate_value is not None:
+        old_amount, new_amount = Decimal(str(old_duplicate_value)), Decimal(str(new_duplicate_value))
+        comparisons["portfolio_duplication"] = {
+            "status": "COMPARABLE",
+            "previous_value_inr": str(old_amount),
+            "current_value_inr": str(new_amount),
+            "change_inr": str(new_amount - old_amount),
+        }
+    else:
+        comparisons["portfolio_duplication"] = {
+            "status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE",
+            "previous_value_inr": None,
+            "current_value_inr": None,
+            "change_inr": None,
+        }
+
     previous_target_drift = target_drift_rows(previous)
     current_target_drift = target_drift_rows(current)
     if previous_target_drift and current_target_drift:
