@@ -68,6 +68,11 @@ from app.analytics import (
 from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
+from app.portfolio_allocation_intelligence import (
+    amc_concentration,
+    holdings_overlap_matrix,
+    portfolio_allocation,
+)
 from app.reporting import build_portfolio_report_pdf
 from app.nav_adjustments import (
     NAV_ADJUSTMENT_REGISTRY_VERSION,
@@ -4768,6 +4773,174 @@ def portfolio_holdings_lookthrough(
             "Security names and sector classifications are source-reported and may differ across AMCs.",
         ],
     }
+
+
+
+@app.get("/v1/portfolios/{portfolio_id}/allocation")
+def portfolio_allocation_intelligence(portfolio_id: int) -> dict[str, Any]:
+    """Return value-weighted scheme/category/asset-class and AMC allocation."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    if valuation.get("valuation_status") != "COMPLETE":
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "WITHHELD_INCOMPLETE_VALUATION",
+            "valuation_status": valuation.get("valuation_status"),
+            "valuation_date": valuation.get("valuation_date"),
+            "missing_nav_scheme_codes": valuation.get("missing_nav_scheme_codes", []),
+            "stale_nav_scheme_codes": valuation.get("stale_nav_scheme_codes", []),
+            "message": "Portfolio allocation percentages and AMC concentration are withheld until every active holding has a valid valuation.",
+            "methodology_version": "portfolio-allocation-v1.0.0",
+        }
+    holdings = [
+        item for item in valuation.get("holdings", [])
+        if item.get("market_value") is not None and Decimal(str(item["market_value"])) > 0
+    ]
+    if not holdings:
+        raise HTTPException(422, "Portfolio has no positively valued active holdings")
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        codes = [int(item["scheme_code"]) for item in holdings]
+        schemes = db.execute(select(Scheme).where(Scheme.scheme_code.in_(codes))).scalars().all()
+        by_code = {scheme.scheme_code: scheme for scheme in schemes}
+        rows = []
+        for item in holdings:
+            scheme = by_code.get(int(item["scheme_code"]))
+            if scheme is None:
+                raise HTTPException(409, f"Scheme metadata is missing for active holding {item['scheme_code']}")
+            rows.append({
+                "scheme_code": str(scheme.scheme_code),
+                "scheme_name": scheme.scheme_name,
+                "market_value_inr": str(item["market_value"]),
+                "amc": scheme.amc,
+                "category_group": scheme.category_group,
+                "sub_category": scheme.category,
+                "asset_class": scheme.asset_class,
+            })
+    allocation = portfolio_allocation(rows)
+    concentration = amc_concentration(rows)
+    return {
+        "portfolio_id": portfolio_id,
+        "portfolio_name": valuation.get("portfolio_name"),
+        "status": "AVAILABLE",
+        "valuation_status": valuation.get("valuation_status"),
+        "valuation_date": valuation.get("valuation_date"),
+        "valuation_freshness": valuation.get("valuation_freshness"),
+        "allocation": allocation,
+        "amc_concentration": concentration,
+        "evidence": {
+            "source": "Owned portfolio transaction ledger and latest stored NAV observations; scheme taxonomy from stored scheme master",
+            "as_of_date": valuation.get("valuation_date"),
+            "covered_market_value_inr": allocation["portfolio_market_value_inr"],
+            "coverage_pct": "100.0000",
+            "methodology_version": allocation["methodology_version"],
+            "warnings": [
+                "Category and asset-class labels are the stored scheme metadata; they are not underlying market-cap exposure.",
+                "Unclassified scheme metadata remains visible as UNCLASSIFIED.",
+                "AMC concentration is calculated from scheme market values, not scheme counts or underlying issuer weights.",
+            ],
+        },
+    }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/overlap-matrix")
+def portfolio_fund_overlap_matrix(
+    portfolio_id: int,
+    max_disclosure_age_days: int = Query(default=180, ge=30, le=730),
+) -> dict[str, Any]:
+    """Return pairwise verified-disclosure overlap and non-double-counted duplication."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    if valuation.get("valuation_status") != "COMPLETE":
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "WITHHELD_INCOMPLETE_VALUATION",
+            "valuation_status": valuation.get("valuation_status"),
+            "missing_nav_scheme_codes": valuation.get("missing_nav_scheme_codes", []),
+            "stale_nav_scheme_codes": valuation.get("stale_nav_scheme_codes", []),
+            "message": "Overlap exposure amounts are withheld until portfolio valuation is complete.",
+            "methodology_version": "portfolio-allocation-v1.0.0",
+        }
+    holdings = [
+        item for item in valuation.get("holdings", [])
+        if item.get("market_value") is not None and Decimal(str(item["market_value"])) > 0
+    ]
+    today = datetime.now(timezone.utc).date()
+    funds = []
+    missing_disclosures = []
+    stale_disclosures = []
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        for item in holdings:
+            scheme_code = int(item["scheme_code"])
+            scheme = db.get(Scheme, scheme_code)
+            disclosure = db.execute(
+                select(FundHoldingDisclosure)
+                .where(
+                    FundHoldingDisclosure.scheme_code == scheme_code,
+                    FundHoldingDisclosure.verification_status == "VERIFIED",
+                    FundHoldingDisclosure.as_of_date <= today,
+                )
+                .order_by(
+                    desc(FundHoldingDisclosure.as_of_date),
+                    desc(FundHoldingDisclosure.retrieved_at),
+                    desc(FundHoldingDisclosure.id),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if disclosure is None:
+                missing_disclosures.append(scheme_code)
+                continue
+            age_days = (today - disclosure.as_of_date).days
+            if age_days > max_disclosure_age_days:
+                stale_disclosures.append(scheme_code)
+            rows = db.execute(
+                select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            ).scalars().all()
+            funds.append({
+                "scheme_code": str(scheme_code),
+                "scheme_name": scheme.scheme_name if scheme else str(scheme_code),
+                "portfolio_value_inr": str(item["market_value"]),
+                "disclosure_coverage_pct": None,
+                "disclosure_as_of_date": disclosure.as_of_date.isoformat(),
+                "disclosure_age_days": age_days,
+                "holdings": [{
+                    "security_id": row.security_id,
+                    "is_isin": row.is_isin,
+                    "weight_pct": str(row.weight_pct),
+                } for row in rows],
+            })
+    result = holdings_overlap_matrix(funds)
+    result["portfolio_id"] = portfolio_id
+    result["portfolio_name"] = valuation.get("portfolio_name")
+    result["status"] = (
+        "PARTIAL_MISSING_OR_STALE_DISCLOSURES"
+        if missing_disclosures or stale_disclosures else "AVAILABLE"
+    )
+    result["disclosure_health"] = {
+        "max_disclosure_age_days": max_disclosure_age_days,
+        "included_verified_disclosure_count": len(funds),
+        "missing_disclosure_scheme_codes": sorted(missing_disclosures),
+        "stale_disclosure_scheme_codes": sorted(stale_disclosures),
+        "valuation_scheme_count": len(holdings),
+        "disclosure_scheme_coverage_pct": (
+            str((Decimal(len(funds)) / Decimal(len(holdings)) * Decimal("100")).quantize(Decimal("0.0001")))
+            if holdings else None
+        ),
+    }
+    result["evidence"] = {
+        "source": "Latest VERIFIED fund holdings disclosures and current owned portfolio valuation",
+        "as_of_date": today.isoformat(),
+        "methodology_version": result["methodology_version"],
+        "warnings": [
+            "Overlap is based only on positive, common ISIN holdings in the included verified disclosures.",
+            "Disclosure scheme coverage is a count of schemes with verified disclosures, not a claim that every underlying holding is disclosed.",
+            "Stale disclosures remain included and are explicitly listed; interpret their overlap as stale.",
+            "Non-ISIN holdings are not cross-matched.",
+            "Holdings overlap is not return correlation.",
+        ],
+    }
+    return result
 
 
 @app.get("/v1/portfolios/{portfolio_id}/tax-lots")
