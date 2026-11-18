@@ -45,6 +45,32 @@ def test_pdf_report_builds_with_real_valuation_field_names():
     assert pdf.startswith(b"%PDF")
 
 
+def test_pdf_renders_portfolio_overlap_section_with_non_additive_methodology():
+    report = {
+        "portfolio_name": "Overlap PDF Test",
+        "generated_at": "2026-11-18T10:00:00+00:00",
+        "report_version": "portfolio-report-v1",
+        "valuation": {"valuation_status": "COMPLETE", "current_value": "100000", "holdings": []},
+        "lookthrough": {},
+        "holdings_overlap": {
+            "status": "OK",
+            "fund_count": 2,
+            "pairs": [{
+                "scheme_a": 1, "scheme_b": 2, "overlap_pct": "4.2500",
+                "common_isin_count": 2, "status": "OK",
+            }],
+            "funds": [
+                {"scheme_code": 1, "scheme_name": "Fund One"},
+                {"scheme_code": 2, "scheme_name": "Fund Two"},
+            ],
+        },
+        "risk": {}, "fifo_tax_lots": {}, "sources": [], "limitations": [],
+    }
+    pdf = build_portfolio_report_pdf(report)
+    assert pdf.startswith(b"%PDF")
+    assert len(pdf) > 1000
+
+
 def test_pdf_includes_amc_category_and_asset_class_sections():
     report = {
         "portfolio_name": "TWT Allocation Test",
