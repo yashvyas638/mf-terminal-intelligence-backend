@@ -3680,17 +3680,16 @@ def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
         ).scalar_one_or_none()
         if row is None:
             raise HTTPException(404, "Report not found")
+        saved_report = decode_verified_snapshot(row.content_json, row.content_sha256)
+        if saved_report is None:
+            raise HTTPException(409, "Report snapshot failed SHA-256 verification")
         return {
             "report_id": row.id,
             "report_version": row.report_version,
             "generated_at": row.generated_at.isoformat(),
             "content_sha256": row.content_sha256,
-            "integrity_status": (
-                "VERIFIED"
-                if hashlib.sha256(row.content_json.encode("utf-8")).hexdigest() == row.content_sha256
-                else "HASH_MISMATCH"
-            ),
-            "report": json.loads(row.content_json),
+            "integrity_status": "VERIFIED",
+            "report": saved_report,
         }
 
 
@@ -3770,7 +3769,9 @@ def download_portfolio_report_pdf(report_id: int) -> Response:
         ).scalar_one_or_none()
         if row is None:
             raise HTTPException(404, "Report not found")
-        report = json.loads(row.content_json)
+        report = decode_verified_snapshot(row.content_json, row.content_sha256)
+        if report is None:
+            raise HTTPException(409, "Report snapshot failed SHA-256 verification")
     pdf_bytes = build_portfolio_report_pdf(report)
     return Response(
         content=pdf_bytes,
