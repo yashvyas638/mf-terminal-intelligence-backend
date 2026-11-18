@@ -6,7 +6,7 @@ must be verified TRI values with provenance supplied by the caller.
 """
 from __future__ import annotations
 from datetime import date
-from math import sqrt
+from math import isfinite, sqrt
 from statistics import pstdev
 from typing import Any, Iterable, Mapping
 
@@ -31,6 +31,25 @@ def assess_smart_sip_regime(
     missing = sorted(required - set(config))
     if missing:
         raise ValueError("missing regime config: " + ", ".join(missing))
+    numeric_keys = ("drawdown_topup_threshold_pct", "momentum_floor_pct", "volatility_ceiling_pct")
+    for key in numeric_keys:
+        try:
+            value = float(config[key])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} must be a finite number") from exc
+        if not isfinite(value):
+            raise ValueError(f"{key} must be a finite number")
+    for key in ("max_observation_age_days", "min_observations_52w", "min_observations_3y", "annualisation_days"):
+        try:
+            value = int(config[key])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} must be a positive integer") from exc
+        if value <= 0:
+            raise ValueError(f"{key} must be a positive integer")
+    if float(config["drawdown_topup_threshold_pct"]) <= 0:
+        raise ValueError("drawdown_topup_threshold_pct must be positive")
+    if float(config["volatility_ceiling_pct"]) <= 0:
+        raise ValueError("volatility_ceiling_pct must be positive")
 
     accepted, rejected = [], 0
     for item in observations:
