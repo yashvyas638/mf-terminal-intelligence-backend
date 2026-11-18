@@ -8,6 +8,7 @@ from app.portfolio_allocation_intelligence import (
     contribution_plan_preview,
     holdings_overlap_matrix,
     market_cap_allocation,
+    parse_market_cap_classification_csv,
     portfolio_allocation,
 )
 
@@ -203,3 +204,35 @@ def test_contribution_plan_rejects_nonpositive_and_unbounded_contributions():
     ]
     with pytest.raises(ValueError, match="positive"):
         contribution_plan_preview(targets, portfolio_value_inr="1000", contribution_inr="0")
+
+
+
+def test_market_cap_classification_csv_parser_is_strict_and_normalizes_bucket_labels():
+    rows = parse_market_cap_classification_csv(
+        "ISIN,Market Cap Bucket,Effective From,Effective To,Source As Of Date\\n"
+        "INE002A01018,Large,2026-01-01,,2026-10-31\\n"
+        "INE009A01021,Mid Cap,2026-01-01,2026-12-31,2026-10-31\\n"
+    )
+    assert len(rows) == 2
+    assert rows[0]["market_cap_bucket"] == "LARGE_CAP"
+    assert rows[1]["market_cap_bucket"] == "MID_CAP"
+    assert rows[0]["effective_to"] is None
+
+
+def test_market_cap_classification_csv_parser_rejects_invalid_isin_duplicate_and_bucket():
+    with pytest.raises(ValueError, match="invalid ISIN"):
+        parse_market_cap_classification_csv(
+            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\\n"
+            "BAD,Large,2026-01-01,2026-10-31\\n"
+        )
+    with pytest.raises(ValueError, match="duplicate ISIN"):
+        parse_market_cap_classification_csv(
+            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\\n"
+            "INE002A01018,Large,2026-01-01,2026-10-31\\n"
+            "INE002A01018,Mid,2026-01-01,2026-10-31\\n"
+        )
+    with pytest.raises(ValueError, match="unsupported"):
+        parse_market_cap_classification_csv(
+            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\\n"
+            "INE002A01018,MEGA_CAP,2026-01-01,2026-10-31\\n"
+        )
