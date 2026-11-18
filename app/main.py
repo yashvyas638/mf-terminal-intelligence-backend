@@ -5434,7 +5434,12 @@ def get_portfolio_market_cap_allocation(
     result.update({
         "portfolio_id": portfolio_id,
         "portfolio_name": valuation.get("portfolio_name"),
-        "status": "AVAILABLE" if lookthrough.get("coverage", {}).get("status") == "COMPLETE" else "PARTIAL_LOOKTHROUGH_COVERAGE",
+        "status": (
+            "PARTIAL_LOOKTHROUGH_COVERAGE" if lookthrough.get("coverage", {}).get("status") != "COMPLETE"
+            else "PARTIAL_CLASSIFICATION_COVERAGE"
+            if Decimal(str(result.get("classified_coverage_of_positive_lookthrough_pct") or "0")) < Decimal("100")
+            else "AVAILABLE"
+        ),
         "lookthrough_coverage": lookthrough.get("coverage"),
         "classification_health": {
             "verified_mapping_count": len(result.get("sources", [])),
