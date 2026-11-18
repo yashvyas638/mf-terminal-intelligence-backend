@@ -49,7 +49,9 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 | `GET /health` | Public database/service readiness probe with a validated Render deployment commit fingerprint; exposes no secrets or portfolio data. |
 | `POST /v1/nav/refresh` | Downloads, validates, and persists a new AMFI snapshot; server-side operator key only. |
 | `GET /v1/nav/status` | Latest ingestion snapshot and retrieval freshness. |
-| `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |\n| `GET /v1/nav/schemes/{scheme_code}` | Scheme metadata, ISINs, latest stored NAV, observation coverage and NAV-derived metrics. |\n| `POST /v1/analytics/compare` | Compare 2–10 schemes on stored AMFI NAV series; each scheme's coverage is reported independently. |
+| `GET /v1/nav/schemes?q=&limit=&offset=` | Paginated scheme search with latest stored NAV. |
+| `GET /v1/nav/schemes/{scheme_code}` | Scheme metadata, ISINs, latest stored NAV, observation coverage and NAV-derived metrics. |
+| `POST /v1/analytics/compare` | Compare 2–10 schemes on stored AMFI NAV series; each scheme's coverage is reported independently. |
 | `GET /v1/nav/history/{scheme_code}?days=` | Stored NAV history for one scheme. |
 | `GET /v1/nav/snapshot/latest` | Latest full validation report. |
 | `POST /v1/portfolios` | Creates a portfolio owned by the authenticated Supabase user (or trusted server-side operator). |
@@ -74,10 +76,13 @@ The production safety threshold is `MINIMUM_VALID_RECORDS=1000`. Lower it only f
 
 1. Push this folder to a GitHub repository.
 2. Create a managed PostgreSQL database. Do **not** use SQLite on an ephemeral web-service disk in production.
-3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL URL. Production mode rejects SQLite.
-4. Keep Render's generated `API_KEY`, or replace it with a strong secret.
-5. Confirm `/health` reports `database: reachable`, then run one authenticated refresh.
-6. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler refreshes Monday–Saturday at 22:45 IST, after AMFI's normal publication window (including late liquid/overnight NAVs).
+3. Create a Render Web Service using `render.yaml`, and set `DATABASE_URL` to the private PostgreSQL runtime URL. Production mode rejects SQLite.
+4. Configure `MIGRATION_DATABASE_URL` separately as a private, direct-session PostgreSQL connection for Alembic only. It must not equal `DATABASE_URL`; the Procfile/blueprint unsets it before Uvicorn starts. Never expose this credential to application requests or browser code.
+5. Keep Render's generated `API_KEY`, or replace it with a strong secret of at least 32 characters.
+6. Verify the actual Render service start command matches `render.yaml`; a committed blueprint does not prove the existing dashboard service has been synced. Confirm `/health` reports `database: reachable`, then run one authenticated refresh.
+7. Add `MF_TERMINAL_API_URL` and `MF_TERMINAL_API_KEY` as GitHub Actions secrets. The included scheduler refreshes Monday–Saturday at 22:45 IST, after AMFI's normal publication window (including late liquid/overnight NAVs).
+
+**Migration privilege warning:** Revision `0029_admin_default_acl` requires the migration identity to alter default privileges for every role that can create objects in the `public` schema. A standard Supabase `postgres` connection may not be authorised to manage `supabase_admin` defaults. If the migration preflight rejects the role, stop and use a Supabase-supported privileged migration path; do not weaken or bypass the check. Do not assume that configuring the URL alone makes production migrations safe.
 
 ### Release checklist
 
@@ -98,7 +103,7 @@ pytest -q
 
 NAV refresh uses a process-local fast guard plus a PostgreSQL session-level advisory lock across service instances. SQLite tests exercise only the local guard; the PostgreSQL CI job exercises the database lock.
 
-Alembic is the sole production schema manager. Render runs `alembic upgrade head` before starting the API. `init_db()` remains only for local development and isolated tests. Production startup does not mutate schema.
+Alembic is the sole production schema manager. The reviewed Render blueprint runs `alembic upgrade head` before starting the API and removes `MIGRATION_DATABASE_URL` from the Uvicorn process environment. Verify the actual Render dashboard command after every service/blueprint change; the dashboard configuration can differ from the committed YAML. `init_db()` remains only for local development and isolated tests. Production application startup does not create or mutate schema.
 
 ## Portfolio ledger integrity
 

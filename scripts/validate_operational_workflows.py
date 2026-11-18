@@ -74,6 +74,12 @@ def main() -> int:
                 errors.append(
                     "render.yaml: run Alembic with the migration-only URL, unset it, then start Uvicorn"
                 )
+            procfile_path = Path("Procfile")
+            if procfile_path.is_file():
+                procfile_command = procfile_path.read_text(encoding="utf-8").strip()
+                expected_command = f"web: {command}"
+                if procfile_command != expected_command:
+                    errors.append("Procfile and render.yaml must use the same migration-safe startup command")
 
     backup_path = Path(".github/workflows/supabase-free-tier-backup.yml")
     if not backup_path.is_file():
@@ -93,6 +99,9 @@ def main() -> int:
         remote_step = step_by_name.get("Copy encrypted backup to mandatory off-site storage", {})
         cleanup_step = step_by_name.get("Remove encrypted runner copy", {})
         export_script = str(export_step.get("run", ""))
+        dump_commands = re.findall(r"(?m)^\s*supabase db dump[^\n]*", export_script)
+        if len(dump_commands) != 3 or any("--db-url" not in command or "--remote" in command for command in dump_commands):
+            errors.append("backup workflow: every Supabase dump must use the supported --db-url connection-string flag")
         upload_path = str(upload_step.get("with", {}).get("path", ""))
         remote_script = str(remote_step.get("run", ""))
         cleanup_script = str(cleanup_step.get("run", ""))
