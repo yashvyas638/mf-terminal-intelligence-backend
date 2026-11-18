@@ -1228,6 +1228,7 @@ def test_two_authenticated_users_cannot_access_each_others_portfolios(monkeypatc
         f"/v1/portfolios/{portfolio_id}/valuation",
         f"/v1/portfolios/{portfolio_id}/risk",
         f"/v1/portfolios/{portfolio_id}/lookthrough",
+        f"/v1/portfolios/{portfolio_id}/monthly-review",
         f"/v1/portfolios/{portfolio_id}/tax-lots",
         f"/v1/portfolios/{portfolio_id}/reports",
     ):
