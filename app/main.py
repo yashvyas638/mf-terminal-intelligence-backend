@@ -3385,6 +3385,97 @@ def list_portfolio_report_snapshots(portfolio_id: int) -> dict[str, Any]:
         }
 
 
+@app.get("/v1/portfolios/{portfolio_id}/monthly-review")
+def portfolio_monthly_review(portfolio_id: int) -> dict[str, Any]:
+    """Compare the latest immutable report snapshot in each month; never invent flow attribution."""
+    owner_id = require_authenticated_user()
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        snapshots = db.execute(
+            select(PortfolioReportSnapshot)
+            .where(
+                PortfolioReportSnapshot.portfolio_id == portfolio_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+            .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
+        ).scalars().all()
+
+    by_month: dict[str, dict[str, Any]] = {}
+    for row in snapshots:
+        month_key = row.generated_at.strftime("%Y-%m")
+        if month_key in by_month:
+            continue
+        if hashlib.sha256(row.content_json.encode("utf-8")).hexdigest() != row.content_sha256:
+            continue
+        report = json.loads(row.content_json)
+        valuation = report.get("valuation") or {}
+        lookthrough = report.get("lookthrough") or {}
+        by_month[month_key] = {
+            "month": month_key,
+            "report_id": row.id,
+            "generated_at": row.generated_at.isoformat(),
+            "valuation_date": valuation.get("valuation_date"),
+            "portfolio_value": valuation.get("current_value"),
+            "valuation_status": valuation.get("valuation_status"),
+            "amc": (lookthrough.get("amc_concentration") or {}).get("items") or [],
+            "categories": lookthrough.get("category_allocation") or [],
+            "asset_classes": lookthrough.get("asset_class_allocation") or [],
+            "lookthrough_coverage": (lookthrough.get("coverage") or {}).get("covered_weight_pct"),
+        }
+
+    months = sorted(by_month.values(), key=lambda item: item["month"], reverse=True)
+    if len(months) < 2:
+        return {
+            "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
+            "portfolio_id": portfolio_id,
+            "available_months": months,
+            "required_months": 2,
+            "note": "Generate immutable reports in at least two different calendar months to enable a comparison.",
+            "limitations": ["No month-on-month change is calculated from a single snapshot.", "Snapshot differences do not separate contributions, withdrawals, market movement or classification changes."],
+        }
+
+    current, previous = months[0], months[1]
+
+    def delta_map(current_rows: list[dict[str, Any]], previous_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        current_map = {str(item.get("name")): Decimal(str(item.get("portfolio_weight_pct"))) for item in current_rows if item.get("portfolio_weight_pct") is not None}
+        previous_map = {str(item.get("name")): Decimal(str(item.get("portfolio_weight_pct"))) for item in previous_rows if item.get("portfolio_weight_pct") is not None}
+        return [
+            {
+                "name": name,
+                "current_weight_pct": float(current_map[name]) if name in current_map else None,
+                "previous_weight_pct": float(previous_map[name]) if name in previous_map else None,
+                "change_percentage_points": float((current_map.get(name, Decimal("0")) - previous_map.get(name, Decimal("0"))).quantize(Decimal("0.0001"))),
+                "classification_status": "AVAILABLE" if name in current_map and name in previous_map else "NEW_OR_MISSING",
+            }
+            for name in sorted(set(current_map) | set(previous_map))
+        ]
+
+    current_value = Decimal(str(current["portfolio_value"])) if current["portfolio_value"] is not None else None
+    previous_value = Decimal(str(previous["portfolio_value"])) if previous["portfolio_value"] is not None else None
+    comparable_value = current_value is not None and previous_value is not None and current["valuation_status"] == "COMPLETE" and previous["valuation_status"] == "COMPLETE"
+    value_change = current_value - previous_value if comparable_value else None
+    return {
+        "status": "COMPARISON_AVAILABLE" if comparable_value else "PARTIAL_COMPARISON",
+        "portfolio_id": portfolio_id,
+        "current_month": current,
+        "previous_month": previous,
+        "portfolio_value_change": str(value_change.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if value_change is not None else None,
+        "portfolio_value_change_pct": (
+            float((value_change / previous_value * 100).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+            if value_change is not None and previous_value and previous_value > 0 else None
+        ),
+        "amc_weight_changes": delta_map(current["amc"], previous["amc"]),
+        "category_weight_changes": delta_map(current["categories"], previous["categories"]),
+        "asset_class_weight_changes": delta_map(current["asset_classes"], previous["asset_classes"]),
+        "limitations": [
+            "Snapshots are the latest valid immutable report generated in each calendar month, not necessarily month-end valuations.",
+            "Value changes are net changes only; contributions, withdrawals and market movement are not separately attributed.",
+            "AMC/category changes require comparable classifications in both snapshots; newly classified or missing rows are flagged.",
+            "Look-through coverage and valuation status must be reviewed before interpreting allocation changes.",
+        ],
+    }
+
+
 @app.get("/v1/reports/{report_id}")
 def get_portfolio_report_snapshot(report_id: int) -> dict[str, Any]:
     owner_id = require_authenticated_user()
