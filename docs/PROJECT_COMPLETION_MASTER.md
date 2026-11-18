@@ -197,3 +197,18 @@ Commits:
 - `544933c` — Test month-end eligibility boundaries for TWT comparisons.
 
 Latest observed PR head for this batch: `544933cd19829e2b0951bf724756d2281e48af80`. CI run [#2064](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44279404527) was queued when checked; current-head tests are not yet marked passed.
+
+
+## Consecutive-month comparison guard — 2026-11-18
+
+A further edge case was identified: selecting the two latest available month-end snapshots could compare October directly with December when November had no eligible snapshot, incorrectly presenting a two-month movement as month-on-month.
+
+- `select_latest_distinct_months` now returns only the latest month when the immediately preceding calendar month is missing.
+- The monthly comparison API and report snapshot therefore withhold the comparison instead of silently spanning a gap.
+- Added a regression test for December/October snapshots with November missing.
+
+Commits:
+- `8478833` — Withhold month-on-month comparison when a valuation month is missing.
+- `22092c1` — Test missing month gap withholding for TWT comparison.
+
+The latest observed CI run before these commits was [#2076](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44279549073), queued against a later branch head. Recheck CI against the exact current PR head before marking this change validated.
