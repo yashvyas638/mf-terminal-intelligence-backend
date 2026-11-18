@@ -10,21 +10,28 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
 
-def _period_key(report: dict[str, Any]) -> str | None:
-    valuation = report.get("valuation") or {}
-    raw = valuation.get("valuation_date")
-    if not raw:
-        return None
+def is_month_end_valuation_date(raw: Any, *, window_days: int = 7) -> bool:
+    """Return whether a valuation date falls within the final days of its month."""
+    if not raw or window_days < 0:
+        return False
     try:
         valuation_date = date.fromisoformat(str(raw)[:10])
     except ValueError:
+        return False
+    month_end = date(
+        valuation_date.year,
+        valuation_date.month,
+        monthrange(valuation_date.year, valuation_date.month)[1],
+    )
+    return 0 <= (month_end - valuation_date).days <= window_days
+
+
+def _period_key(report: dict[str, Any]) -> str | None:
+    valuation = report.get("valuation") or {}
+    raw = valuation.get("valuation_date")
+    if not is_month_end_valuation_date(raw):
         return None
-    month_end = date(valuation_date.year, valuation_date.month, monthrange(valuation_date.year, valuation_date.month)[1])
-    # NAV publication can lag the final calendar day; accept only the final
-    # seven calendar days as a month-end valuation window.
-    if (month_end - valuation_date).days > 7:
-        return None
-    return valuation_date.strftime("%Y-%m")
+    return str(raw)[:7]
 
 
 def select_latest_distinct_months(
