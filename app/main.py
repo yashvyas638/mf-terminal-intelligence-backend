@@ -75,6 +75,7 @@ from app.portfolio_allocation_intelligence import (
     amc_concentration,
     contribution_plan_preview,
     holdings_overlap_matrix,
+    holdings_disclosure_coverage,
     market_cap_allocation,
     parse_market_cap_classification_csv,
     portfolio_allocation,
