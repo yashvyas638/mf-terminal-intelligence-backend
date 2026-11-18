@@ -143,6 +143,8 @@ def test_market_cap_lookthrough_uses_verified_effective_dated_mapping_and_keeps_
     unknown = {row["reason"]: row["exposure_inr"] for row in result["unclassified_exposure"]}
     assert unknown["UNCLASSIFIED_STALE_MAPPING"] == "300.00"
     assert unknown["UNCLASSIFIED_NON_ISIN"] == "100.00"
+    assert len(result["sources"]) == 1
+    assert result["sources"][0]["classified_security_count"] == 1
 
 
 def test_market_cap_rejects_conflicting_effective_classifications_and_bad_provenance():
