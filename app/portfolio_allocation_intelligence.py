@@ -354,6 +354,22 @@ def contribution_plan_preview(
             "post_contribution_weight_pct": _pct(unallocated_cash, post_total),
             "reason": "UNALLOCATED_CONTRIBUTION",
         })
+    # Reconcile displayed weights after four-decimal rounding. Prefer the cash
+    # row so a display-only residual never increases a fund bucket's risk weight.
+    if after:
+        displayed_weight_total = sum(
+            (_d(row["post_contribution_weight_pct"], "post_contribution_weight_pct") or ZERO)
+            for row in after
+        )
+        weight_residual = HUNDRED - displayed_weight_total
+        if weight_residual != ZERO:
+            cash_row = next((row for row in after if row["key"] == "__UNALLOCATED_CASH__"), None)
+            chosen = cash_row or max(
+                after,
+                key=lambda row: _d(row["post_contribution_value_inr"], "post_contribution_value_inr") or ZERO,
+            )
+            adjusted_weight = (_d(chosen["post_contribution_weight_pct"], "post_contribution_weight_pct") or ZERO) + weight_residual
+            chosen["post_contribution_weight_pct"] = str(adjusted_weight.quantize(FOUR_DP, rounding=ROUND_HALF_UP))
     return {
         "methodology_version": METHODOLOGY_VERSION,
         "plan_type": "CONTRIBUTION_ONLY_PREVIEW",
