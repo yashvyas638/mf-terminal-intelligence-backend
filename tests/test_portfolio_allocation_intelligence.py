@@ -311,3 +311,48 @@ def test_overlap_labels_partial_isin_coverage_and_withholds_stale_disclosures():
     ], max_disclosure_age_days=180)
     assert stale["pairs"][0]["status"] == "WITHHELD_STALE_OR_UNDATED_DISCLOSURE"
     assert stale["pairs"][0]["overlap_inr"] is None
+
+def test_overlap_aggregates_duplicate_isin_rows_within_each_fund_before_duplication():
+    result = holdings_overlap_matrix([
+        {"scheme_code": "A", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100", "holdings": [
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "10"},
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "15"},
+        ]},
+        {"scheme_code": "B", "portfolio_value_inr": "200", "disclosure_coverage_pct": "100", "holdings": [
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "10"},
+        ]},
+    ])
+    pair = result["pairs"][0]
+    assert pair["common_isin_count"] == 1
+    assert pair["overlap_inr"] == "20.00"
+    duplicate = result["portfolio_duplication"]
+    assert duplicate["gross_positive_lookthrough_exposure_inr"] == "45.00"
+    assert duplicate["duplicated_exposure_inr"] == "10.00"
+    assert duplicate["top_duplicated_securities"][0]["fund_count"] == 2
+
+
+def test_market_cap_exposure_reconciliation_includes_classified_and_every_unknown_bucket():
+    result = market_cap_allocation(
+        [
+            {"security_id": "INE000000001", "is_isin": True, "lookthrough_value": "400"},
+            {"security_id": "INE000000002", "is_isin": True, "lookthrough_value": "300"},
+            {"security_id": "NONISIN:cash", "is_isin": False, "lookthrough_value": "100"},
+            {"security_id": "INE000000003", "is_isin": True, "lookthrough_value": "200"},
+        ],
+        [
+            {"security_id": "INE000000001", "market_cap_bucket": "LARGE_CAP", "effective_from": "2026-01-01", "source_as_of_date": "2026-10-31", "source_url": "https://example.com/source-a", "source_sha256": "a" * 64, "verification_status": "VERIFIED"},
+            {"security_id": "INE000000002", "market_cap_bucket": "MID_CAP", "effective_from": "2026-01-01", "source_as_of_date": "2025-01-01", "source_url": "https://example.com/source-b", "source_sha256": "b" * 64, "verification_status": "VERIFIED"},
+        ],
+        as_of_date="2026-11-01",
+        portfolio_value_inr="1000",
+        max_classification_age_days=180,
+    )
+    assert result["classified_exposure_inr"] == "400.00"
+    assert result["unclassified_exposure_inr"] == "600.00"
+    assert result["reconciliation"] == {
+        "classified_plus_unclassified_inr": "1000.00",
+        "positive_lookthrough_exposure_inr": "1000.00",
+        "difference_inr": "0.00",
+        "status": "RECONCILED",
+    }
+
