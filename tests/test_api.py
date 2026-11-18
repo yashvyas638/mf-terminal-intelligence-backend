@@ -2081,6 +2081,8 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert look_json["category_allocation"][0]["name"] == "Flexi Cap Fund"
     assert look_json["category_group_allocation"][0]["name"] == "Equity"
     assert look_json["asset_class_allocation"][0]["name"] == "Equity"
+    assert look_json["market_cap_allocation"]["status"] == "NOT_CONFIGURED"
+    assert look_json["market_cap_allocation"]["coverage_pct"] is None
 
     risk = client.get(f"/v1/portfolios/{portfolio_id}/risk?days=365", headers=headers)
     assert risk.status_code == 200, risk.text
