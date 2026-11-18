@@ -32,3 +32,14 @@ def test_portfolio_intelligence_never_fabricates_unconfigured_metrics():
     assert "valuation_status" in js
     assert "security_concentration" in js
     assert "missing_nav_scheme_codes" in js
+
+
+def test_lookthrough_percentage_fields_are_rendered_as_percentage_points():
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    # The API already returns percentage-point values (e.g. 42.5 means 42.5%).
+    assert 'pct(conc.isin_identity_coverage_pct)' in js
+    assert 'pct(conc.top_1_weight_of_observed_positive_pct)' in js
+    assert 'pct(conc.top_5_weight_of_observed_positive_pct)' in js
+    assert 'pct(conc.top_10_weight_of_observed_positive_pct)' in js
+    assert 'l.security_concentration?.isin_identity_coverage_pct' in js
+    assert 'l.concentration?.isin_identity_coverage_pct' not in js
