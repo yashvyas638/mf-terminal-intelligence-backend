@@ -132,12 +132,23 @@ def _compare(
         for field in value_fields:
             old_value = _decimal(before.get(field)) if before else None
             new_value = _decimal(after.get(field)) if after else None
+            is_percentage = field.endswith("_pct") or "_pct_" in field
+            invalid_percentage = is_percentage and any(
+                value is not None and not Decimal("0") <= value <= Decimal("100")
+                for value in (old_value, new_value)
+            )
+            if invalid_percentage:
+                old_value = new_value = None
             change = new_value - old_value if old_value is not None and new_value is not None else None
             metric = {
                 "previous": str(old_value) if old_value is not None else None,
                 "current": str(new_value) if new_value is not None else None,
                 "change": str(change) if change is not None else None,
-                "status": "COMPARABLE" if change is not None else "NOT_COMPARABLE_MISSING_SOURCE",
+                "status": (
+                    "WITHHELD_INVALID_SOURCE_VALUE" if invalid_percentage
+                    else "COMPARABLE" if change is not None
+                    else "NOT_COMPARABLE_MISSING_SOURCE"
+                ),
             }
             if field.endswith("_pct") or "_pct_" in field:
                 metric["change_percentage_points"] = str(change) if change is not None else None
@@ -318,7 +329,8 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     new_risk = new_report.get("risk") or {}
     old_risk_window = old_report.get("lookback_days")
     new_risk_window = new_report.get("lookback_days")
-    if old_risk_window != new_risk_window or not isinstance(old_risk_window, int) or old_risk_window <= 0:
+    if (old_risk_window != new_risk_window or isinstance(old_risk_window, bool)
+            or not isinstance(old_risk_window, int) or old_risk_window <= 0):
         risk_withheld_status = "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
     elif old_risk.get("status") != "OK" or new_risk.get("status") != "OK":
         risk_withheld_status = "WITHHELD_RISK_INPUT_STATUS"
