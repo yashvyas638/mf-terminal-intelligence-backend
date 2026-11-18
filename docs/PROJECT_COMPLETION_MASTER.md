@@ -786,3 +786,18 @@ Commits:
 - `70cd4ec` — Test malformed duplication snapshot handling.
 
 **Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
+
+
+### TWT pairwise overlap amount integrity — 2026-11-18
+
+Pairwise overlap percentage fields were already range-checked, but a negative or missing overlap INR amount could still enter a monthly comparison as a numeric delta.
+
+- Pair identity normalization now requires a finite, non-negative overlap amount before either directional percentage or INR movement is compared.
+- Invalid pair evidence withholds the pairwise overlap section instead of publishing a negative overlap amount.
+- Added a regression for a negative overlap INR source value.
+
+Commits:
+- `052b585` — Reject negative or missing monthly overlap amounts.
+- `f5a3e6c` — Test negative monthly overlap amount rejection.
+
+**Validation:** committed; exact latest-head CI remains pending. No test pass is claimed. No merge, deployment or production data change.
