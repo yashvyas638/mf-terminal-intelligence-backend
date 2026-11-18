@@ -46,6 +46,20 @@ def _table(rows: list[list[object]], widths=None) -> Table:
     return table
 
 
+def _allocation_group_rows(items: list[dict], label: str) -> list[list[object]]:
+    """Build one explicit allocation dimension table from the frozen report payload."""
+    rows: list[list[object]] = [[label, "Market value INR", "Portfolio weight"]]
+    for item in items:
+        rows.append([
+            Paragraph(_text(item.get("name")), getSampleStyleSheet()["BodyText"]),
+            _text(item.get("market_value_inr")),
+            _text(item.get("portfolio_weight_pct")),
+        ])
+    if len(rows) == 1:
+        rows.append(["No classified allocation rows", "—", "—"])
+    return rows
+
+
 def build_portfolio_report_pdf(report: dict) -> bytes:
     """Render a compact, source-linked report; source values remain in the JSON snapshot."""
     output = BytesIO()
@@ -84,6 +98,7 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         fontSize=7.5,
         leading=10,
         textColor=colors.HexColor("#475569"),
+        wordWrap="CJK",
     ))
 
     story = [
@@ -201,13 +216,21 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
     if len(allocation_rows) == 1:
         allocation_rows.append(["Allocation unavailable", "—", "—", "—", "—"])
     story.extend([
-        Paragraph("Allocation and AMC concentration", styles["SectionHeading"]),
+        Paragraph("Scheme allocation and AMC concentration", styles["SectionHeading"]),
         Paragraph(
             "Status: " + _text(allocation_intelligence.get("status"))
-            + " · Valuation as of: " + _text(allocation_intelligence.get("valuation_date")),
+            + " · Valuation as of: " + _text(allocation_intelligence.get("valuation_date"))
+            + " · Schemes: " + _text(allocation.get("scheme_count"))
+            + " · Unclassified schemes: " + _text((allocation.get("data_quality") or {}).get("unclassified_scheme_count")),
             styles["SmallNote"],
         ),
         _table(allocation_rows, [49 * mm, 34 * mm, 34 * mm, 25 * mm, 20 * mm]),
+        Paragraph("Category allocation", styles["SectionHeading"]),
+        _table(_allocation_group_rows(allocation.get("by_category") or [], "Category"), [75 * mm, 48 * mm, 39 * mm]),
+        Paragraph("Sub-category allocation", styles["SectionHeading"]),
+        _table(_allocation_group_rows(allocation.get("by_sub_category") or [], "Sub-category"), [75 * mm, 48 * mm, 39 * mm]),
+        Paragraph("Asset-class allocation", styles["SectionHeading"]),
+        _table(_allocation_group_rows(allocation.get("by_asset_class") or [], "Asset class"), [75 * mm, 48 * mm, 39 * mm]),
     ])
     amc = allocation_intelligence.get("amc_concentration") or {}
     amc_rows = [["AMC", "Portfolio value INR", "Portfolio weight"]]
@@ -327,10 +350,26 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
     sources = report.get("sources") or []
     source_rows = [["Source", "As-of / retrieval", "Reference"]]
     for source in sources:
+        source_type = str(source.get("source_type") or "SOURCE").replace("_", " ").title()
+        source_label = source.get("title") or source.get("scheme_name") or source_type
+        source_as_of = (
+            source.get("as_of_date")
+            or source.get("source_as_of_date")
+            or source.get("max_nav_date")
+            or source.get("effective_nav_date")
+            or source.get("retrieved_at")
+        )
+        source_url = source.get("url") or source.get("source_url")
+        if source.get("min_nav_date") or source.get("max_nav_date"):
+            source_as_of = (
+                str(source.get("min_nav_date") or "—")
+                + " to "
+                + str(source.get("max_nav_date") or "—")
+            )
         source_rows.append([
-            Paragraph(_text(source.get("title")), styles["SmallNote"]),
-            _text(source.get("as_of_date") or source.get("effective_nav_date") or source.get("retrieved_at")),
-            Paragraph(_text(source.get("url")), styles["SmallNote"]),
+            Paragraph(_text(source_label), styles["SmallNote"]),
+            _text(source_as_of),
+            Paragraph(_text(source_url), styles["SmallNote"]),
         ])
     story.extend([Paragraph("Source references", styles["SectionHeading"]), _table(source_rows, [55 * mm, 40 * mm, 70 * mm])])
 
