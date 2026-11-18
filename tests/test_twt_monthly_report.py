@@ -475,3 +475,35 @@ def test_monthly_risk_comparison_rejects_var_above_total_loss_bound():
     )
 
     assert result["risk_changes"]["historical_var_95"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+
+
+def test_monthly_risk_comparison_reads_actual_top_level_report_risk_schema():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    previous_report["lookback_days"] = 365
+    current_report["lookback_days"] = 365
+    previous_report["risk"] = {
+        "status": "OK",
+        "annualized_volatility": "0.12",
+        "max_drawdown": "-0.20",
+        "historical_var_95": "0.04",
+        "historical_cvar_95": "0.06",
+    }
+    current_report["risk"] = {
+        "status": "OK",
+        "annualized_volatility": "0.18",
+        "max_drawdown": "-0.25",
+        "historical_var_95": "0.05",
+        "historical_cvar_95": "0.08",
+    }
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["risk_changes"]["annualized_volatility"]["status"] == "COMPARABLE"
+    assert result["risk_changes"]["annualized_volatility"]["change"] == "0.06"
+    assert result["risk_changes"]["max_drawdown"]["change"] == "-0.05"
+    assert result["risk_changes"]["historical_var_95"]["change"] == "0.01"
+    assert result["risk_changes"]["historical_cvar_95"]["change"] == "0.02"
