@@ -523,3 +523,12 @@ Commits:
 - `42b194b` — Test comparable risk windows for TWT monthly reports.
 
 Validation remains pending on the exact latest PR head. No merge, deployment or production data changes.
+
+
+### Smart SIP budget precision hardening — 2026-11-18
+
+- The Smart SIP preview request now rejects additional-contribution budgets with fractional paise (more than two decimal places), matching the INR contribution planner's money precision contract.
+- Added API regression coverage for a ₹5,000.001 budget returning HTTP 422.
+- Commits: `8a162f6` (validation), `9094535` (regression test).
+- The Smart SIP portfolio-need gate also requires a COMPLETE, FRESH valuation and exact date match; stale/incomplete valuation exposes no underweight buckets.
+- **Validation remains pending:** GitHub Actions run #2175 is still queued for its three jobs at last inspection. The latest branch head after this hardening must be rechecked for its own CI run. No tests are marked passed based on the older queued run.
