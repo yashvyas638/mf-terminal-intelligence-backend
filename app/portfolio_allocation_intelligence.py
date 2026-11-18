@@ -537,12 +537,15 @@ def holdings_overlap_matrix(
     assert threshold is not None
     if threshold < ZERO or threshold > HUNDRED:
         raise ValueError("disclosure coverage threshold must be between 0 and 100")
+    fund_rows = list(funds)
+    if len(fund_rows) > 200:
+        raise ValueError("overlap matrix is limited to 200 active funds per calculation")
     normalized: list[dict[str, Any]] = []
     codes: set[str] = set()
     security_contributions: dict[str, list[tuple[str, Decimal]]] = defaultdict(list)
     fund_exposures: dict[str, dict[str, Decimal]] = {}
     gross_positive = ZERO
-    for fund in funds:
+    for fund in fund_rows:
         code = str(fund.get("scheme_code", "")).strip()
         if not code or code in codes:
             raise ValueError("scheme_code must be present and unique")
