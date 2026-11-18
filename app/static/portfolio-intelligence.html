@@ -5,7 +5,7 @@
 <title>MF Terminal · Portfolio Intelligence</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/portfolio-intelligence.css?v=1">
+<link rel="stylesheet" href="/static/portfolio-intelligence.css?v=2">
 </head>
 <body>
 <div class="shell">
@@ -59,10 +59,12 @@
   <section class="view hidden" id="view-allocation">
     <div class="section-intro"><div><div class="eyebrow">ALLOCATION INTELLIGENCE</div><h2>Exposure before opinion.</h2><p>See scheme weights and identify the allocation data that is still missing.</p></div></div>
     <div class="grid-main">
-      <article class="panel"><div class="panel-head"><div><div class="eyebrow">SCHEME WEIGHTS</div><h3>Portfolio allocation</h3></div><span class="micro">Current market value</span></div><div id="allocationBars" class="bar-list"></div></article>
-      <article class="panel"><div class="panel-head"><div><div class="eyebrow">STRATEGY CONTROLS</div><h3>Target allocation</h3></div><span class="badge badge-muted">Not configured</span></div><div class="empty-state"><div class="empty-symbol">◎</div><strong>Your allocation policy comes first.</strong><p>Target bands for asset class, market cap, scheme category and AMC are not yet configured in this release. No drift score or target breach will be invented.</p></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">CATEGORY ALLOCATION</div><h3>Portfolio allocation</h3></div><span class="micro" id="allocationAsOf">Current market value</span></div><div id="allocationBars" class="bar-list"></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">AMC CONCENTRATION</div><h3>Fund-house exposure</h3></div><span class="micro" id="amcConcentrationStatus">Loading</span></div><div id="amcBars" class="bar-list"></div><div id="amcMetrics" class="metric-stack"></div></article>
     </div>
-    <article class="panel"><div class="panel-head"><div><div class="eyebrow">ALLOCATION DEFINITIONS</div><h3>What is currently measurable</h3></div></div><div class="definition-grid"><div><b>Scheme weight</b><p>Scheme market value ÷ complete portfolio market value.</p></div><div><b>Category / asset class</b><p>Requires verified scheme classification and reconciliation rules.</p></div><div><b>Market-cap split</b><p>Requires dated security-level market-cap classification. Scheme labels are not used as a substitute.</p></div><div><b>Target drift</b><p>Requires user-defined target and min/max bands. It is intentionally withheld until configured.</p></div></div></article>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">TARGET POLICY</div><h3>Configure allocation bands</h3></div><span class="micro">Versioned · Owner scoped</span></div><div class="target-controls"><label>Dimension<select id="targetDimension"><option value="ASSET_CLASS">Asset class</option><option value="CATEGORY">Category group</option><option value="SUB_CATEGORY">Sub-category</option><option value="AMC">AMC</option><option value="SCHEME">Scheme</option></select></label><label>Effective from<input id="targetEffectiveFrom" type="date"></label><button id="loadTargets" class="btn btn-quiet" type="button">Load current targets</button></div><div id="targetEditor" class="target-editor"><div class="empty">Select a dimension and load available labels.</div></div><div class="target-footer"><span id="targetFeedback" class="micro">Preferred target percentages must total 100%. Previous versions are retained.</span><button id="saveTargets" class="btn btn-primary" type="button" disabled>Save target version</button></div></article>
+    <div class="grid-main"><article class="panel"><div class="panel-head"><div><div class="eyebrow">ALLOCATION DRIFT</div><h3>Actual vs target bands</h3></div><span id="driftStatus" class="micro">No policy loaded</span></div><div id="driftTable" class="table-wrap"><div class="empty">Configure a complete target set to calculate drift.</div></div></article><article class="panel"><div class="panel-head"><div><div class="eyebrow">CONTRIBUTION PREVIEW</div><h3>Where could the next rupee go?</h3></div><span class="badge badge-muted">Simulation only</span></div><div class="contribution-controls"><label>Contribution amount (₹)<input id="contributionAmount" type="number" min="1" max="1000000000000" step="0.01" placeholder="e.g. 10000"></label><button id="previewContribution" class="btn btn-primary" type="button" disabled>Simulate allocation</button></div><div id="contributionResult" class="metric-stack"><div class="empty">A complete target policy is required for a preview.</div></div></article></div>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">METHODOLOGY</div><h3>What these numbers mean</h3></div></div><div class="definition-grid"><div><b>AMC concentration</b><p>Scheme market-value aggregation by stored AMC metadata with HHI and effective AMC count.</p></div><div><b>Market-cap split</b><p>Verified effective-dated ISIN mappings only. Unknown exposure stays visible.</p></div><div><b>Target drift</b><p>Complete mutually exclusive targets must total 100% and actual values must reconcile.</p></div><div><b>Contribution preview</b><p>New cash is allocated to target gaps only; no sells or transactions are generated.</p></div></div></article>
   </section>
   <section class="view hidden" id="view-lookthrough">
     <div class="section-intro"><div><div class="eyebrow">UNDERLYING EXPOSURE</div><h2>Look beneath the fund names.</h2><p>Verified holdings disclosures aggregated across your active portfolio.</p></div><span id="coverageBadge" class="badge">Coverage pending</span></div>
@@ -76,6 +78,7 @@
       <article class="panel"><div class="panel-head"><div><div class="eyebrow">SECTOR EXPOSURE</div><h3>Underlying sectors</h3></div></div><div id="sectorBars" class="bar-list"></div></article>
       <article class="panel"><div class="panel-head"><div><div class="eyebrow">CONCENTRATION</div><h3>Security concentration</h3></div></div><div id="concentrationMetrics" class="metric-stack"></div></article>
     </div>
+    <div class="grid-main"><article class="panel"><div class="panel-head"><div><div class="eyebrow">FUND-TO-FUND OVERLAP</div><h3>Shared underlying securities</h3></div><span id="overlapStatus" class="micro">Loading</span></div><div id="overlapMetrics" class="metric-stack"></div><div id="overlapTable" class="table-wrap"></div></article><article class="panel"><div class="panel-head"><div><div class="eyebrow">VERIFIED MARKET-CAP MIX</div><h3>Large · Mid · Small</h3></div><span id="marketCapStatus" class="micro">Loading</span></div><div id="marketCapBars" class="bar-list"></div><div id="marketCapEvidence" class="panel-note">Only source-verified, effective-dated ISIN classifications are included.</div></article></div>
     <article class="panel"><div class="panel-head"><div><div class="eyebrow">TOP UNDERLYING POSITIONS</div><h3>Look-through holdings</h3></div><span class="micro" id="securityCount">— securities</span></div><div id="securityTable" class="table-wrap"></div></article>
     <div id="lookthroughSources" class="panel source-panel"></div>
   </section>
@@ -95,5 +98,5 @@
 <footer><span>MF TERMINAL INTELLIGENCE</span><span>Research support only · Not an order execution platform</span></footer>
 </main></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/static/portfolio-intelligence.js?v=1"></script>
+<script src="/static/portfolio-intelligence.js?v=2"></script>
 </body></html>
