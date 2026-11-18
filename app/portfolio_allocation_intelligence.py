@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 import csv
 import re
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 from typing import Any, Iterable, Mapping
 from io import StringIO
 
@@ -270,10 +270,14 @@ def contribution_plan_preview(
         raise ValueError("portfolio_value_inr must be positive")
     if contribution <= ZERO or contribution > Decimal("1000000000000"):
         raise ValueError("contribution_inr must be positive and within the supported limit")
+    if contribution != contribution.quantize(CENT):
+        raise ValueError("contribution_inr cannot contain fractions of a paisa")
     max_contribution = _d(max_contribution_inr, "max_contribution_inr") if max_contribution_inr is not None else None
     max_weight = _d(max_post_weight_pct, "max_post_weight_pct") if max_post_weight_pct is not None else None
     if max_contribution is not None and (max_contribution <= ZERO or max_contribution > Decimal("1000000000000")):
         raise ValueError("max_contribution_inr must be positive and within the supported limit")
+    if max_contribution is not None and max_contribution != max_contribution.quantize(CENT):
+        raise ValueError("max_contribution_inr cannot contain fractions of a paisa")
     if max_contribution is not None and contribution > max_contribution:
         raise ValueError("contribution_inr exceeds the approved max_contribution_inr risk budget")
     if max_weight is not None and (max_weight <= ZERO or max_weight > HUNDRED):
@@ -302,9 +306,17 @@ def contribution_plan_preview(
     allocation_budget = min(contribution, deficit_total)
     allocations = []
     allocated_total = ZERO
+    fractional_remainders: list[tuple[Decimal, str]] = []
+    safe_capacities: dict[str, Decimal] = {}
     for key in sorted(deficits):
         amount = allocation_budget * deficits[key] / deficit_total if deficit_total > ZERO else ZERO
-        rounded_amount = amount.quantize(CENT, rounding=ROUND_HALF_UP)
+        # Always round down first: half-up rounding can route more than a tiny
+        # target deficit and breach a saved/risk weight ceiling by a paisa.
+        rounded_amount = amount.quantize(CENT, rounding=ROUND_DOWN)
+        safe_capacity = deficits[key].quantize(CENT, rounding=ROUND_DOWN)
+        rounded_amount = min(rounded_amount, safe_capacity)
+        safe_capacities[key] = safe_capacity
+        fractional_remainders.append((amount - rounded_amount, key))
         allocations.append({
             "key": key,
             "current_value_inr": _money(current_values[key] or ZERO),
@@ -313,14 +325,19 @@ def contribution_plan_preview(
             "reason": "TARGET_GAP" if rounded_amount > ZERO else "NO_TARGET_GAP",
         })
         allocated_total += rounded_amount
-    # Reconcile displayed paise exactly to the contribution budget.
-    budget_rounded = allocation_budget.quantize(CENT, rounding=ROUND_HALF_UP)
+    # Distribute remaining whole paise by largest remainder, never exceeding
+    # the floor-rounded target deficit for any bucket.
+    budget_rounded = allocation_budget.quantize(CENT, rounding=ROUND_DOWN)
     residual = budget_rounded - allocated_total
-    if residual != ZERO and allocations and deficit_total > ZERO:
-        chosen = max(allocations, key=lambda row: (deficits[row["key"]], row["key"]))
-        adjusted = _d(chosen["contribution_allocation_inr"], "allocation") + residual
-        chosen["contribution_allocation_inr"] = _money(adjusted)
-        allocated_total += residual
+    by_key = {row["key"]: row for row in allocations}
+    for _, key in sorted(fractional_remainders, key=lambda item: (-item[0], item[1])):
+        if residual < CENT:
+            break
+        current_allocation = _d(by_key[key]["contribution_allocation_inr"], "allocation")
+        if current_allocation + CENT <= safe_capacities[key]:
+            by_key[key]["contribution_allocation_inr"] = _money(current_allocation + CENT)
+            allocated_total += CENT
+            residual -= CENT
     after = []
     for item in allocations:
         value = current_values[item["key"]] + _d(item["contribution_allocation_inr"], "allocation")
