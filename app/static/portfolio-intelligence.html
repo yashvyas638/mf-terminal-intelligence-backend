@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MF Terminal · Portfolio Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/portfolio-intelligence.css?v=1">
+</head>
+<body>
+<div class="shell">
+<aside class="rail">
+  <a class="wordmark" href="/"><span class="mark">M</span><span>MF TERMINAL<small>INTELLIGENCE</small></span></a>
+  <div class="rail-label">WORKSPACE</div>
+  <nav class="nav">
+    <a href="/" class="nav-item"><span>⌂</span> Market overview</a>
+    <a href="/research" class="nav-item"><span>⌕</span> Fund research</a>
+    <a href="/intelligence" class="nav-item active"><span>◈</span> Portfolio intelligence</a>
+  </nav>
+  <div class="rail-bottom"><div class="live-dot"></div><span>Research environment</span><small>Decision support · INR</small></div>
+</aside>
+<main class="main">
+<header class="topbar">
+  <div><div class="eyebrow">PRIVATE WEALTH WORKSPACE <span class="eyebrow-dot"></span> INDIA</div><h1>Portfolio intelligence</h1><p class="subtitle">Understand what you own. See what drives risk. Decide where the next rupee belongs.</p></div>
+  <div class="top-actions"><span id="dataStamp" class="stamp">Awaiting data</span><button id="refreshBtn" class="btn btn-quiet">↻ Refresh analysis</button></div>
+</header>
+<section class="auth-panel" id="authPanel">
+  <div><strong>Sign in to your private portfolio</strong><p>Portfolio data is account-scoped and never shared with other users.</p></div>
+  <form id="authForm"><input id="authEmail" type="email" autocomplete="username" placeholder="Email address" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" minlength="8" required><button class="btn btn-primary" id="signIn" type="submit">Sign in</button><button class="btn btn-quiet" id="signUp" type="button">Create account</button><button class="btn btn-quiet" id="signOut" type="button" hidden>Sign out</button></form>
+  <div id="authMessage" class="auth-message" role="status">Sign in to load your portfolios.</div>
+</section>
+<section id="workspace" class="hidden">
+  <div class="control-row">
+    <div class="portfolio-picker"><label for="portfolioSelect">SELECT PORTFOLIO</label><select id="portfolioSelect"><option value="">Loading portfolios…</option></select></div>
+    <div class="control-meta"><span class="status-dot"></span><span id="portfolioStatus">Checking data quality</span></div>
+  </div>
+  <nav class="tabs" aria-label="Portfolio intelligence sections">
+    <button class="tab active" data-tab="overview">01 <span>Overview</span></button>
+    <button class="tab" data-tab="allocation">02 <span>Allocation</span></button>
+    <button class="tab" data-tab="lookthrough">03 <span>Look-through</span></button>
+    <button class="tab" data-tab="risk">04 <span>Risk lab</span></button>
+    <button class="tab" data-tab="review">05 <span>Monthly review</span></button>
+  </nav>
+  <div id="globalNotice" class="notice hidden"></div>
+  <section class="view" id="view-overview">
+    <div class="section-intro"><div><div class="eyebrow">PORTFOLIO DIAGNOSIS</div><h2>The whole picture, clearly.</h2><p>Current holdings, valuation quality and the signals that deserve attention.</p></div><span id="valuationBadge" class="badge">—</span></div>
+    <div class="kpi-grid">
+      <article class="kpi kpi-primary"><div class="kpi-label">Current market value <span>↗</span></div><div id="kpiValue" class="kpi-value">—</div><div id="kpiValueMeta" class="kpi-foot">Awaiting portfolio valuation</div></article>
+      <article class="kpi"><div class="kpi-label">Remaining cost basis</div><div id="kpiCost" class="kpi-value">—</div><div class="kpi-foot">Average-cost accounting</div></article>
+      <article class="kpi"><div class="kpi-label">Unrealised gain / loss</div><div id="kpiGain" class="kpi-value">—</div><div id="kpiGainMeta" class="kpi-foot">Requires complete NAV coverage</div></article>
+      <article class="kpi"><div class="kpi-label">Portfolio XIRR</div><div id="kpiXirr" class="kpi-value">—</div><div class="kpi-foot">Withheld when NAV is stale or incomplete</div></article>
+    </div>
+    <div class="grid-main">
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">PORTFOLIO COMPOSITION</div><h3>Where your money sits</h3></div><span class="micro" id="holdingCount">— holdings</span></div><div id="allocationVisual" class="allocation-visual"><div class="empty">Select a portfolio to view allocation.</div></div><div id="holdingTable" class="table-wrap"></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">DATA CONFIDENCE</div><h3>Can these numbers be trusted?</h3></div><span class="icon-orb">◎</span></div><div id="qualityList" class="quality-list"><div class="empty">Data checks will appear here.</div></div><div class="panel-note">We do not convert missing NAVs or holdings disclosures into zero exposure.</div></article>
+    </div>
+    <article class="panel insight-panel"><div class="panel-head"><div><div class="eyebrow">ANALYST NOTES</div><h3>What needs your attention</h3></div><span class="micro">Rule-based · Evidence-led</span></div><div id="diagnosis" class="diagnosis"><div class="empty">Analysis will appear after valuation.</div></div></article>
+  </section>
+  <section class="view hidden" id="view-allocation">
+    <div class="section-intro"><div><div class="eyebrow">ALLOCATION INTELLIGENCE</div><h2>Exposure before opinion.</h2><p>See scheme weights and identify the allocation data that is still missing.</p></div></div>
+    <div class="grid-main">
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">SCHEME WEIGHTS</div><h3>Portfolio allocation</h3></div><span class="micro">Current market value</span></div><div id="allocationBars" class="bar-list"></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">STRATEGY CONTROLS</div><h3>Target allocation</h3></div><span class="badge badge-muted">Not configured</span></div><div class="empty-state"><div class="empty-symbol">◎</div><strong>Your allocation policy comes first.</strong><p>Target bands for asset class, market cap, scheme category and AMC are not yet configured in this release. No drift score or target breach will be invented.</p></div></article>
+    </div>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">ALLOCATION DEFINITIONS</div><h3>What is currently measurable</h3></div></div><div class="definition-grid"><div><b>Scheme weight</b><p>Scheme market value ÷ complete portfolio market value.</p></div><div><b>Category / asset class</b><p>Requires verified scheme classification and reconciliation rules.</p></div><div><b>Market-cap split</b><p>Requires dated security-level market-cap classification. Scheme labels are not used as a substitute.</p></div><div><b>Target drift</b><p>Requires user-defined target and min/max bands. It is intentionally withheld until configured.</p></div></div></article>
+  </section>
+  <section class="view hidden" id="view-lookthrough">
+    <div class="section-intro"><div><div class="eyebrow">UNDERLYING EXPOSURE</div><h2>Look beneath the fund names.</h2><p>Verified holdings disclosures aggregated across your active portfolio.</p></div><span id="coverageBadge" class="badge">Coverage pending</span></div>
+    <div class="kpi-grid compact">
+      <article class="kpi"><div class="kpi-label">Disclosure coverage</div><div id="ltCoverage" class="kpi-value">—</div><div class="kpi-foot">Share of current portfolio value with disclosures</div></article>
+      <article class="kpi"><div class="kpi-label">Fresh disclosed value</div><div id="ltFresh" class="kpi-value">—</div><div class="kpi-foot">Within configured disclosure age</div></article>
+      <article class="kpi"><div class="kpi-label">ISIN identity coverage</div><div id="ltIsin" class="kpi-value">—</div><div class="kpi-foot">Observed positive disclosed exposure</div></article>
+      <article class="kpi"><div class="kpi-label">Effective security count</div><div id="ltEffective" class="kpi-value">—</div><div class="kpi-foot">HHI-derived, covered exposures only</div></article>
+    </div>
+    <div class="grid-main">
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">SECTOR EXPOSURE</div><h3>Underlying sectors</h3></div></div><div id="sectorBars" class="bar-list"></div></article>
+      <article class="panel"><div class="panel-head"><div><div class="eyebrow">CONCENTRATION</div><h3>Security concentration</h3></div></div><div id="concentrationMetrics" class="metric-stack"></div></article>
+    </div>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">TOP UNDERLYING POSITIONS</div><h3>Look-through holdings</h3></div><span class="micro" id="securityCount">— securities</span></div><div id="securityTable" class="table-wrap"></div></article>
+    <div id="lookthroughSources" class="panel source-panel"></div>
+  </section>
+  <section class="view hidden" id="view-risk">
+    <div class="section-intro"><div><div class="eyebrow">RISK & RESILIENCE</div><h2>Understand the downside.</h2><p>Historical estimates using accepted NAV observations, not forecasts.</p></div><button id="runRisk" class="btn btn-primary">Calculate 3-year risk</button></div>
+    <div id="riskStatus" class="notice">Risk analysis has not been requested.</div>
+    <div id="riskMetrics" class="risk-grid"><div class="empty">Run the risk analysis to load metrics.</div></div>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">INTERPRETATION</div><h3>Risk methodology & limitations</h3></div></div><div class="definition-grid"><div><b>Historical volatility</b><p>Annualised from aligned daily NAV returns.</p></div><div><b>Maximum drawdown</b><p>Largest peak-to-trough decline in the observed period.</p></div><div><b>VaR / CVaR 95%</b><p>Historical tail-loss estimates, not maximum-loss guarantees.</p></div><div><b>Portfolio weights</b><p>Current weights held constant through lookback; not a reconstruction of historical weights.</p></div></div></article>
+  </section>
+  <section class="view hidden" id="view-review">
+    <div class="section-intro"><div><div class="eyebrow">PORTFOLIO GOVERNANCE</div><h2>A review you can reproduce.</h2><p>Save an immutable snapshot with valuation, risk, source and disclosure evidence.</p></div><button id="createReport" class="btn btn-primary">＋ Generate report snapshot</button></div>
+    <div id="reportFeedback" class="notice hidden"></div>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">SAVED REPORTS</div><h3>Report history</h3></div><span class="micro">Immutable snapshots</span></div><div id="reportList" class="report-list"><div class="empty">Loading saved reports…</div></div></article>
+    <article class="panel"><div class="panel-head"><div><div class="eyebrow">MONTH-END REVIEW FRAMEWORK</div><h3>What each review should reconcile</h3></div></div><div class="review-steps"><div><span>01</span><b>Portfolio movement</b><p>Contributions, withdrawals and market movement.</p></div><div><span>02</span><b>Allocation change</b><p>Scheme weights and, when available, verified market-cap and AMC exposure.</p></div><div><span>03</span><b>Risk change</b><p>Comparable lookback windows and data coverage.</p></div><div><span>04</span><b>Action register</b><p>Target breaches, unresolved data gaps and next review date.</p></div></div></article>
+  </section>
+</section>
+<footer><span>MF TERMINAL INTELLIGENCE</span><span>Research support only · Not an order execution platform</span></footer>
+</main></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/static/portfolio-intelligence.js?v=1"></script>
+</body></html>
