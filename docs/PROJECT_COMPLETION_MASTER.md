@@ -396,3 +396,41 @@ Commits:
 - `5130001` — Test exact seven-calendar-day TWT month-end window.
 
 **Validation:** targeted regression is committed; current-head CI is pending. The previous CI run was queued on the prior head and cannot validate these commits. Do not claim the suite passed until the new run completes.
+
+
+## Production blocker recheck — exact live state at PR head 48af23c — 2026-11-18
+
+This is a fresh recheck against the current branch and linked Render service, not a carry-forward of the older SHA in the previous audit section.
+
+### Exact GitHub state
+
+- PR #135 remains open and draft, targeting `main`.
+- Exact branch / PR head at this check: `48af23c2044c089644f1476a7f606deeef354764` (commit: “Record TWT snapshot read-integrity fix in master tracker”).
+- CI run [#2142](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44280450400) is associated with this exact head. Its three jobs — SQLite, PostgreSQL and live read-only AMFI validation — were all `queued` at inspection. No tests are claimed as passed for this head.
+- Candidate `render.yaml` on this branch declares both `DATABASE_URL` and `MIGRATION_DATABASE_URL` as separately supplied secrets and starts with Alembic before Uvicorn. `migrations/env.py` calls `migration_database_url()` before running either online or offline migrations. Production intentionally fails closed when the migration URL is absent or equal to the runtime URL.
+
+### Fresh Render configuration and failure evidence
+
+- The actual Render service remains connected to `audit/production-foundation`, not this PR branch, with auto-deploy enabled.
+- The live service's configured start command is still `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`. This differs from the candidate `render.yaml` command, which unsets the migration URL after Alembic and before Uvicorn.
+- Latest listed Render deploy remains `update_failed` for commit `bcbfeeb69ca7cc21a00933961f063b92100b57ef`; Render reports the build succeeded and the deploy process exited non-zero.
+- Fresh timestamped application logs from 2026-11-18 08:17–08:18 UTC show the live start command invoking Alembic, then `app/db.py:migration_database_url()` raising exactly: `MIGRATION_DATABASE_URL must be configured separately from runtime DATABASE_URL for production schema migrations`. Render then reports no open ports / port-scan timeout. This proves the currently observed deploy failure is caused by the missing separate migration credential in the live service configuration, not by pip/build failure.
+- Render's service metadata does not expose secret values, and no attempt was made to read or change them. A valid fix requires the owner to provision a dedicated migration connection string, verify that it is different from the runtime URL, and verify the database role has only the required migration privileges. Do not copy the service-role key or a superuser URL into the runtime `DATABASE_URL`.
+- The app's guard is correct and must remain fail-closed. Do not weaken it, fall back to the runtime role, bypass Alembic, or start the app against a schema that may be behind the code.
+
+### Safe remediation plan (owner action required)
+
+1. In Supabase, provision/identify a dedicated migration database role and connection string. Keep the runtime role non-owner/non-superuser and least-privileged. Store the migration URL as a separate Render secret named `MIGRATION_DATABASE_URL`; do not paste credentials into GitHub, issues, chat or source files.
+2. Verify privately that the two URLs are different and that the migration role can apply the pending Alembic chain. Confirm the runtime role cannot perform DDL or bypass RLS.
+3. Before production migration, finish isolated PostgreSQL migration tests through revision `0032_target_owner_fk`, review the P0 default-ACL migration, and confirm a verified encrypted backup plus isolated restore.
+4. Reconcile the live Render start command with the reviewed repository blueprint. Preserve the required sequence: migrations complete successfully using the migration role; remove the migration credential from the application process; then start Uvicorn on Render's `$PORT`.
+5. Only after explicit release approval, apply migrations/deploy and verify the full deployed SHA via the health endpoint. Do not infer the active SHA from Git branch head or a failed deploy attempt.
+
+### Work completed in this recheck
+
+- Re-read the current PR head, branch tree, `render.yaml`, Alembic environment, migration-URL guard/tests, CI workflow, latest CI run/jobs, Render service metadata, deploy history, events and timestamped application logs.
+- Confirmed the repository already contains the correct fail-closed migration credential guard and a candidate Render blueprint that separates migration and runtime credentials. The production service has not adopted that configuration and has not been given a verified migration secret.
+- No source-code bypass was introduced because it would weaken production database security and could leave the application running against an incompatible schema.
+- No Render setting, secret, branch, start command or deployment was changed. No Supabase SQL write, migration, backup/restore, Auth-user creation or production data change was performed.
+
+**Disposition: production remains blocked by missing owner-provisioned migration credentials, P0 database ACL migration, backup/restore evidence and two-account isolation.** The failure is now tied to timestamped Render logs and the exact live service configuration.
