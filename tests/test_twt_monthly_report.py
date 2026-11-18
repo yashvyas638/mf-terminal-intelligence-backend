@@ -551,7 +551,7 @@ def test_monthly_risk_comparison_rejects_var_above_total_loss_bound():
     assert result["risk_changes"]["historical_var_95"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
 
 
-def test_monthly_risk_comparison_reads_actual_top_level_report_risk_schema():
+def test_monthly_risk_comparison_supports_direct_metric_payload_compatibility():
     previous_report = _report("2026-09-30", 800, 500, 62.5)
     current_report = _report("2026-10-30", 900, 600, 66.6667)
     previous_report["lookback_days"] = 365
