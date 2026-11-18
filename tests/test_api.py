@@ -2136,6 +2136,8 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     assert report_detail.status_code == 200
     assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
     assert report_detail.json()["report"]["lookthrough"]["coverage"]["status"] == "COMPLETE"
+    assert report_detail.json()["report"]["holdings_overlap"]["fund_count"] == 1
+    assert report_detail.json()["report"]["holdings_overlap"]["pairs"] == []
     assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
     assert report_detail.json()["integrity_status"] == "VERIFIED"
     pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
