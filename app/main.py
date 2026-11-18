@@ -46,6 +46,7 @@ from app.db import (
     NavBackfillCheckpoint,
     Portfolio,
     PortfolioAllocationTarget,
+    SecurityMarketCapClassification,
     PortfolioImportBatch,
     PortfolioTransactionIdempotency,
     PortfolioGoal,
@@ -74,6 +75,8 @@ from app.portfolio_allocation_intelligence import (
     amc_concentration,
     contribution_plan_preview,
     holdings_overlap_matrix,
+    market_cap_allocation,
+    parse_market_cap_classification_csv,
     portfolio_allocation,
 )
 from app.reporting import build_portfolio_report_pdf
@@ -2487,6 +2490,12 @@ class ContributionPlanRequest(BaseModel):
     contribution_inr: Decimal = Field(gt=0, le=Decimal("1000000000000"))
 
 
+class MarketCapClassificationImportRequest(BaseModel):
+    source_document_url: str = Field(min_length=8, max_length=1000)
+    source_document_sha256: str = Field(min_length=64, max_length=64)
+    csv_text: str = Field(min_length=1, max_length=5_000_000)
+
+
 class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     currency: str = Field(default="INR", pattern="^[A-Z]{3}$")
@@ -4619,6 +4628,7 @@ def rebalance_preview(
 def portfolio_holdings_lookthrough(
     portfolio_id: int,
     max_disclosure_age_days: int = Query(default=180, ge=30, le=730),
+    max_securities: int = Query(default=50, ge=1, le=20000),
 ) -> dict[str, Any]:
     """Aggregate verified constituent and sector exposures across owned fund holdings."""
     require_authenticated_user()
@@ -4793,7 +4803,7 @@ def portfolio_holdings_lookthrough(
                 if valuation_complete and total_value > 0 else None
             ),
         },
-        "top_securities": security_rows[:50],
+        "top_securities": security_rows[:max_securities],
         "sector_exposure": sector_rows,
         "security_concentration": concentration,
         "sources": source_rows,
@@ -5204,6 +5214,165 @@ def preview_portfolio_contribution_plan(
         "effective_from": effective.isoformat(),
         "valuation_date": valuation.get("valuation_date"),
         "valuation_freshness": valuation.get("valuation_freshness"),
+    })
+    return result
+
+
+
+@app.post("/v1/market-cap/classifications/import")
+def import_market_cap_classifications(
+    payload: MarketCapClassificationImportRequest,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Import an immutable, source-hashed classification batch pending operator review."""
+    require_operator_api_key(x_api_key)
+    if not payload.source_document_url.lower().startswith("https://"):
+        raise HTTPException(422, "source_document_url must use HTTPS")
+    source_hash = hashlib.sha256(payload.csv_text.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(source_hash, payload.source_document_sha256.lower()):
+        raise HTTPException(422, "source_document_sha256 must match the exact uploaded CSV text")
+    try:
+        parsed = parse_market_cap_classification_csv(payload.csv_text)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        existing = db.execute(select(func.count()).select_from(SecurityMarketCapClassification).where(
+            SecurityMarketCapClassification.source_sha256 == source_hash,
+        )).scalar_one()
+        if existing:
+            return {
+                "status": "already_imported",
+                "source_sha256": source_hash,
+                "row_count": existing,
+                "verification_status": "REVIEW_EXISTING_BATCH",
+            }
+        rows = [
+            SecurityMarketCapClassification(
+                security_id=item["security_id"],
+                market_cap_bucket=item["market_cap_bucket"],
+                effective_from=item["effective_from"],
+                effective_to=item["effective_to"],
+                source_as_of_date=item["source_as_of_date"],
+                source_document_url=payload.source_document_url,
+                source_sha256=source_hash,
+                verification_status="PENDING",
+                created_at=now,
+            )
+            for item in parsed
+        ]
+        db.add_all(rows)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Classification batch conflicts with an existing ISIN/effective-date source record; no rows were saved") from None
+    return {
+        "status": "IMPORTED_PENDING_VERIFICATION",
+        "source_sha256": source_hash,
+        "source_document_url": payload.source_document_url,
+        "row_count": len(rows),
+        "verification_status": "PENDING",
+        "effective_from_min": min(item["effective_from"] for item in parsed).isoformat(),
+        "effective_from_max": max(item["effective_from"] for item in parsed).isoformat(),
+        "note": "Rows are not used in portfolio market-cap analytics until an operator verifies the exact source artifact.",
+    }
+
+
+@app.post("/v1/market-cap/classifications/{source_sha256}/verify")
+def verify_market_cap_classification_batch(
+    source_sha256: str,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> dict[str, Any]:
+    """Verify all rows in one source-hashed batch after checking the official artifact."""
+    require_operator_api_key(x_api_key)
+    if len(source_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in source_sha256.lower()):
+        raise HTTPException(422, "source_sha256 must be a 64-character SHA-256 hex digest")
+    with SessionLocal() as db:
+        rows = db.execute(select(SecurityMarketCapClassification).where(
+            SecurityMarketCapClassification.source_sha256 == source_sha256.lower(),
+        )).scalars().all()
+        if not rows:
+            raise HTTPException(404, "Classification source batch not found")
+        if any(row.verification_status == "REJECTED" for row in rows):
+            raise HTTPException(409, "A rejected classification batch cannot be verified")
+        verified_at = datetime.now(timezone.utc)
+        for row in rows:
+            row.verification_status = "VERIFIED"
+            row.verified_at = verified_at
+        db.commit()
+    return {
+        "source_sha256": source_sha256.lower(),
+        "verified_rows": len(rows),
+        "verification_status": "VERIFIED",
+        "verified_at": verified_at.isoformat(),
+    }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/market-cap-allocation")
+def get_portfolio_market_cap_allocation(
+    portfolio_id: int,
+    max_disclosure_age_days: int = Query(default=180, ge=30, le=730),
+    max_classification_age_days: int = Query(default=180, ge=30, le=730),
+) -> dict[str, Any]:
+    """Calculate market-cap exposure from verified holdings and verified effective-dated ISIN mappings."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    if valuation.get("valuation_status") != "COMPLETE":
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "WITHHELD_INCOMPLETE_VALUATION",
+            "valuation_status": valuation.get("valuation_status"),
+            "missing_nav_scheme_codes": valuation.get("missing_nav_scheme_codes", []),
+            "message": "Market-cap percentages are withheld until portfolio valuation is complete.",
+        }
+    lookthrough = portfolio_holdings_lookthrough(portfolio_id, max_disclosure_age_days, 20000)
+    as_of_date = lookthrough["as_of_date"]
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        classifications = db.execute(select(SecurityMarketCapClassification).where(
+            SecurityMarketCapClassification.verification_status == "VERIFIED",
+            SecurityMarketCapClassification.effective_from <= date.fromisoformat(as_of_date),
+        )).scalars().all()
+    classification_rows = [{
+        "security_id": row.security_id,
+        "market_cap_bucket": row.market_cap_bucket,
+        "effective_from": row.effective_from,
+        "effective_to": row.effective_to,
+        "source_as_of_date": row.source_as_of_date,
+        "source_url": row.source_document_url,
+        "source_sha256": row.source_sha256,
+        "verification_status": row.verification_status,
+    } for row in classifications]
+    try:
+        result = market_cap_allocation(
+            lookthrough.get("top_securities", []),
+            classification_rows,
+            as_of_date=as_of_date,
+            portfolio_value_inr=valuation.get("current_value"),
+            max_classification_age_days=max_classification_age_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    result.update({
+        "portfolio_id": portfolio_id,
+        "portfolio_name": valuation.get("portfolio_name"),
+        "status": "AVAILABLE" if lookthrough.get("coverage", {}).get("status") == "COMPLETE" else "PARTIAL_LOOKTHROUGH_COVERAGE",
+        "lookthrough_coverage": lookthrough.get("coverage"),
+        "classification_health": {
+            "verified_mapping_count": len(classification_rows),
+            "max_classification_age_days": max_classification_age_days,
+        },
+        "evidence": {
+            "source": "VERIFIED fund holdings disclosures plus operator-verified, source-hashed effective-dated ISIN classifications",
+            "as_of_date": as_of_date,
+            "methodology_version": result["methodology_version"],
+            "warnings": [
+                "Market-cap buckets are based on the supplied verified classification source; no company size is inferred from security or fund names.",
+                "Unclassified and stale exposures remain separate; the classified subset is not renormalised to 100%.",
+                "Underlying look-through coverage and classification coverage are separate measures.",
+            ],
+        },
     })
     return result
 
