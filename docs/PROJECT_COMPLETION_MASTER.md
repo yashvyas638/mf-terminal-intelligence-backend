@@ -449,3 +449,18 @@ Commits:
 - `4adef94` — Test order-independent TWT fund overlap comparisons.
 
 Validation: changes are committed on `ui/portfolio-intelligence`; run CI against the latest branch head before treating the regression as passed. PDF pagination/browser rendering review remains open. No merge, deployment or production data changes.
+
+
+## TWT stale-disclosure duplication correction — 2026-11-18
+
+The overlap engine correctly withheld pairwise overlap values when either disclosure was stale, but the portfolio-wide duplicated-exposure aggregation still included stale fund holdings. That contradicted the methodology limitation stating stale disclosures are excluded and could inflate duplication totals.
+
+- Stale disclosures remain available for pair diagnostics (pair values are withheld and status explains why).
+- Only fresh disclosures now contribute to portfolio-wide gross positive look-through exposure and duplicated-exposure calculations.
+- Added a regression where one of two funds has a stale disclosure: the fresh fund's exposure remains in the denominator, stale exposure is excluded, and duplicated exposure is zero.
+
+Commits:
+- `bc962c5` — Exclude stale disclosures from portfolio duplication totals.
+- `e49d611` — Test stale holdings cannot inflate TWT duplication metrics.
+
+**Validation:** committed; awaiting current-head CI. The result remains a source-limited observed exposure, not a claim that missing/stale disclosures have zero overlap.
