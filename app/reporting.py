@@ -236,6 +236,12 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
             _table(segment_rows, [68 * mm, 38 * mm, 35 * mm, 24 * mm]),
         ])
 
+    market_cap = lookthrough.get("market_cap_allocation") or {}
+    story.extend([
+        Paragraph("Market-cap look-through", styles["SectionHeading"]),
+        Paragraph(_text(market_cap.get("status")) + " · " + _text(market_cap.get("reason")), styles["SmallNote"]),
+    ])
+
     tax = report.get("fifo_tax_lots") or {}
     tax_rows = [
         ["FIFO capital gains metric", "Value"],
