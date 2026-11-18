@@ -223,3 +223,29 @@ Follow-up inspection confirmed why the production migration cannot safely be run
 - Render service `mf-terminal-intelligence-backend` is on the `audit/production-foundation` branch with auto-deploy enabled. Latest deploy attempt for `be791824` failed during startup because `MIGRATION_DATABASE_URL` is not configured. Do not set it equal to runtime `DATABASE_URL`; configure a separate approved migration connection only after role authority is established.
 - TWT live-data validation remains limited: current production DB has no portfolios or verified holdings disclosures. API/logic regression coverage passes in CI, but a real authenticated portfolio report run requires seeded/verified source data.
 - No production migrations 0029/0030 were applied, no portfolios or NAV rows were deleted, and no deployment is considered healthy. Branch remains unmerged pending production gates.
+
+---
+
+## Superseding repository and production status — 18 November 2026
+
+This section supersedes earlier branch-count, CI-queue, Render and backup statements in the historical audit notes above. Older entries are retained as an audit trail, not as current status.
+
+- Current application/deployment branch: `audit/production-foundation`.
+- Repository cleanup PR: [#145](https://github.com/yashvyas638/mf-terminal-intelligence-backend/pull/145), base `audit/production-foundation`, head `83214ccb3e509d239ff09c46b7477074bb7735c8`.
+- PR CI on code commit `c597e2ea3b08a751ba3c9a06315808767c908de3` passed SQLite, PostgreSQL and all four read-only AMFI checks ([run #44297319125](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44297319125)). A later documentation-only commit refreshed the runbook; CI for the latest head is queued as run [#44298412795](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44298412795).
+- The cleanup PR aligns Procfile with Render blueprint, adds CI guards for startup-command drift and Supabase dump CLI flags, fixes README formatting, and refreshes the repository and free-tier runbooks.
+- The default-branch backup workflow uses `supabase db dump --db-url` for all three logical dumps. Its latest run failed configuration preflight because these six repository Actions secrets are absent: `SUPABASE_DB_URL`, `BACKUP_AGE_RECIPIENT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`. No export or upload was attempted. Do not mark backup/restore operational.
+- Live Render service remains configured with `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`, while the reviewed repository command also unsets `MIGRATION_DATABASE_URL` before Uvicorn. Latest deploy for `dace3178` failed because the migration URL is missing; the previous successful release remains live. The connector has no service-start-command update action. Do not merge into the auto-deploy branch until the dashboard configuration and approved migration identity are resolved.
+- Supabase project is `ACTIVE_HEALTHY`. Live Alembic revision remains `0028_restrictive_private_access`. Revision 0029 still requires a migration identity that can manage default privileges for `supabase_admin`; the inspected connected `postgres` role cannot. Do not bypass the preflight or apply 0030 independently.
+- Current direct table grants: no `anon` table grants; `authenticated` has SELECT only on the six intended read surfaces. Supabase advisor still reports 11 RLS-enabled backend tables without policies and leaked-password protection disabled on the Free plan.
+- No production migration, portfolio/NAV data deletion, backup export, or restore was performed in this audit. TWT live-data validation remains unproven because the production database has no portfolios or verified holdings disclosures.
+
+### Required owner-side actions before release
+
+1. Configure the six backup secrets privately in GitHub Actions, then run the backup workflow and complete an isolated restore drill.
+2. Obtain a Supabase-supported migration identity that passes migration 0029's default-privilege preflight.
+3. Configure Render's separate migration URL and sync the dashboard startup command to the reviewed command. Never reuse the runtime URL.
+4. After verified backup and approved migration identity, apply 0029 then 0030, verify Alembic head, grants, index state and database size.
+5. Complete authenticated browser E2E, two-account ownership isolation, and TWT report validation using verified portfolio/holdings fixtures.
+
+**Release decision:** repository cleanup is under PR review with code CI passing on the preceding code commit. Production release remains blocked by external secrets, Render service configuration and Supabase migration authority. Do not call the service fully production-ready until those gates have evidence.
