@@ -608,6 +608,8 @@ def holdings_overlap_matrix(
             pairs.append({
                 "scheme_a": left["scheme_code"],
                 "scheme_b": right["scheme_code"],
+                "scheme_a_name": left["scheme_name"],
+                "scheme_b_name": right["scheme_name"],
                 "overlap_inr": None if withheld else _money(overlap_amount),
                 "overlap_pct_of_scheme_a_nav": None if withheld else _pct(overlap_amount, left["portfolio_value_inr"]),
                 "overlap_pct_of_scheme_b_nav": None if withheld else _pct(overlap_amount, right["portfolio_value_inr"]),
