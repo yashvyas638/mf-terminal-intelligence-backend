@@ -15,10 +15,11 @@ def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_statu
                 "by_sub_category": [{"name": "Large Cap", "market_value_inr": str(scheme_value), "portfolio_weight_pct": str(scheme_weight)}],
                 "by_asset_class": [{"name": "Equity", "market_value_inr": str(scheme_value), "portfolio_weight_pct": str(scheme_weight)}],
             },
-            "amc_concentration": {"amcs": [{"name": "AMC A", "market_value_inr": str(scheme_value), "portfolio_weight_pct": str(scheme_weight)}]},
+            "amc_concentration": {"amcs": [{"name": "AMC A", "market_value_inr": str(scheme_value), "portfolio_weight_pct": str(scheme_weight)}], "top_1_amc_weight_pct": str(scheme_weight), "top_3_amc_weight_pct": str(scheme_weight), "top_5_amc_weight_pct": str(scheme_weight), "hhi_points": "5000", "effective_amc_count": "2"},
+            "evidence": {"nav_coverage": {"fresh_nav_coverage_pct": "100.0000"}},
         },
         "lookthrough": {
-            "coverage": {"status": "COMPLETE"},
+            "coverage": {"status": "COMPLETE", "fresh_covered_weight_pct": "100.0000"},
             "sector_exposure": [{"sector": "Financials", "lookthrough_value": str(scheme_value), "portfolio_weight_pct": str(scheme_weight)}],
         },
         "overlap_intelligence": {
@@ -29,9 +30,11 @@ def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_statu
                 "overlap_pct_of_scheme_b_nav": "8.0000",
             }],
             "portfolio_duplication": {"duplicated_exposure_inr": "50.00"},
+            "disclosure_health": {"disclosure_scheme_coverage_pct": "100.0000"},
         },
         "market_cap_intelligence": {
             "status": market_cap_status,
+            "classified_coverage_of_positive_lookthrough_pct": "80.0000",
             "classified_distribution": [{
                 "market_cap_bucket": "LARGE_CAP", "exposure_inr": str(scheme_value),
                 "weight_of_total_portfolio_pct": str(scheme_weight),
@@ -72,6 +75,8 @@ def test_monthly_comparison_reports_rupee_and_percentage_point_changes():
     assert result["comparisons"]["overlap_pairs"]["items"][0]["metrics"]["overlap_inr"]["change_inr"] == "0.00"
     assert result["comparisons"]["overlap_pairs"]["items"][0]["metrics"]["overlap_pct_of_scheme_a_nav"]["change_percentage_points"] == "0.0000"
     assert result["comparisons"]["portfolio_duplication"]["change_inr"] == "0.00"
+    assert result["comparisons"]["amc_concentration_metrics"]["top_1_amc_weight_pct"]["change_percentage_points"] == "7.5"
+    assert result["comparisons"]["data_coverage"]["market_cap_classification"]["change_percentage_points"] == "0.0000"
 
 
 def test_monthly_comparison_withholds_market_cap_when_either_period_is_unavailable():
