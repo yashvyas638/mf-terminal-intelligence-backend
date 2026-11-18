@@ -185,7 +185,7 @@ This section supersedes the earlier TWT acceptance table above where later commi
 
 ### Supabase database storage remediation (2026-11-18)
 
-A read-only live audit of Supabase project `mf-terminal-intelligence` measured the database at **519,689,907 bytes**. The largest relations were `nav_observations` at 380 MB (2,664,820 rows; 2,584,576,00? bytes of indexes) and `fund_research_snapshots` at 94 MB (34,852 rows). The NAV table has 2,664,820 observations across 16,135 schemes, spanning 2012-02-17 through 2026-11-11. No financial rows were deleted or modified during this audit.
+A read-only live audit of Supabase project `mf-terminal-intelligence` measured the database at **519,689,907 bytes**. The largest relations were `nav_observations` at 380 MB (2,664,820 rows; 258,457,600 bytes of indexes) and `fund_research_snapshots` at 94 MB (34,852 rows). The NAV table has 2,664,820 observations across 16,135 schemes, spanning 2012-02-17 through 2026-11-11. No financial rows were deleted or modified during this audit.
 
 The NAV table contains two valid B-tree indexes on the identical key `(scheme_code, nav_date)`: unique constraint index `uq_nav_scheme_date` (86 MB) and non-unique `ix_nav_code_date` (86 MB). Live index statistics show the non-unique index is heavily used while the unique constraint index is also valid and enforces the same key. The duplicate index is avoidable storage and write amplification; the unique constraint must remain.
 
