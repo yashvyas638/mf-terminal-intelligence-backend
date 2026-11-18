@@ -771,3 +771,14 @@ Commits:
 - `69e4b0f` — Test portfolio duplication source reconciliation.
 
 **Validation:** committed, pending exact-head SQLite/PostgreSQL CI. No merge, deployment or production data changes.
+
+
+## Supabase database-size remediation — 2026-11-18
+
+- Read-only live database inspection measured the application database at 519,689,907 bytes (~496 MiB), above the 500 MB Free-plan database-size quota; all cluster databases total 534,966,133 bytes (~510 MiB).
+- `nav_observations` is 380 MiB (134 MiB heap + 246 MiB indexes; 2,664,820 rows). `fund_research_snapshots` is 94 MiB (34,852 rows).
+- Found a duplicate non-unique NAV index: `ix_nav_code_date` duplicates the unique `uq_nav_scheme_date` key on `(scheme_code, nav_date)`, occupying 89,989,120 bytes (~86 MiB). The unique constraint index, primary key and source-snapshot index are retained.
+- Added migration `0033_remove_duplicate_nav_index`, removed the redundant index from SQLAlchemy metadata, and added a post-migration regression asserting the unique constraint and primary key remain.
+- Added `docs/SUPABASE_DATABASE_SIZE_REMEDIATION.md` with measurements, preservation rules, migration verification and follow-up optimisation plan.
+- Live checkpoint evidence shows the hybrid NAV sampling plan is already in place: completed recent/baseline daily windows, completed month-end historical windows, and paused obsolete daily windows. No NAV rows or research snapshots were deleted.
+- **Status:** repository change only; production migration has NOT been applied. Production remains blocked on the separately documented migration-credential/startup and verified-backup gates. Exact-head CI must pass before merge/release. Re-measure database size after the migration because Supabase usage reporting can lag.
