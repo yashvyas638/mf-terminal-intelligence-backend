@@ -302,3 +302,20 @@ def test_monthly_amc_concentration_rejects_hhi_outside_valid_range():
     assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
     assert metric["previous"] is None
     assert metric["current"] is None
+
+
+def test_monthly_coverage_comparison_withholds_out_of_range_percentages():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["lookthrough"]["coverage"]["fresh_covered_weight_pct"] = "101"
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["comparisons"]["data_coverage"]["fresh_holdings_weight"]
+    assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metric["previous_pct"] is None
+    assert metric["current_pct"] is None
+    assert metric["change_percentage_points"] is None
