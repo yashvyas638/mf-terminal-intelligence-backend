@@ -149,3 +149,46 @@ def test_smart_sip_requires_an_explicit_positive_budget_amount_for_api_approval(
     assert with_amount.json()["risk_budget"]["allowed"] is True
     assert with_amount.json()["risk_budget"]["max_additional_contribution_inr"] == "5000"
     assert with_amount.json()["topup_eligible"] is False
+
+
+def test_smart_sip_withholds_portfolio_need_when_valuation_is_stale(monkeypatch):
+    from fastapi.testclient import TestClient
+    import app.main as main
+
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    for name in (
+        "SMART_SIP_MAX_OBSERVATION_AGE_DAYS",
+        "SMART_SIP_MIN_OBSERVATIONS_52W",
+        "SMART_SIP_MIN_OBSERVATIONS_3Y",
+        "SMART_SIP_DRAWDOWN_TOPUP_THRESHOLD_PCT",
+        "SMART_SIP_MOMENTUM_FLOOR_PCT",
+        "SMART_SIP_VOLATILITY_CEILING_PCT",
+        "SMART_SIP_ANNUALISATION_DAYS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(main, "portfolio_valuation", lambda *_: {
+        "valuation_date": "2026-11-18",
+        "valuation_status": "COMPLETE",
+        "valuation_freshness": "STALE",
+    })
+    monkeypatch.setattr(main, "get_portfolio_allocation_drift", lambda *_: {
+        "status": "AVAILABLE",
+        "valuation_date": "2026-11-18",
+        "effective_from": "2026-01-01",
+        "target_version": 1,
+        "targets": [{"key": "EQUITY", "status": "UNDERWEIGHT"}],
+    })
+
+    client = TestClient(main.app)
+    response = client.post(
+        "/v1/portfolios/123/smart-sip/preview",
+        headers={"X-API-Key": "test-api-key-that-is-at-least-32-characters-long"},
+        json={"benchmark_code": "NIFTY_TEST_TRI", "dimension": "ASSET_CLASS"},
+    )
+
+    assert response.status_code == 200
+    need = response.json()["portfolio_need"]
+    assert need["status"] == "WITHHELD"
+    assert need["verified"] is False
+    assert need["underweight_buckets"] == []
+    assert response.json()["topup_eligible"] is False
