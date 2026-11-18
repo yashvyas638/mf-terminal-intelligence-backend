@@ -72,6 +72,18 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 
 **Methodology boundary:** AMC/category/asset-class rollups use current scheme market value and existing scheme metadata. Missing metadata is grouped as Unclassified, not guessed. These rollups do not solve the separate underlying-security market-cap classification problem. No verified, effective-dated large/mid/small-cap security classification source is currently present.
 
+### Monthly comparison and report export additions (2026-11-18)
+
+- `b3fe42bb1d7de708a9a6368060f5ca4a21e55673` — added an owner-scoped `GET /v1/portfolios/{id}/monthly-review` endpoint. It chooses the latest hash-valid immutable report snapshot per calendar month, compares the latest two months, returns portfolio value change and AMC/category/asset-class weight changes, and flags new/missing classifications. It explicitly does not claim to separate contributions, withdrawals and market movement.
+- `0f257968751fcfa74e7598f7815c1c7c65d412f5` — added an integration fixture for a two-month snapshot comparison, integrity hash, value delta and AMC movement.
+- `6f8a2f8ec25c3f8d0a326def58f31997ffda597d`, `3d5bfba10efa019f2acc30a7ca8af0cf6c41d75d`, `9ba22c645c6e5b822dc5dd261253631fd1a52c51` — added monthly review UI, API loading and refresh after a new report is generated.
+- `df057843e490600779e32d8bcb80f6e5c4ab1ab5` — added a frontend contract test for monthly comparison and the insufficient-history state.
+- `70154613b4c42e351368213ce0ae45b5c02bb9a3` — added AMC concentration, scheme category and asset-class allocation tables to PDF output.
+- `f0402b52ac0ce9648989115763919b48367f9cd0` — added a PDF regression fixture containing AMC/category/asset-class data.
+- `d8a5659dae36b2a3e19f13aed17311ac2753111c` — included monthly-review in the cross-user portfolio isolation route contract.
+
+**Monthly comparison limits:** A comparison requires valid report snapshots from two distinct calendar months. The selected snapshots are latest generated report per month, not guaranteed month-end valuations. Flow-versus-market attribution is not available; value movement is net movement only. The API withholds value change unless both valuations are complete.
+
 ### Fixes committed on `audit/production-foundation`
 
 - `2e73dd962afdc07f8bd63d126c3c522bd86402ac` — corrected look-through concentration percentages. API values are already percentage points; the UI had divided ISIN coverage and top-1/5/10 weights by 100, displaying values 100 times too small. Also corrected the diagnosis panel to read `security_concentration`, the actual API response key.
