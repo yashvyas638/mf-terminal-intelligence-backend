@@ -209,12 +209,9 @@ def test_contribution_plan_rejects_nonpositive_and_unbounded_contributions():
 
 def test_market_cap_classification_csv_parser_is_strict_and_normalizes_bucket_labels():
     rows = parse_market_cap_classification_csv(
-        "ISIN,Market Cap Bucket,Effective From,Effective To,Source As Of Date\
-"
-        "INE002A01018,Large,2026-01-01,,2026-10-31\
-"
-        "INE009A01021,Mid Cap,2026-01-01,2026-12-31,2026-10-31\
-"
+        "ISIN,Market Cap Bucket,Effective From,Effective To,Source As Of Date\n"
+        "INE002A01018,Large,2026-01-01,,2026-10-31\n"
+        "INE009A01021,Mid Cap,2026-01-01,2026-12-31,2026-10-31\n"
     )
     assert len(rows) == 2
     assert rows[0]["market_cap_bucket"] == "LARGE_CAP"
@@ -225,24 +222,17 @@ def test_market_cap_classification_csv_parser_is_strict_and_normalizes_bucket_la
 def test_market_cap_classification_csv_parser_rejects_invalid_isin_duplicate_and_bucket():
     with pytest.raises(ValueError, match="invalid ISIN"):
         parse_market_cap_classification_csv(
-            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\
-"
-            "BAD,Large,2026-01-01,2026-10-31\
-"
+            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\n"
+            "BAD,Large,2026-01-01,2026-10-31\n"
         )
     with pytest.raises(ValueError, match="duplicate ISIN"):
         parse_market_cap_classification_csv(
-            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\
-"
-            "INE002A01018,Large,2026-01-01,2026-10-31\
-"
-            "INE002A01018,Mid,2026-01-01,2026-10-31\
-"
+            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\n"
+            "INE002A01018,Large,2026-01-01,2026-10-31\n"
+            "INE002A01018,Mid,2026-01-01,2026-10-31\n"
         )
     with pytest.raises(ValueError, match="unsupported"):
         parse_market_cap_classification_csv(
-            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\
-"
-            "INE002A01018,MEGA_CAP,2026-01-01,2026-10-31\
-"
+            "ISIN,Market Cap Bucket,Effective From,Source As Of Date\n"
+            "INE002A01018,MEGA_CAP,2026-01-01,2026-10-31\n"
         )
