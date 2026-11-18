@@ -4967,7 +4967,8 @@ def portfolio_fund_overlap_matrix(
     result["portfolio_id"] = portfolio_id
     result["portfolio_name"] = valuation.get("portfolio_name")
     result["status"] = (
-        "PARTIAL_MISSING_OR_STALE_DISCLOSURES"
+        "PARTIAL_STALE_NAV" if valuation.get("stale_nav_scheme_codes")
+        else "PARTIAL_MISSING_OR_STALE_DISCLOSURES"
         if missing_disclosures or stale_disclosures else "AVAILABLE"
     )
     result["disclosure_health"] = {
@@ -4975,6 +4976,7 @@ def portfolio_fund_overlap_matrix(
         "included_verified_disclosure_count": len(funds),
         "missing_disclosure_scheme_codes": sorted(missing_disclosures),
         "stale_disclosure_scheme_codes": sorted(stale_disclosures),
+        "stale_nav_scheme_codes": sorted(valuation.get("stale_nav_scheme_codes", [])),
         "valuation_scheme_count": len(holdings),
         "disclosure_scheme_coverage_pct": (
             str((Decimal(len(funds)) / Decimal(len(holdings)) * Decimal("100")).quantize(Decimal("0.0001")))
