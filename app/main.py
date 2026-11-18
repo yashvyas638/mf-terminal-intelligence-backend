@@ -4003,6 +4003,144 @@ def compare_fund_holdings_overlap(
         }
 
 
+
+@app.get("/v1/portfolios/{portfolio_id}/holdings-overlap")
+def portfolio_holdings_overlap(portfolio_id: int) -> dict[str, Any]:
+    """Return a portfolio-scoped pairwise overlap matrix from verified ISIN disclosures."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        holdings = [
+            item for item in valuation.get("holdings", [])
+            if item.get("market_value") is not None
+            and Decimal(str(item.get("market_value"))) > 0
+        ]
+        scheme_codes = sorted({int(item["scheme_code"]) for item in holdings})
+        schemes = {
+            row.scheme_code: row
+            for row in db.execute(
+                select(Scheme).where(Scheme.scheme_code.in_(scheme_codes))
+            ).scalars().all()
+        } if scheme_codes else {}
+        today = datetime.now(timezone.utc).date()
+        funds: list[dict[str, Any]] = []
+        for holding in holdings:
+            code = int(holding["scheme_code"])
+            disclosure = db.execute(
+                select(FundHoldingDisclosure)
+                .where(
+                    FundHoldingDisclosure.scheme_code == code,
+                    FundHoldingDisclosure.verification_status == "VERIFIED",
+                    FundHoldingDisclosure.as_of_date <= today,
+                )
+                .order_by(
+                    desc(FundHoldingDisclosure.as_of_date),
+                    desc(FundHoldingDisclosure.retrieved_at),
+                    desc(FundHoldingDisclosure.id),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if disclosure is None:
+                funds.append({
+                    "scheme_code": code,
+                    "scheme_name": holding.get("scheme_name") or (schemes[code].scheme_name if code in schemes else str(code)),
+                    "status": "MISSING_VERIFIED_DISCLOSURE",
+                    "as_of_date": None,
+                    "disclosure_age_days": None,
+                    "source_sha256": None,
+                    "isin_coverage_pct": None,
+                    "holdings": {},
+                })
+                continue
+            rows = db.execute(
+                select(FundHolding).where(FundHolding.disclosure_id == disclosure.id)
+            ).scalars().all()
+            positive_weight = sum((Decimal(row.weight_pct) for row in rows if row.weight_pct > 0), Decimal("0"))
+            isin_rows = {
+                row.security_id.strip().upper(): row
+                for row in rows
+                if row.is_isin and row.security_id and row.weight_pct > 0
+            }
+            isin_weight = sum((Decimal(row.weight_pct) for row in isin_rows.values()), Decimal("0"))
+            age = (today - disclosure.as_of_date).days
+            funds.append({
+                "scheme_code": code,
+                "scheme_name": holding.get("scheme_name") or (schemes[code].scheme_name if code in schemes else str(code)),
+                "status": "STALE_DISCLOSURE" if age > 90 else "OK",
+                "as_of_date": disclosure.as_of_date.isoformat(),
+                "disclosure_age_days": age,
+                "source_sha256": disclosure.source_sha256,
+                "isin_coverage_pct": str((isin_weight / positive_weight * 100).quantize(Decimal("0.01"))) if positive_weight > 0 else None,
+                "holdings": isin_rows,
+            })
+
+    pairs: list[dict[str, Any]] = []
+    for index, left in enumerate(funds):
+        for right in funds[index + 1:]:
+            if not left["holdings"] or not right["holdings"]:
+                pairs.append({
+                    "scheme_a": left["scheme_code"],
+                    "scheme_b": right["scheme_code"],
+                    "status": "INSUFFICIENT_DISCLOSURE",
+                    "common_isin_count": None,
+                    "overlap_pct": None,
+                    "shared_weight_a_pct": None,
+                    "shared_weight_b_pct": None,
+                    "top_shared_holdings": [],
+                })
+                continue
+            common = set(left["holdings"]).intersection(right["holdings"])
+            overlap = Decimal("0")
+            shared_a = Decimal("0")
+            shared_b = Decimal("0")
+            shared_rows = []
+            for isin in common:
+                a = Decimal(left["holdings"][isin].weight_pct)
+                b = Decimal(right["holdings"][isin].weight_pct)
+                matched = min(a, b)
+                overlap += matched
+                shared_a += a
+                shared_b += b
+                shared_rows.append({
+                    "isin": isin,
+                    "security_name": left["holdings"][isin].security_name,
+                    "weight_in_fund_a_pct": str(a),
+                    "weight_in_fund_b_pct": str(b),
+                    "matched_overlap_weight_pct": str(matched),
+                })
+            shared_rows.sort(key=lambda row: Decimal(row["matched_overlap_weight_pct"]), reverse=True)
+            pairs.append({
+                "scheme_a": left["scheme_code"],
+                "scheme_b": right["scheme_code"],
+                "status": "STALE_DISCLOSURE" if "STALE_DISCLOSURE" in (left["status"], right["status"]) else "OK",
+                "common_isin_count": len(common),
+                "overlap_pct": str(overlap.quantize(Decimal("0.0001"))),
+                "shared_weight_a_pct": str(shared_a.quantize(Decimal("0.0001"))),
+                "shared_weight_b_pct": str(shared_b.quantize(Decimal("0.0001"))),
+                "top_shared_holdings": shared_rows[:10],
+            })
+
+    comparable_pairs = [row for row in pairs if row["overlap_pct"] is not None]
+    return {
+        "portfolio_id": portfolio_id,
+        "portfolio_name": valuation.get("portfolio_name"),
+        "as_of_date": today.isoformat(),
+        "status": "OK" if len(comparable_pairs) == len(pairs) else "PARTIAL_COVERAGE",
+        "fund_count": len(funds),
+        "comparable_pair_count": len(comparable_pairs),
+        "total_pair_count": len(pairs),
+        "funds": [{key: value for key, value in fund.items() if key != "holdings"} for fund in funds],
+        "pairs": comparable_pairs,
+        "methodology": "Each pair's overlap is the sum, across common positive-weight ISINs, of the lower of the two scheme weights. Non-ISIN rows and negative exposures are excluded. Pairwise values are not additive: a security held by three funds appears in three pairs. No portfolio-wide duplication percentage is inferred from pair sums.",
+        "limitations": [
+            "Only the latest VERIFIED disclosure per scheme is used; source dates and SHA-256 fingerprints are returned.",
+            "Pairs with a missing disclosure are omitted from comparable_pairs and represented by PARTIAL_COVERAGE status.",
+            "Disclosure dates can differ; stale disclosures are explicitly flagged.",
+            "Pairwise overlap is a holdings snapshot, not a measure of correlation or future risk.",
+        ],
+    }
+
 _STATEMENT_COLUMNS = {
     "transaction_date": "transaction_date",
     "date": "transaction_date",
