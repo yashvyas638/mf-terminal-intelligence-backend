@@ -58,8 +58,10 @@ def assess_smart_sip_regime(
         except (KeyError, TypeError, ValueError):
             rejected += 1
             continue
+        source_hash = str(item.get("source_hash") or "").lower()
+        valid_hash = len(source_hash) == 64 and all(ch in "0123456789abcdef" for ch in source_hash)
         if (item.get("source_verified") is not True or not item.get("source_id")
-                or not item.get("source_hash") or tri <= 0 or day > as_of):
+                or not valid_hash or not isfinite(tri) or tri <= 0 or day > as_of):
             rejected += 1
             continue
         accepted.append((day, tri, item))
