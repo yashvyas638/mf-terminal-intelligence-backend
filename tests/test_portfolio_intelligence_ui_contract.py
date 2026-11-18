@@ -98,6 +98,16 @@ def test_monthly_snapshots_and_pdf_include_twt_allocation_intelligence():
     assert "weight_of_total_portfolio_pct" in js
 
 
+def test_monthly_comparison_renderer_consumes_nested_metric_contract():
+    js = Path("app/static/portfolio-intelligence.js").read_text()
+    assert "row.metrics||{}" in js
+    assert "change_percentage_points" in js
+    assert "previous_inr" in js
+    assert "sub_category" in js
+    assert "overlap_pairs" in js
+    assert "data_coverage" in js
+
+
 def test_allocation_target_versions_support_same_day_revisions():
     main = Path("app/main.py").read_text()
     db = Path("app/db.py").read_text()
