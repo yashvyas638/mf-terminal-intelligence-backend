@@ -45,6 +45,7 @@ from app.db import (
     NavObservationRevision,
     NavBackfillCheckpoint,
     Portfolio,
+    PortfolioAllocationTarget,
     PortfolioImportBatch,
     PortfolioTransactionIdempotency,
     PortfolioGoal,
@@ -69,8 +70,11 @@ from app.benchmark_ingest import NIFTY_HISTORICAL_DATA_URL, parse_nifty_tri_csv
 from app.holdings_ingest import parse_fund_holdings_csv
 from app.holdings_risk import security_concentration_metrics
 from app.portfolio_allocation_intelligence import (
+    allocation_drift,
     amc_concentration,
+    contribution_plan_preview,
     holdings_overlap_matrix,
+    market_cap_allocation,
     portfolio_allocation,
 )
 from app.reporting import build_portfolio_report_pdf
@@ -2446,6 +2450,43 @@ def monthly_fund_leaderboard(
             "Rank movement is unavailable for schemes without a comparable prior-month rank.",
         ],
     }
+
+class PortfolioAllocationTargetItem(BaseModel):
+    key: str = Field(min_length=1, max_length=160)
+    min_pct: Decimal = Field(ge=0, le=100)
+    target_pct: Decimal = Field(ge=0, le=100)
+    max_pct: Decimal = Field(ge=0, le=100)
+    priority: int = Field(default=100, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def validate_band(self) -> "PortfolioAllocationTargetItem":
+        if not self.key.strip():
+            raise ValueError("target key cannot be blank")
+        if not self.min_pct <= self.target_pct <= self.max_pct:
+            raise ValueError("target band must satisfy min_pct <= target_pct <= max_pct")
+        return self
+
+
+class PortfolioAllocationTargetsRequest(BaseModel):
+    dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "MARKET_CAP", "AMC", "SCHEME", "SECTOR"]
+    effective_from: date
+    targets: list[PortfolioAllocationTargetItem] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_target_set(self) -> "PortfolioAllocationTargetsRequest":
+        keys = [item.key.strip() for item in self.targets]
+        if len(keys) != len(set(keys)):
+            raise ValueError("target keys must be unique within a dimension")
+        total = sum((item.target_pct for item in self.targets), Decimal("0"))
+        if abs(total - Decimal("100")) > Decimal("0.01"):
+            raise ValueError("preferred target percentages must reconcile to 100")
+        return self
+
+
+class ContributionPlanRequest(BaseModel):
+    dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"]
+    contribution_inr: Decimal = Field(gt=0, le=Decimal("1000000000000"))
+
 
 class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -4940,6 +4981,225 @@ def portfolio_fund_overlap_matrix(
             "Holdings overlap is not return correlation.",
         ],
     }
+    return result
+
+
+
+def _portfolio_dimension_values(portfolio_id: int, dimension: str, valuation: dict[str, Any]) -> tuple[Decimal, dict[str, Decimal]]:
+    if valuation.get("valuation_status") != "COMPLETE":
+        raise HTTPException(409, "Target drift and contribution planning require complete portfolio valuation")
+    if valuation.get("stale_nav_scheme_codes"):
+        raise HTTPException(409, "Target drift and contribution planning are withheld while one or more active NAVs are stale")
+    if dimension == "MARKET_CAP":
+        raise HTTPException(409, "Market-cap targets are not enabled until a verified effective-dated classification source is configured")
+    if dimension == "SECTOR":
+        raise HTTPException(409, "Sector targets require a complete verified holdings look-through and are not enabled in this release")
+    holdings = [
+        item for item in valuation.get("holdings", [])
+        if item.get("market_value") is not None and Decimal(str(item["market_value"])) > 0
+    ]
+    codes = [int(item["scheme_code"]) for item in holdings]
+    with SessionLocal() as db:
+        _require_portfolio_owner(db, portfolio_id)
+        schemes = db.execute(select(Scheme).where(Scheme.scheme_code.in_(codes))).scalars().all()
+        by_code = {scheme.scheme_code: scheme for scheme in schemes}
+    actual: dict[str, Decimal] = {}
+    for item in holdings:
+        code = int(item["scheme_code"])
+        scheme = by_code.get(code)
+        if scheme is None:
+            raise HTTPException(409, f"Scheme metadata is missing for active holding {code}")
+        value = Decimal(str(item["market_value"]))
+        if dimension == "ASSET_CLASS":
+            key = str(scheme.asset_class or "UNCLASSIFIED")
+        elif dimension == "CATEGORY":
+            key = str(scheme.category_group or "UNCLASSIFIED")
+        elif dimension == "SUB_CATEGORY":
+            key = str(scheme.category or "UNCLASSIFIED")
+        elif dimension == "AMC":
+            key = str(scheme.amc or "UNCLASSIFIED")
+        elif dimension == "SCHEME":
+            key = str(code)
+        else:
+            raise HTTPException(422, "Unsupported allocation target dimension")
+        actual[key] = actual.get(key, Decimal("0")) + value
+    return Decimal(str(valuation["current_value"])), actual
+
+
+@app.get("/v1/portfolios/{portfolio_id}/targets")
+def get_portfolio_allocation_targets(
+    portfolio_id: int,
+    dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "MARKET_CAP", "AMC", "SCHEME", "SECTOR"] | None = None,
+) -> dict[str, Any]:
+    """Return the latest effective, owner-scoped target versions."""
+    require_authenticated_user()
+    today = datetime.now(timezone.utc).date()
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        query = select(PortfolioAllocationTarget).where(
+            PortfolioAllocationTarget.portfolio_id == portfolio_id,
+            PortfolioAllocationTarget.owner_user_id == portfolio.owner_user_id,
+            PortfolioAllocationTarget.effective_from <= today,
+        )
+        if dimension:
+            query = query.where(PortfolioAllocationTarget.dimension == dimension)
+        rows = db.execute(query.order_by(
+            PortfolioAllocationTarget.dimension,
+            desc(PortfolioAllocationTarget.effective_from),
+            PortfolioAllocationTarget.priority,
+            PortfolioAllocationTarget.target_key,
+        )).scalars().all()
+    latest_by_dimension: dict[str, date] = {}
+    for row in rows:
+        latest_by_dimension.setdefault(row.dimension, row.effective_from)
+    selected = [row for row in rows if row.effective_from == latest_by_dimension.get(row.dimension)]
+    return {
+        "portfolio_id": portfolio_id,
+        "as_of_date": today.isoformat(),
+        "dimensions": [{
+            "dimension": dim,
+            "effective_from": latest_by_dimension[dim].isoformat(),
+            "targets": [{
+                "key": row.target_key,
+                "min_pct": str(row.min_pct),
+                "target_pct": str(row.target_pct),
+                "max_pct": str(row.max_pct),
+                "priority": row.priority,
+            } for row in selected if row.dimension == dim],
+        } for dim in sorted(latest_by_dimension)],
+    }
+
+
+@app.put("/v1/portfolios/{portfolio_id}/targets")
+def save_portfolio_allocation_targets(
+    portfolio_id: int,
+    payload: PortfolioAllocationTargetsRequest,
+) -> dict[str, Any]:
+    """Create an immutable effective-dated target set for one owned portfolio."""
+    require_authenticated_user()
+    if payload.effective_from > datetime.now(timezone.utc).date():
+        raise HTTPException(422, "effective_from cannot be in the future")
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        existing = db.execute(select(PortfolioAllocationTarget.id).where(
+            PortfolioAllocationTarget.portfolio_id == portfolio_id,
+            PortfolioAllocationTarget.dimension == payload.dimension,
+            PortfolioAllocationTarget.effective_from == payload.effective_from,
+        ).limit(1)).first()
+        if existing:
+            raise HTTPException(409, "A target version already exists for this dimension and effective date; add a new effective date to preserve history")
+        created_at = datetime.now(timezone.utc)
+        rows = [
+            PortfolioAllocationTarget(
+                portfolio_id=portfolio_id,
+                owner_user_id=portfolio.owner_user_id,
+                dimension=payload.dimension,
+                target_key=item.key.strip(),
+                min_pct=item.min_pct,
+                target_pct=item.target_pct,
+                max_pct=item.max_pct,
+                effective_from=payload.effective_from,
+                priority=item.priority,
+                created_at=created_at,
+            )
+            for item in payload.targets
+        ]
+        db.add_all(rows)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Target set conflicts with an existing version; no changes were saved") from None
+    return {
+        "portfolio_id": portfolio_id,
+        "dimension": payload.dimension,
+        "effective_from": payload.effective_from.isoformat(),
+        "target_count": len(rows),
+        "status": "SAVED",
+        "history": "Previous effective-dated versions are retained.",
+    }
+
+
+@app.get("/v1/portfolios/{portfolio_id}/allocation-drift")
+def get_portfolio_allocation_drift(
+    portfolio_id: int,
+    dimension: Literal["ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"],
+) -> dict[str, Any]:
+    """Compare actual portfolio values with the latest effective target bands."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    total, actual = _portfolio_dimension_values(portfolio_id, dimension, valuation)
+    today = datetime.now(timezone.utc).date()
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        rows = db.execute(select(PortfolioAllocationTarget).where(
+            PortfolioAllocationTarget.portfolio_id == portfolio_id,
+            PortfolioAllocationTarget.owner_user_id == portfolio.owner_user_id,
+            PortfolioAllocationTarget.dimension == dimension,
+            PortfolioAllocationTarget.effective_from <= today,
+        ).order_by(desc(PortfolioAllocationTarget.effective_from), PortfolioAllocationTarget.priority)).scalars().all()
+    if not rows:
+        raise HTTPException(404, f"No effective {dimension} target set is configured")
+    effective = rows[0].effective_from
+    targets = [row for row in rows if row.effective_from == effective]
+    payload = [{
+        "key": row.target_key,
+        "min_pct": str(row.min_pct),
+        "target_pct": str(row.target_pct),
+        "max_pct": str(row.max_pct),
+        "actual_value_inr": str(actual.get(row.target_key, Decimal("0"))),
+    } for row in targets]
+    result = allocation_drift(payload, portfolio_value_inr=total)
+    result.update({
+        "portfolio_id": portfolio_id,
+        "dimension": dimension,
+        "effective_from": effective.isoformat(),
+        "valuation_date": valuation.get("valuation_date"),
+    })
+    return result
+
+
+@app.post("/v1/portfolios/{portfolio_id}/contribution-plan/preview")
+def preview_portfolio_contribution_plan(
+    portfolio_id: int,
+    payload: ContributionPlanRequest,
+) -> dict[str, Any]:
+    """Preview a contribution-only allocation against the latest saved target set."""
+    require_authenticated_user()
+    valuation = portfolio_valuation(portfolio_id, None)
+    total, actual = _portfolio_dimension_values(portfolio_id, payload.dimension, valuation)
+    today = datetime.now(timezone.utc).date()
+    with SessionLocal() as db:
+        portfolio = _require_portfolio_owner(db, portfolio_id)
+        rows = db.execute(select(PortfolioAllocationTarget).where(
+            PortfolioAllocationTarget.portfolio_id == portfolio_id,
+            PortfolioAllocationTarget.owner_user_id == portfolio.owner_user_id,
+            PortfolioAllocationTarget.dimension == payload.dimension,
+            PortfolioAllocationTarget.effective_from <= today,
+        ).order_by(desc(PortfolioAllocationTarget.effective_from), PortfolioAllocationTarget.priority)).scalars().all()
+    if not rows:
+        raise HTTPException(404, f"No effective {payload.dimension} target set is configured")
+    effective = rows[0].effective_from
+    targets = [row for row in rows if row.effective_from == effective]
+    target_inputs = [{
+        "key": row.target_key,
+        "min_pct": str(row.min_pct),
+        "target_pct": str(row.target_pct),
+        "max_pct": str(row.max_pct),
+        "actual_value_inr": str(actual.get(row.target_key, Decimal("0"))),
+    } for row in targets]
+    result = contribution_plan_preview(
+        target_inputs,
+        portfolio_value_inr=total,
+        contribution_inr=payload.contribution_inr,
+    )
+    result.update({
+        "portfolio_id": portfolio_id,
+        "dimension": payload.dimension,
+        "effective_from": effective.isoformat(),
+        "valuation_date": valuation.get("valuation_date"),
+        "valuation_freshness": valuation.get("valuation_freshness"),
+    })
     return result
 
 
