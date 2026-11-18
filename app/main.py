@@ -5379,18 +5379,13 @@ def _portfolio_dimension_values(portfolio_id: int, dimension: str, valuation: di
         if scheme is None:
             raise HTTPException(409, f"Scheme metadata is missing for active holding {code}")
         value = Decimal(str(item["market_value"]))
-        if dimension == "ASSET_CLASS":
-            key = str(scheme.asset_class or "UNCLASSIFIED")
-        elif dimension == "CATEGORY":
-            key = str(scheme.category_group or "UNCLASSIFIED")
-        elif dimension == "SUB_CATEGORY":
-            key = str(scheme.category or "UNCLASSIFIED")
-        elif dimension == "AMC":
-            key = str(scheme.amc or "UNCLASSIFIED")
-        elif dimension == "SCHEME":
-            key = str(code)
-        else:
-            raise HTTPException(422, "Unsupported allocation target dimension")
+        key = allocation_dimension_key(dimension, {
+            "scheme_code": code,
+            "category_group": scheme.category_group,
+            "category": scheme.category,
+            "asset_class": scheme.asset_class,
+            "amc": scheme.amc,
+        })
         actual[key] = actual.get(key, Decimal("0")) + value
     return Decimal(str(valuation["current_value"])), actual
 
