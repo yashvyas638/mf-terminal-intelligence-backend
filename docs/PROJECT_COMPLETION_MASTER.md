@@ -306,3 +306,18 @@ Commits in this pass include:
 - fbe50de — Align PDF monthly comparison tests with presence-status column.
 
 **Validation status:** source and test changes are committed; current-head CI remains queued at the last inspection. Do not mark SQLite, PostgreSQL, lint or PDF pagination as passed until the current PR head's workflow completes. Visual PDF pagination review and independent live holdings/classification-source verification remain open.
+
+
+## TWT PDF risk and coverage completion — 2026-11-18
+
+- PDF now prints disclosure coverage in rupees and percentage terms, with fresh/stale covered values and counts of missing/stale disclosure and NAV schemes.
+- NAV freshness prints fresh active schemes / total active schemes, coverage percentage and maximum allowed NAV age.
+- Market-cap section prints classified and unclassified INR exposure, positive look-through denominator, classification coverage and reconciliation difference/status.
+- Monthly comparison PDF includes scheme/category/sub-category/asset-class/AMC/market-cap/sector and pairwise overlap movement, AMC concentration metrics, duplicated exposure, data coverage movement and historical risk changes.
+- Added a monthly-comparison risk movement table to the PDF.
+
+Commits:
+- `36f1dfd` — Expose NAV and holdings coverage numerators in TWT PDF.
+- `31fb3b1` — Render month-on-month historical risk deltas in TWT PDF.
+
+Current validation: CI runs on the branch have been queued in GitHub Actions; the exact latest head must be checked before marking this complete. Visual PDF pagination review remains outstanding.
