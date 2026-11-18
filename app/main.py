@@ -5777,6 +5777,7 @@ def get_portfolio_market_cap_allocation(
     max_classification_age_days: int = Query(default=180, ge=30, le=730),
 ) -> dict[str, Any]:
     """Calculate market-cap exposure from verified holdings and verified effective-dated ISIN mappings."""
+    require_authenticated_user()
     with SessionLocal() as db:
         _require_portfolio_owner(db, portfolio_id)
     valuation = portfolio_valuation(portfolio_id, None)
