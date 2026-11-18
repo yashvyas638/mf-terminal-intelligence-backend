@@ -121,3 +121,12 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 - The branch is substantially divergent from `main` (comparison observed 631 commits ahead and 57 behind). Do not merge the entire branch without a deliberate reconciliation plan.
 - The connected GitHub status endpoint returned no status checks for the latest fix commit, and the available workflow-run lookup returned no PR-triggered runs. The test files have been committed, but execution of the new tests and full SQLite/PostgreSQL CI is **not yet verified**.
 - Live Supabase/Auth, real disclosure coverage, actual browser downloads and production PDF rendering remain unverified. No production deployment is authorised by this audit.
+
+
+### Portfolio-wide fund overlap matrix (2026-11-18)
+
+- `02caeb75ff6668506301294d059471c25e630480` — added authenticated, owner-scoped `GET /v1/portfolios/{id}/holdings-overlap`. It selects the latest VERIFIED disclosure per scheme, reports disclosure dates, SHA-256 source fingerprints, disclosure age and positive-weight ISIN coverage, and calculates pairwise common-ISIN overlap.
+- `82001c9d2ec1a9f4f4df7ece928debfa25be0c52` — added API integration assertions for the new endpoint and added it to the cross-user portfolio isolation route contract.
+- `fab33ffea719b91c7459ee6864343b838a20be2d` and `4d0f3f2715b8672fe22ce7933655ef2419f34698` — added the portfolio overlap panel to Portfolio Intelligence, including disclosure freshness, ISIN coverage, pairwise overlap and shared security counts.
+- Methodology guardrail: overlap contribution per shared ISIN is the lower of the two positive scheme weights. Non-ISIN and negative-weight rows are excluded. Pairwise percentages are explicitly non-additive; no portfolio-wide duplication percentage is fabricated from pair sums.
+- Remaining: execute API and browser tests in CI; add a fixture with at least two portfolio funds and shared ISINs to assert exact matrix arithmetic; include overlap in immutable report/PDF output; inspect query performance for larger portfolios.
