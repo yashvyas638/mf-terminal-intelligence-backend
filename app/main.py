@@ -81,7 +81,7 @@ from app.portfolio_allocation_intelligence import (
     allocation_dimension_key,
 )
 from app.reporting import build_portfolio_report_pdf
-from app.twt_monthly_report import compare_monthly_reports, is_month_end_valuation_date, select_latest_distinct_months
+from app.twt_monthly_report import compare_monthly_reports, decode_verified_snapshot, is_month_end_valuation_date, select_latest_distinct_months
 from app.smart_sip_regime import assess_smart_sip_regime
 from app.nav_adjustments import (
     NAV_ADJUSTMENT_REGISTRY_VERSION,
@@ -3546,12 +3546,19 @@ def create_portfolio_report_snapshot(
             )
             .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
         ).scalars().all()
-        prior_reports = [{
-            "report_id": row.id,
-            "generated_at": row.generated_at.isoformat(),
-            "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
-            "report": json.loads(row.content_json),
-        } for row in prior_rows]
+        prior_reports = []
+        invalid_prior_snapshot_ids = []
+        for row in prior_rows:
+            prior_report = decode_verified_snapshot(row.content_json, row.content_sha256)
+            if prior_report is None:
+                invalid_prior_snapshot_ids.append(row.id)
+                continue
+            prior_reports.append({
+                "report_id": row.id,
+                "generated_at": row.generated_at.isoformat(),
+                "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
+                "report": prior_report,
+            })
         current_candidate = {
             "report_id": None,
             "generated_at": generated_at.isoformat(),
@@ -3559,7 +3566,13 @@ def create_portfolio_report_snapshot(
             "report": report,
         }
         monthly_periods = select_latest_distinct_months([current_candidate, *prior_reports])
-        if not is_month_end_valuation_date(valuation.get("valuation_date")):
+        if invalid_prior_snapshot_ids:
+            report["monthly_comparison"] = {
+                "status": "PREVIOUS_SNAPSHOT_INTEGRITY_FAILURE",
+                "message": "A prior report snapshot failed SHA-256 verification; monthly comparison is withheld.",
+                "invalid_snapshot_ids": invalid_prior_snapshot_ids,
+            }
+        elif not is_month_end_valuation_date(valuation.get("valuation_date")):
             report["monthly_comparison"] = {
                 "status": "CURRENT_REPORT_NOT_MONTH_END",
                 "message": "Month-on-month comparison is available only for valuation dates within the final seven calendar days of the month.",
