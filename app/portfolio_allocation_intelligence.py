@@ -7,8 +7,10 @@ fetch data, infer classifications, or turn missing inputs into zero coverage.
 from __future__ import annotations
 
 from collections import defaultdict
+import csv
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Iterable, Mapping
+from io import StringIO
 
 METHODOLOGY_VERSION = "portfolio-allocation-v1.0.0"
 CENT = Decimal("0.01")
@@ -280,6 +282,76 @@ def contribution_plan_preview(
             "Targets must be configured from a complete, mutually exclusive allocation dimension.",
         ],
     }
+
+
+def parse_market_cap_classification_csv(csv_text: str) -> list[dict[str, Any]]:
+    """Parse an operator-supplied, source-dated ISIN market-cap classification CSV."""
+    from datetime import date
+
+    if not isinstance(csv_text, str) or not csv_text.strip():
+        raise ValueError("market-cap classification CSV is empty")
+    if len(csv_text.encode("utf-8")) > 5_000_000:
+        raise ValueError("market-cap classification CSV exceeds the 5 MB safety limit")
+    reader = csv.DictReader(StringIO(csv_text.lstrip("\ufeff")))
+    if not reader.fieldnames:
+        raise ValueError("market-cap classification CSV header is missing")
+
+    def key(value: str) -> str:
+        return "".join(ch.lower() for ch in value.strip().lstrip("\ufeff") if ch.isalnum())
+
+    headers = {key(name): name for name in reader.fieldnames if name}
+    if len(headers) != len([name for name in reader.fieldnames if name]):
+        raise ValueError("market-cap classification CSV has duplicate or ambiguous headers")
+    def pick(*names: str) -> str | None:
+        return next((headers[name] for name in names if name in headers), None)
+
+    isin_col = pick("isin", "isincode", "securityid")
+    bucket_col = pick("marketcapbucket", "marketcap", "classification")
+    from_col = pick("effectivefrom", "effectivefromdate")
+    to_col = pick("effectiveto", "effectivetodate")
+    source_date_col = pick("sourceasofdate", "classificationasofdate", "asofdate")
+    if not all((isin_col, bucket_col, from_col, source_date_col)):
+        raise ValueError("CSV requires ISIN, market-cap bucket, effective-from and source-as-of date columns")
+    rows = []
+    seen = set()
+    for line_number, row in enumerate(reader, start=2):
+        if not row or not any((value or "").strip() for value in row.values()):
+            continue
+        if None in row:
+            raise ValueError(f"row {line_number}: more values than the CSV header defines")
+        isin = (row.get(isin_col) or "").strip().upper()
+        if not ISIN_PATTERN.fullmatch(isin):
+            raise ValueError(f"row {line_number}: invalid ISIN")
+        bucket_raw = (row.get(bucket_col) or "").strip().upper().replace(" ", "_").replace("-", "_")
+        aliases = {"LARGE": "LARGE_CAP", "MID": "MID_CAP", "SMALL": "SMALL_CAP"}
+        bucket = aliases.get(bucket_raw, bucket_raw)
+        if bucket not in {"LARGE_CAP", "MID_CAP", "SMALL_CAP", "OTHER"}:
+            raise ValueError(f"row {line_number}: unsupported market-cap bucket")
+        try:
+            effective_from = date.fromisoformat((row.get(from_col) or "").strip())
+            effective_to_raw = (row.get(to_col) or "").strip() if to_col else ""
+            effective_to = date.fromisoformat(effective_to_raw) if effective_to_raw else None
+            source_as_of = date.fromisoformat((row.get(source_date_col) or "").strip())
+        except ValueError as exc:
+            raise ValueError(f"row {line_number}: dates must use YYYY-MM-DD") from exc
+        if effective_to and effective_to < effective_from:
+            raise ValueError(f"row {line_number}: effective-to precedes effective-from")
+        identity = (isin, effective_from)
+        if identity in seen:
+            raise ValueError(f"row {line_number}: duplicate ISIN and effective-from mapping")
+        seen.add(identity)
+        rows.append({
+            "security_id": isin,
+            "market_cap_bucket": bucket,
+            "effective_from": effective_from,
+            "effective_to": effective_to,
+            "source_as_of_date": source_as_of,
+        })
+        if len(rows) > 20000:
+            raise ValueError("market-cap classification CSV exceeds the 20,000-row safety limit")
+    if not rows:
+        raise ValueError("market-cap classification CSV contains no valid rows")
+    return rows
 
 
 def market_cap_allocation(
