@@ -329,3 +329,11 @@ Current validation: CI runs on the branch have been queued in GitHub Actions; th
 - Any display-only rounding residual is assigned to the explicit unallocated-cash row when present, rather than increasing a fund bucket's displayed risk weight.
 - Commit: `1c1dbcb` — Reconcile displayed contribution weights to exactly 100 percent.
 - Latest implementation head at this update: `1c1dbcb997b1c9bd3170b82ee9d7aa8d341b59d1`; CI remains pending.
+
+
+### Infeasible risk-policy handling — 2026-11-18
+
+- Contribution preview now rejects a requested post-weight ceiling below any saved bucket minimum instead of silently weakening the saved minimum constraint.
+- Added a regression test for the infeasible risk-policy case.
+- Commits: `0be261e` (reject conflicting ceiling/minimum policy), `ee1d583` (test infeasible risk-policy rejection).
+- CI for the exact current head remains pending.
