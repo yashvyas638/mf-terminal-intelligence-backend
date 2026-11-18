@@ -265,26 +265,41 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
             targets = drift.get("targets")
             if not isinstance(targets, list) or not targets:
                 return None
+            policy_targets = policy.get("targets")
+            if not isinstance(policy_targets, list) or not policy_targets:
+                return None
+            policy_keys = {
+                str(item.get("key") or "").strip()
+                for item in policy_targets if isinstance(item, dict)
+            }
+            if len(policy_keys) != len(policy_targets) or "" in policy_keys:
+                return None
             seen: set[str] = set()
             weight_total = Decimal("0")
+            preferred_total = Decimal("0")
             for target in targets:
                 if not isinstance(target, dict):
                     return None
                 key = str(target.get("key") or "").strip()
                 actual = _decimal(target.get("actual_weight_pct"))
+                target_pct = _decimal(target.get("target_pct"))
                 drift_pp = _decimal(target.get("drift_percentage_points"))
-                if (not key or key in seen or actual is None or drift_pp is None
+                if (not key or key in seen or actual is None or target_pct is None or drift_pp is None
                         or not Decimal("0") <= actual <= Decimal("100")
-                        or not Decimal("-100") <= drift_pp <= Decimal("100")):
+                        or not Decimal("0") <= target_pct <= Decimal("100")
+                        or not Decimal("-100") <= drift_pp <= Decimal("100")
+                        or abs((actual - target_pct) - drift_pp) > Decimal("0.05")):
                     return None
                 seen.add(key)
                 weight_total += actual
+                preferred_total += target_pct
                 result[f"{dimension}:{key}"] = {
                     "key": f"{dimension}:{key}",
                     "actual_weight_pct": str(actual),
                     "drift_percentage_points": str(drift_pp),
                 }
-            if abs(weight_total - Decimal("100")) > Decimal("0.05"):
+            if (seen != policy_keys or abs(weight_total - Decimal("100")) > Decimal("0.05")
+                    or abs(preferred_total - Decimal("100")) > Decimal("0.05")):
                 return None
         return result if result else None
 
