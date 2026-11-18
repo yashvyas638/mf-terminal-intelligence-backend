@@ -254,8 +254,15 @@ def contribution_plan_preview(
     *,
     portfolio_value_inr: Any,
     contribution_inr: Any,
+    max_contribution_inr: Any | None = None,
+    max_post_weight_pct: Any | None = None,
 ) -> dict[str, Any]:
-    """Allocate a new contribution to target deficits; never proposes sells."""
+    """Allocate a contribution to target deficits under explicit optional risk caps.
+
+    The preview never proposes sells or creates transactions. A total contribution
+    ceiling rejects an over-budget request; a post-weight ceiling can only reduce
+    eligible bucket targets and may leave part of the contribution unallocated.
+    """
     total = _d(portfolio_value_inr, "portfolio_value_inr")
     contribution = _d(contribution_inr, "contribution_inr")
     assert total is not None and contribution is not None
@@ -263,6 +270,14 @@ def contribution_plan_preview(
         raise ValueError("portfolio_value_inr must be positive")
     if contribution <= ZERO or contribution > Decimal("1000000000000"):
         raise ValueError("contribution_inr must be positive and within the supported limit")
+    max_contribution = _d(max_contribution_inr, "max_contribution_inr") if max_contribution_inr is not None else None
+    max_weight = _d(max_post_weight_pct, "max_post_weight_pct") if max_post_weight_pct is not None else None
+    if max_contribution is not None and (max_contribution <= ZERO or max_contribution > Decimal("1000000000000")):
+        raise ValueError("max_contribution_inr must be positive and within the supported limit")
+    if max_contribution is not None and contribution > max_contribution:
+        raise ValueError("contribution_inr exceeds the approved max_contribution_inr risk budget")
+    if max_weight is not None and (max_weight <= ZERO or max_weight > HUNDRED):
+        raise ValueError("max_post_weight_pct must be greater than zero and at most 100")
     rows = list(targets)
     # Reuse the same complete-target validation and pre-contribution drift.
     drift = allocation_drift(rows, portfolio_value_inr=total)
@@ -273,12 +288,16 @@ def contribution_plan_preview(
     }
     post_total = total + contribution
     deficits: dict[str, Decimal] = {}
+    effective_target_weights: dict[str, Decimal] = {}
     for key, target_row in target_rows.items():
         target_weight = _d(target_row["target_pct"], "target_pct")
         current = current_values[key]
         assert target_weight is not None and current is not None
+        # The requested risk ceiling may tighten, but never loosen, the saved target.
+        effective_weight = min(target_weight, max_weight) if max_weight is not None else target_weight
+        effective_target_weights[key] = effective_weight
         # Contribution allocation is calculated against post-contribution target values.
-        deficits[key] = max(post_total * target_weight / HUNDRED - current, ZERO)
+        deficits[key] = max(post_total * effective_weight / HUNDRED - current, ZERO)
     deficit_total = sum(deficits.values(), ZERO)
     allocation_budget = min(contribution, deficit_total)
     allocations = []
@@ -289,7 +308,7 @@ def contribution_plan_preview(
         allocations.append({
             "key": key,
             "current_value_inr": _money(current_values[key] or ZERO),
-            "target_value_after_contribution_inr": _money(post_total * _d(target_rows[key]["target_pct"], "target_pct") / HUNDRED),
+            "target_value_after_contribution_inr": _money(post_total * effective_target_weights[key] / HUNDRED),
             "contribution_allocation_inr": _money(rounded_amount),
             "reason": "TARGET_GAP" if rounded_amount > ZERO else "NO_TARGET_GAP",
         })
@@ -310,6 +329,14 @@ def contribution_plan_preview(
             "post_contribution_value_inr": _money(value),
             "post_contribution_weight_pct": _pct(value, post_total),
         })
+    unallocated_cash = contribution - allocated_total
+    if unallocated_cash > ZERO:
+        after.append({
+            "key": "__UNALLOCATED_CASH__",
+            "post_contribution_value_inr": _money(unallocated_cash),
+            "post_contribution_weight_pct": _pct(unallocated_cash, post_total),
+            "reason": "UNALLOCATED_CONTRIBUTION",
+        })
     return {
         "methodology_version": METHODOLOGY_VERSION,
         "plan_type": "CONTRIBUTION_ONLY_PREVIEW",
@@ -321,9 +348,15 @@ def contribution_plan_preview(
         "allocations": allocations,
         "post_contribution_allocation": after,
         "status": "AVAILABLE" if deficit_total > ZERO else "NO_TARGET_GAP",
+        "risk_constraints": {
+            "max_contribution_inr": _money(max_contribution) if max_contribution is not None else None,
+            "max_post_weight_pct": str(max_weight) if max_weight is not None else None,
+            "enforced": max_contribution is not None or max_weight is not None,
+        },
         "limitations": [
             "This is a target-gap allocation preview, not a buy instruction or transaction.",
-            "It does not yet apply AMC, scheme, sector, liquidity, risk-budget or market-regime caps.",
+            "The selected target dimension is evaluated independently; cross-dimension AMC, scheme, sector, security and liquidity caps are not inferred.",
+            "Any unallocated contribution is shown separately as unallocated cash and is not assigned to a fund.",
             "Targets must be configured from a complete, mutually exclusive allocation dimension.",
         ],
     }
