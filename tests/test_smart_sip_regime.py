@@ -69,3 +69,17 @@ def test_invalid_regime_thresholds_are_rejected():
         assert "finite number" in str(exc)
     else:
         raise AssertionError("non-finite regime thresholds must be rejected")
+
+
+def test_non_finite_tri_and_malformed_provenance_hashes_are_rejected():
+    rows = observations()
+    rows[-1]["tri"] = float("nan")
+    rows[-2]["tri"] = float("inf")
+    rows[-3]["source_hash"] = "not-a-sha256"
+    result = assess_smart_sip_regime(
+        rows, as_of=date(2026, 11, 18),
+        portfolio_need=inputs()[0], risk_budget=inputs()[1], config=CONFIG,
+    )
+    assert result["evidence"]["rejected_observation_count"] == 3
+    assert result["evidence"]["latest_observation_date"] == rows[-4]["date"]
+    assert not result["topup_eligible"]
