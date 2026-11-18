@@ -14,7 +14,7 @@ This runbook is intentionally prepared during development and executed only at t
 
 ## Candidate migration chain
 
-The production database was read-only verified at Alembic revision `0028_restrictive_private_access` on 2026-11-16 09:51 UTC. The candidate branch now adds `0029_admin_default_acl`, which revokes unsafe `supabase_admin` default grants to `anon` and `authenticated` for future public tables, sequences and functions. Production remains at 0028 until an approved deployment. The current SQL inspection ran as `postgres`; this does not identify Render's actual backend role.
+The production database was read-only verified at Alembic revision `0028_restrictive_private_access` on 2026-11-16 09:51 UTC. The candidate branch adds `0029_admin_default_acl`, which revokes unsafe `supabase_admin` default grants to `anon` and `authenticated` for future public tables, sequences and functions, followed by `0030_remove_duplicate_nav_index`, which removes only the redundant non-unique NAV index after verifying the identical unique constraint index remains. Production remains at 0028 until an approved deployment. The current SQL inspection ran as `postgres`; this does not identify Render's actual backend role.
 
 | Order | Revision | Purpose |
 |---:|---|---|
@@ -47,10 +47,11 @@ The production database was read-only verified at Alembic revision `0028_restric
 | 27 | `0027_private_access` | Deny direct Supabase client access to private user tables |
 | 28 | `0028_restrictive_private_access` | Make private-table denial policies restrictive |
 | 29 | `0029_admin_default_acl` | Revoke `supabase_admin` default client grants for future public objects |
+| 30 | `0030_remove_duplicate_nav_index` | Remove redundant `(scheme_code, nav_date)` index while retaining the unique constraint index |
 
 The migrations are forward-only where they protect financial evidence or security posture. Downgrades must not remove audit/provenance or restore broad client privileges. Rollback is normally an application-code redeploy plus a reviewed forward-fix, not an Alembic downgrade.
 
-Before release, re-read the migration tree and confirm the candidate head is `0029_admin_default_acl` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires `MIGRATION_DATABASE_URL` authorised to alter default privileges for every role able to CREATE in `public`. The API runtime uses only `DATABASE_URL`; do not reuse the privileged migration URL for normal application queries. The latest Supabase SQL inspection ran as `postgres`, which is not a member of `supabase_admin`; do not assume that connection can apply 0029. The migration preflights this and aborts before changes if authority is insufficient. Use an approved privileged migration process if Render's actual database role lacks the required membership.
+Before release, re-read the migration tree and confirm the candidate head is `0030_remove_duplicate_nav_index` or a subsequently reviewed revision; production currently reports `0028_restrictive_private_access`. This runbook is a snapshot, not a substitute for inspecting the exact SHA. The 0029 migration must be tested on PostgreSQL CI and requires `MIGRATION_DATABASE_URL` authorised to alter default privileges for every role able to CREATE in `public`. The API runtime uses only `DATABASE_URL`; do not reuse the privileged migration URL for normal application queries. The latest Supabase SQL inspection ran as `postgres`, which is not a member of `supabase_admin`; do not assume that connection can apply 0029. The migration preflights this and aborts before changes if authority is insufficient. Use an approved privileged migration process if Render's actual database role lacks the required membership.
 
 ## Pre-deployment checks
 
