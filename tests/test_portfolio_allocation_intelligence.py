@@ -469,3 +469,17 @@ def test_contribution_plan_rejects_fractional_paisa_amounts():
             portfolio_value_inr="1000",
             contribution_inr="10.005",
         )
+
+
+def test_contribution_plan_rejects_risk_ceiling_below_saved_minimum():
+    targets = [
+        {"key": "A", "min_pct": "45", "target_pct": "50", "max_pct": "60", "actual_value_inr": "500"},
+        {"key": "B", "min_pct": "35", "target_pct": "50", "max_pct": "55", "actual_value_inr": "500"},
+    ]
+    with pytest.raises(ValueError, match="conflicts with the saved minimum"):
+        contribution_plan_preview(
+            targets,
+            portfolio_value_inr="1000",
+            contribution_inr="100",
+            max_post_weight_pct="40",
+        )
