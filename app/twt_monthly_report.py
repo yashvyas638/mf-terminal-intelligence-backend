@@ -456,8 +456,10 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     new_lookthrough_coverage = (new_report.get("lookthrough") or {}).get("coverage") or {}
     old_market_cap = old_report.get("market_cap_intelligence") or {}
     new_market_cap = new_report.get("market_cap_intelligence") or {}
-    old_overlap = old_report.get("overlap_intelligence") or {}
-    new_overlap = new_report.get("overlap_intelligence") or {}
+    old_overlap_raw = old_report.get("overlap_intelligence")
+    new_overlap_raw = new_report.get("overlap_intelligence")
+    old_overlap = old_overlap_raw if isinstance(old_overlap_raw, dict) else {}
+    new_overlap = new_overlap_raw if isinstance(new_overlap_raw, dict) else {}
     old_disclosure_health = old_overlap.get("disclosure_health") or {}
     new_disclosure_health = new_overlap.get("disclosure_health") or {}
     coverage_comparison = {
@@ -505,10 +507,14 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         )
     else:
         comparisons["overlap_pairs"] = {"status": "WITHHELD_OR_PARTIAL_DISCLOSURE_COVERAGE", "items": []}
-    old_dup = old_overlap.get("portfolio_duplication") or {}
-    new_dup = new_overlap.get("portfolio_duplication") or {}
+    old_dup_raw = old_overlap.get("portfolio_duplication")
+    new_dup_raw = new_overlap.get("portfolio_duplication")
+    old_dup = old_dup_raw if isinstance(old_dup_raw, dict) else {}
+    new_dup = new_dup_raw if isinstance(new_dup_raw, dict) else {}
 
     def duplication_snapshot_is_consistent(snapshot: dict[str, Any]) -> bool:
+        if not isinstance(snapshot, dict):
+            return False
         duplicated = _decimal(snapshot.get("duplicated_exposure_inr"))
         gross = _decimal(snapshot.get("gross_positive_lookthrough_exposure_inr"))
         share = _decimal(snapshot.get("duplicated_share_of_gross_positive_lookthrough_pct"))
