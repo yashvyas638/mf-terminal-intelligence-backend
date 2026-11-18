@@ -40,7 +40,7 @@ def test_portfolio_intelligence_never_fabricates_unconfigured_metrics():
     assert "valuation_status" in js
     assert "security_concentration" in js
     assert "missing_nav_scheme_codes" in js
-    assert "verified, effective-dated ISIN classifications" in html
+    assert "Verified effective-dated ISIN mappings only." in html
     assert "Simulation only" in html
 
 
