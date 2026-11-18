@@ -2100,6 +2100,47 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         abs=0.01,
     )
 
+    previous_period_end = as_of.replace(day=1) - timedelta(days=1)
+    previous_report_payload = {
+        "report_version": "portfolio-report-v1",
+        "portfolio_id": portfolio_id,
+        "portfolio_name": "Risk Test Portfolio",
+        "generated_at": (now - timedelta(days=1)).isoformat(),
+        "valuation": {
+            "valuation_date": previous_period_end.isoformat(),
+            "current_value": "900.00",
+            "holdings": [],
+        },
+        "allocation_intelligence": {
+            "status": "AVAILABLE",
+            "allocation": {
+                "schemes": [],
+                "by_category": [],
+                "by_sub_category": [],
+                "by_asset_class": [],
+            },
+            "amc_concentration": {"amcs": []},
+        },
+        "lookthrough": {
+            "coverage": {"status": "COMPLETE"},
+            "sector_exposure": [],
+        },
+        "market_cap_intelligence": {"status": "WITHHELD"},
+    }
+    previous_report_json = json.dumps(previous_report_payload, sort_keys=True)
+    previous_report_hash = hashlib.sha256(previous_report_json.encode("utf-8")).hexdigest()
+    with SessionLocal() as db:
+        db.add(PortfolioReportSnapshot(
+            portfolio_id=portfolio_id,
+            owner_user_id=user_id,
+            generated_at=now - timedelta(days=1),
+            report_version="portfolio-report-v1",
+            content_json=previous_report_json,
+            content_sha256=previous_report_hash,
+            source_max_nav_date=previous_period_end,
+        ))
+        db.commit()
+
     saved_report = client.post(
         f"/v1/portfolios/{portfolio_id}/reports?days=365",
         headers=headers,
@@ -2114,12 +2155,16 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
         db.commit()
     report_list = client.get(f"/v1/portfolios/{portfolio_id}/reports", headers=headers)
     assert report_list.status_code == 200
-    assert report_list.json()["count"] == 1
+    assert report_list.json()["count"] == 2
     report_detail = client.get(f"/v1/reports/{report_id}", headers=headers)
     assert report_detail.status_code == 200
     assert report_detail.json()["report"]["report_version"] == "portfolio-report-v1"
     assert report_detail.json()["report"]["valuation"]["current_value"] == saved_report_value
     assert report_detail.json()["report"]["lookthrough"]["coverage"]["status"] == "COMPLETE"
+    frozen_comparison = report_detail.json()["report"]["monthly_comparison"]
+    assert frozen_comparison["status"] == "AVAILABLE"
+    assert frozen_comparison["previous_period"] == previous_period_end.strftime("%Y-%m")
+    assert frozen_comparison["current_period"] == as_of.strftime("%Y-%m")
     assert report_detail.json()["content_sha256"] == saved_report.json()["content_sha256"]
     assert report_detail.json()["integrity_status"] == "VERIFIED"
     pdf = client.get(f"/v1/reports/{report_id}/pdf", headers=headers)
