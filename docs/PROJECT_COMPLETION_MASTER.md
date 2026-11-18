@@ -170,3 +170,11 @@ Scope: read-only inspection of the linked Supabase project, Render workspace/ser
 ### Safety record
 
 No production SQL writes were issued. SQL used for this audit was read-only SELECT inspection. No migrations, deployments, environment updates, secret writes, user creation, portfolio creation, NAV refresh, backup, restore, or destructive operations were run. Existing portfolio-goal data was left untouched.
+
+
+### Follow-up evidence — Render startup root cause and moving PR head (2026-11-18)
+
+- A second timestamped Render log inspection confirms the startup failure is deterministic on the affected instances: `MIGRATION_DATABASE_URL must be configured separately from runtime DATABASE_URL for production schema migrations`. The live Render start command invokes Alembic before Uvicorn, while the Render service's environment/configuration has not been proven to provide the required separate migration URL. Some process logs show Uvicorn did start and answer health probes, but other attempts exited before binding and Render subsequently reported a port-scan timeout. This is a configuration/credential provisioning blocker, not a build dependency failure.
+- The live service is configured for automatic deploys from `audit/production-foundation`. No Render environment or service settings were changed because this is production infrastructure and the required secret values are not available for safe configuration.
+- After the audit tracker commit, the PR branch continued receiving parallel commits. Latest subsequently observed PR #135 head: `2539941757fda3a38f5fbc790bbdd54f38b4b5d8`. CI run `44279169927` (CI) was still queued with PostgreSQL, SQLite and AMFI source-validation jobs queued. Do not mark current-head tests passed.
+- Audit evidence commit: `b8434b896ac91d16535b396d574f1eb6295c6724`. This commit adds the production-readiness audit section to this master tracker.
