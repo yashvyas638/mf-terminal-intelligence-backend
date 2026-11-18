@@ -84,3 +84,11 @@ def test_monthly_comparison_withholds_market_cap_when_either_period_is_unavailab
     current = {"period": "2026-10", "report": _report("2026-10-30", 1000, 700, 70)}
     result = compare_monthly_reports(previous, current)
     assert result["comparisons"]["market_cap"]["status"] == "WITHHELD_OR_NOT_COMPARABLE"
+
+
+def test_month_selection_excludes_mid_month_valuation_snapshots():
+    snapshots = [
+        {"report_id": 9, "generated_at": "2026-11-10", "report": _report("2026-11-10", 1000, 700, 70)},
+        {"report_id": 8, "generated_at": "2026-10-15", "report": _report("2026-10-15", 900, 600, 66.6667)},
+    ]
+    assert select_latest_distinct_months(snapshots) == []
