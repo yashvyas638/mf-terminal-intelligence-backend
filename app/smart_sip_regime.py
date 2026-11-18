@@ -122,12 +122,27 @@ def assess_smart_sip_regime(
 
     try:
         recent = window(90)
-        returns = [recent[i][1] / recent[i - 1][1] - 1
-                   for i in range(1, len(recent)) if recent[i - 1][1] > 0]
-        volatility = (pstdev(returns) * sqrt(float(config["annualisation_days"])) * 100
-                      if len(returns) >= 20 else None)
+        returns = [
+            recent[i][1] / recent[i - 1][1] - 1
+            for i in range(1, len(recent))
+            if recent[i - 1][1] > 0
+        ]
+        # Reject non-finite daily returns before statistics.pstdev. The stdlib
+        # statistics implementation can raise AttributeError for infinities
+        # rather than a numeric exception, so validate its inputs explicitly.
+        if any(not isfinite(value) for value in returns):
+            raise ValueError("non-finite daily return")
+        if len(returns) >= 20:
+            scale = max((abs(value) for value in returns), default=0.0)
+            normalized_returns = [value / scale for value in returns] if scale else returns
+            volatility = (
+                scale * pstdev(normalized_returns)
+                * sqrt(float(config["annualisation_days"])) * 100
+            )
+        else:
+            volatility = None
         dd52, dd3y, mom63, mom126 = drawdown(w52), drawdown(w3y), momentum(63), momentum(126)
-    except (OverflowError, ValueError, ZeroDivisionError):
+    except (OverflowError, ValueError, ZeroDivisionError, TypeError, AttributeError):
         result["market_opportunity"]["reason"] = "INVALID_DERIVED_SIGNAL"
         result["limitations"].append("Derived benchmark signal exceeded safe numeric limits and was withheld.")
         return result
