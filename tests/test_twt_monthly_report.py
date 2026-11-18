@@ -425,3 +425,53 @@ def test_monthly_comparison_withholds_negative_portfolio_value():
 
     assert result["comparisons"]["portfolio_value"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
     assert result["comparisons"]["portfolio_value"]["change_inr"] is None
+
+
+def test_monthly_risk_comparison_withholds_impossible_drawdown_and_var_values():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    for report in (previous_report, current_report):
+        report["lookback_days"] = 365
+        report["risk"] = {
+            "status": "OK",
+            "metrics": {
+                "annualized_volatility": "0.12",
+                "max_drawdown": "-1.2",
+                "historical_var_95": "0.05",
+                "historical_cvar_95": "0.08",
+            },
+        }
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metric = result["risk_changes"]["max_drawdown"]
+    assert metric["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metric["previous"] is None
+    assert metric["current"] is None
+    assert metric["change"] is None
+
+
+def test_monthly_risk_comparison_rejects_var_above_total_loss_bound():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    for report in (previous_report, current_report):
+        report["lookback_days"] = 365
+        report["risk"] = {
+            "status": "OK",
+            "metrics": {
+                "annualized_volatility": "0.12",
+                "max_drawdown": "-0.2",
+                "historical_var_95": "1.2",
+                "historical_cvar_95": "0.08",
+            },
+        }
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    assert result["risk_changes"]["historical_var_95"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
