@@ -41,7 +41,7 @@ function renderMonthlyComparison(d){
   const sectionLabels={
     scheme:"Scheme",category:"Category",sub_category:"Sub-category",
     asset_class:"Asset class",amc:"AMC",market_cap:"Market cap",
-    sector:"Sector",overlap_pairs:"Fund overlap",
+    sector:"Sector",overlap_pairs:"Fund overlap",target_drift:"Target drift · pp",
   };
   const sectionFields={
     scheme:["market_value_inr","portfolio_weight_pct"],
@@ -52,6 +52,7 @@ function renderMonthlyComparison(d){
     market_cap:["exposure_inr","weight_of_total_portfolio_pct"],
     sector:["lookthrough_value","portfolio_weight_pct"],
     overlap_pairs:["overlap_inr","overlap_pct_of_scheme_a_nav","overlap_pct_of_scheme_b_nav"],
+    target_drift:["drift_percentage_points","drift_percentage_points"],
   };
   const sections=Object.entries(sectionLabels).map(([key,label])=>{
     const data=d.comparisons?.[key]||{},fields=sectionFields[key],rows=data.items||[];
