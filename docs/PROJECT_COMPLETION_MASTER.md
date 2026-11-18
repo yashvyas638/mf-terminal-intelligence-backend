@@ -266,3 +266,19 @@ Validation remains pending for the latest exact branch head. CI must pass SQLite
 - [ ] Review rounding-boundary cases where a very small target deficit is below one paisa; the contribution planner must never exceed the configured cap because of residual rounding.
 
 **Current disposition:** implementation and regression tests committed; CI was queued at the latest observed head and is not yet a pass. Smart SIP remains preview-only, and no buy order, SIP mandate, portfolio transaction or cash movement is created.
+
+
+### Rounding and risk-ceiling hardening — 2026-11-18
+
+A boundary review found that half-up rounding could allocate one paisa more than a bucket's fractional target deficit. This could breach a tight saved/risk target by a paisa.
+
+- Contribution amounts and explicit INR ceilings now reject fractions of a paisa.
+- Bucket allocations are rounded down first; remaining whole paise are distributed by largest fractional remainder only when the bucket still has at least one paisa of target capacity.
+- Residual paise that cannot be routed safely remain in the explicit unallocated-cash row.
+- Added regressions for a sub-paisa target deficit and fractional-paisa request rejection.
+
+Additional commits:
+- `0d1c511` — Prevent paise rounding from breaching contribution target caps.
+- `f5a0495` — Test sub-paisa deficit and fractional-paisa handling.
+
+Latest observed branch head: `f5a04951cce7b7b8db5e8e46edc7a8b92c5120fe`. CI runs for this exact head were queued when checked; no pass is claimed yet.
