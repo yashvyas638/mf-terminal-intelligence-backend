@@ -69,6 +69,8 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 - `68312f997ec181b6b336d4ec53bcf1eeced7305b` — added regression assertions for those rendering contracts.
 - `44074b9b21c6cb0376f2cd83edf5c2709b338bc2` — corrected PDF holding rows to derive weights from the complete portfolio value and read the actual `nav_freshness` field. Weights remain withheld for incomplete valuation.
 - `f5c18188ab13b0a268386e36bd26c3d5266075f7` — added PDF regression tests for complete/incomplete valuation, invalid inputs and PDF signature.
+- `c0c1e0296391112f25b4ca51f6aea8c43c56a291` — guarded asynchronous risk results so a response from a previously selected portfolio or signed-in session cannot overwrite the current workspace; also resets the risk error state before retrying.
+- `74a21b61f94c3e6810f32b8d126185e80f6afa17` — added a regression contract for stale risk-request suppression and error-state reset.
 
 ### Remaining TWT acceptance gates
 
