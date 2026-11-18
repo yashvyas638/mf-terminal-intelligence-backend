@@ -239,10 +239,35 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     }
     comparisons["data_coverage"] = coverage_comparison
 
-    old_pairs, new_pairs = old_overlap.get("pairs"), new_overlap.get("pairs")
-    if old_overlap.get("status") == "AVAILABLE" and new_overlap.get("status") == "AVAILABLE" and isinstance(old_pairs, list) and isinstance(new_pairs, list):
-        old_pairs = [{**row, "pair_key": str(row.get("scheme_a")) + ":" + str(row.get("scheme_b"))} for row in old_pairs]
-        new_pairs = [{**row, "pair_key": str(row.get("scheme_a")) + ":" + str(row.get("scheme_b"))} for row in new_pairs]
+    def normalized_overlap_pairs(rows: Any) -> list[dict[str, Any]] | None:
+        if not isinstance(rows, list):
+            return None
+        normalized_pairs = []
+        for row in rows:
+            if not isinstance(row, dict):
+                return None
+            scheme_a = str(row.get("scheme_a") or "").strip()
+            scheme_b = str(row.get("scheme_b") or "").strip()
+            if not scheme_a or not scheme_b or scheme_a == scheme_b:
+                return None
+            pair = dict(row)
+            if scheme_a > scheme_b:
+                scheme_a, scheme_b = scheme_b, scheme_a
+                pair["overlap_pct_of_scheme_a_nav"], pair["overlap_pct_of_scheme_b_nav"] = (
+                    pair.get("overlap_pct_of_scheme_b_nav"),
+                    pair.get("overlap_pct_of_scheme_a_nav"),
+                )
+            pair["scheme_a"] = scheme_a
+            pair["scheme_b"] = scheme_b
+            pair["pair_key"] = scheme_a + ":" + scheme_b
+            normalized_pairs.append(pair)
+        if len({row["pair_key"] for row in normalized_pairs}) != len(normalized_pairs):
+            return None
+        return normalized_pairs
+
+    old_pairs = normalized_overlap_pairs(old_overlap.get("pairs"))
+    new_pairs = normalized_overlap_pairs(new_overlap.get("pairs"))
+    if old_overlap.get("status") == "AVAILABLE" and new_overlap.get("status") == "AVAILABLE" and old_pairs is not None and new_pairs is not None:
         comparisons["overlap_pairs"] = _compare(
             old_pairs,
             new_pairs,
