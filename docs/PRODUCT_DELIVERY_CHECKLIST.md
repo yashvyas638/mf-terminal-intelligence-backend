@@ -149,3 +149,35 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 
 - `393f51661122a210608623892957721d9c2b8fb4` — added the overlap methodology to the immutable report's machine-readable methodology metadata.
 - `e670a7000eee93751182f0d318f813489651196d` — escaped backend status fields in overlap UI table rendering.
+
+
+### TWT allocation report and portfolio overlap — latest verified checkpoint (2026-11-18)
+
+This section supersedes the earlier TWT acceptance table above where later commits have completed the capability. It does not imply production release.
+
+| Capability | Current implementation state | Remaining acceptance evidence |
+|---|---|---|
+| Scheme/category/category-group/asset-class allocation | Implemented in owner-scoped look-through API and surfaced in UI/PDF, with explicit unclassified coverage | Execute full CI; validate against real verified holdings and portfolio valuation |
+| AMC concentration | Implemented using market-value-weighted holdings and surfaced in UI/PDF | Verify against live holdings and source completeness |
+| Monthly comparison | Implemented using latest hash-valid snapshots from two calendar months; value delta withheld unless both valuations are complete | Cash-flow vs market-return attribution remains out of scope/not implemented |
+| Portfolio-wide fund overlap | Implemented as owner-scoped pairwise matrix; latest VERIFIED disclosure, normalized/aggregated ISINs, positive weights, coverage/freshness/provenance and shared holdings | Add a 3+ fund non-additivity regression fixture; run API/UI/PDF CI; assess query performance at realistic portfolio scale |
+| Immutable report and PDF | Look-through, AMC/category/asset-class, monthly review and overlap included in report snapshot/PDF | Validate extracted PDF content and multi-page output in an executing CI runner |
+| Underlying large/mid/small market-cap look-through | Deliberately NOT_CONFIGURED until a verified, effective-dated ISIN classification source and ingestion/provenance pipeline exist | Select and integrate an authoritative licensed/official source; do not infer cap from scheme category |
+| Responsive browser verification | Static DOM and JavaScript contracts exist | Authenticated browser E2E still required at desktop/tablet/mobile widths |
+
+#### Overlap methodology and test evidence
+
+- Pair overlap is the sum of the lower positive scheme weight for each shared normalized ISIN. Duplicate rows for the same case-normalized ISIN are aggregated before comparison.
+- Pairwise percentages are non-additive. A security held by three funds appears in three pairs; the API and report explicitly warn against summing pair percentages into a portfolio duplication figure.
+- The exact two-fund API fixture asserts overlap 4.0000%, shared weights 8.7500% and 4.0000%, 81.40% ISIN coverage for Fund A, and cross-user access rejection. A separate single-fund case expects `INSUFFICIENT_FUNDS`.
+- No three-fund fixture is claimed yet. The new endpoint is included in the authenticated route-isolation contract and report snapshot/PDF test coverage.
+
+#### Current CI and release status
+
+- Latest observed audit branch head: `adf93641c32ec6449ee13263885f190dfc71aa37`.
+- Latest observed GitHub Actions run: [44284116473](https://github.com/yashvyas638/mf-terminal-intelligence-backend/actions/runs/44284116473). Its `test-sqlite`, `test-postgresql` and `validate-amfi-history-source` jobs are all `queued`; no job has executed, so no passing result is claimed.
+- Three latest branch runs observed (44284116473, 44284110003, 44284096062) are queued. The connector exposes run/job inspection but no runner-capacity or billing controls; this audit cannot force GitHub-hosted runners to start.
+- Current comparison against `main`: `diverged`, 682 commits ahead and 57 behind. PR #1 remains open, with GitHub previously reporting `mergeable=false`. The large diff must be reconciled and reviewed before merge; do not merge or rebase blindly.
+- No production deployment, production data change, production migration, secret change, or Render configuration change was performed.
+- Release remains blocked on actual CI execution, branch reconciliation, verified market-cap source (if that report dimension is required), browser E2E, and production-side Render/Supabase/backup verification.
+
