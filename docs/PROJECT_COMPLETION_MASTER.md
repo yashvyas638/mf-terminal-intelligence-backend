@@ -464,3 +464,15 @@ Commits:
 - `e49d611` — Test stale holdings cannot inflate TWT duplication metrics.
 
 **Validation:** committed; awaiting current-head CI. The result remains a source-limited observed exposure, not a claim that missing/stale disclosures have zero overlap.
+
+
+## Smart SIP valuation freshness gate — 2026-11-18
+
+A focused API-path audit found that Smart SIP treated portfolio need as verified when the drift response was available and its valuation date matched, even if the underlying portfolio valuation was marked stale or incomplete. This could expose an underweight label from stale valuation evidence (the independent top-up gate still prevented execution, but the evidence label itself was too permissive).
+
+- Portfolio need is now verified only when valuation status is COMPLETE, freshness is FRESH, and the drift valuation date matches the same valuation date.
+- Stale, incomplete, missing-date or mismatched-date valuation evidence returns portfolio need status WITHHELD and no underweight bucket list.
+- Added API regression coverage for stale valuation fail-closed behaviour.
+- Commits: `9725451` (fresh complete valuation gate), `18fc080` (stale valuation regression).
+
+**Validation:** committed to `ui/portfolio-intelligence`; CI for the exact latest head has not yet been observed. The previously observed run #44280273558 is for an older commit and remains queued; it is not valid evidence for this change. PR #135 currently reports mergeable=false, so merge readiness is also unresolved. No merge, deployment or production migration was performed.
