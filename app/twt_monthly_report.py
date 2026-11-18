@@ -5,6 +5,8 @@ Comparisons consume immutable report JSON only; they never revalue a portfolio.
 from __future__ import annotations
 
 from calendar import monthrange
+import hashlib
+import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
@@ -32,6 +34,20 @@ def _period_key(report: dict[str, Any]) -> str | None:
     if not is_month_end_valuation_date(raw):
         return None
     return str(raw)[:7]
+
+
+def decode_verified_snapshot(content_json: str, expected_sha256: str) -> dict[str, Any] | None:
+    """Decode immutable snapshot JSON only when its stored integrity hash matches."""
+    if not isinstance(content_json, str) or not isinstance(expected_sha256, str):
+        return None
+    actual_sha256 = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
+    if actual_sha256 != expected_sha256:
+        return None
+    try:
+        payload = json.loads(content_json)
+    except (TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def select_latest_distinct_months(
