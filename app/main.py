@@ -3313,6 +3313,57 @@ def create_portfolio_report_snapshot(
         market_cap_intelligence = get_portfolio_market_cap_allocation(portfolio_id, 180, 180)
     except HTTPException as exc:
         market_cap_intelligence = {"status": "WITHHELD", "message": str(exc.detail)}
+
+    # Derived sections query the same latest NAV store independently. Compare
+    # their valuation anchors before freezing the report; never combine
+    # percentages from different valuation states in one saved snapshot.
+    baseline_value = Decimal(str(valuation.get("current_value") or "0"))
+    baseline_date = valuation.get("valuation_date")
+    valuation_anchors = {
+        "allocation": (
+            allocation_intelligence.get("allocation", {}).get("portfolio_market_value_inr"),
+            allocation_intelligence.get("valuation_date"),
+            allocation_intelligence.get("status"),
+        ),
+        "lookthrough": (
+            lookthrough.get("portfolio_value"),
+            lookthrough.get("valuation_date"),
+            lookthrough.get("valuation_status"),
+        ),
+        "overlap": (
+            overlap_intelligence.get("portfolio_market_value_inr"),
+            overlap_intelligence.get("valuation_date"),
+            overlap_intelligence.get("status"),
+        ),
+        "market_cap": (
+            market_cap_intelligence.get("portfolio_value_inr"),
+            market_cap_intelligence.get("valuation_date"),
+            market_cap_intelligence.get("status"),
+        ),
+    }
+    snapshot_consistency = {}
+    for section_name, (raw_value, raw_date, section_status) in valuation_anchors.items():
+        if section_status in {"WITHHELD", "WITHHELD_INCOMPLETE_VALUATION", "WITHHELD_STALE_NAV", "WITHHELD_SECURITY_LIMIT_EXCEEDED", "WITHHELD_FUND_COUNT_LIMIT"}:
+            snapshot_consistency[section_name] = {"status": "WITHHELD_BY_DATA_QUALITY", "valuation_value_inr": raw_value, "valuation_date": raw_date}
+            continue
+        value_matches = raw_value is not None and Decimal(str(raw_value)) == baseline_value
+        date_matches = raw_date == baseline_date
+        consistent = value_matches and date_matches
+        snapshot_consistency[section_name] = {
+            "status": "CONSISTENT" if consistent else "WITHHELD_SNAPSHOT_MISMATCH",
+            "valuation_value_inr": str(raw_value) if raw_value is not None else None,
+            "valuation_date": raw_date,
+        }
+        if not consistent:
+            target = {
+                "allocation": allocation_intelligence,
+                "lookthrough": lookthrough,
+                "overlap": overlap_intelligence,
+                "market_cap": market_cap_intelligence,
+            }[section_name]
+            target["status"] = "WITHHELD_SNAPSHOT_MISMATCH"
+            target["message"] = "This section was withheld because its valuation anchor did not match the report's primary valuation snapshot."
+
     generated_at = datetime.now(timezone.utc)
 
     with SessionLocal() as db:
@@ -3403,6 +3454,12 @@ def create_portfolio_report_snapshot(
             "allocation_intelligence": allocation_intelligence,
             "overlap_intelligence": overlap_intelligence,
             "market_cap_intelligence": market_cap_intelligence,
+            "snapshot_consistency": {
+                "baseline_valuation_value_inr": str(baseline_value),
+                "baseline_valuation_date": baseline_date,
+                "checks": snapshot_consistency,
+                "status": "CONSISTENT" if all(item["status"] == "CONSISTENT" or item["status"] == "WITHHELD_BY_DATA_QUALITY" for item in snapshot_consistency.values()) else "PARTIAL_SNAPSHOT_MISMATCH",
+            },
             "fifo_tax_lots": tax_lots,
             "sources": sources,
             "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
