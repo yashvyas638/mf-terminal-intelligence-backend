@@ -822,3 +822,12 @@ Commits:
 - Added a regression where only the version changes and another where only the effective date changes.
 - Commits: `c4306d6`, `842e800`.
 - Exact-head CI is still pending; no pass claimed.
+
+
+### TWT full target-band identity verification — 2026-11-18
+
+- Hardened the cross-month target identity check beyond version and effective date: the comparator now also checks every target bucket key and its min/preferred/max band values.
+- This prevents a corrupted or inconsistent frozen report from silently changing target bands while retaining the same version identifier.
+- Added a regression that changes target bands in both policy and drift payloads while keeping the same version and effective date; the comparison must be withheld.
+- Commits: `6ed8ee8`, `79352f9`.
+- Exact-head CI remains queued; no pass claimed.
