@@ -5360,6 +5360,13 @@ def get_portfolio_market_cap_allocation(
             "missing_nav_scheme_codes": valuation.get("missing_nav_scheme_codes", []),
             "message": "Market-cap percentages are withheld until portfolio valuation is complete.",
         }
+    if valuation.get("stale_nav_scheme_codes"):
+        return {
+            "portfolio_id": portfolio_id,
+            "status": "WITHHELD_STALE_NAV",
+            "stale_nav_scheme_codes": valuation.get("stale_nav_scheme_codes", []),
+            "message": "Market-cap percentages are withheld while one or more active holding NAVs are stale.",
+        }
     lookthrough = portfolio_holdings_lookthrough(portfolio_id, max_disclosure_age_days, 20000)
     if lookthrough.get("security_rows_truncated"):
         return {
