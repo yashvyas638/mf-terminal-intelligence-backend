@@ -130,3 +130,8 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 - `fab33ffea719b91c7459ee6864343b838a20be2d` and `4d0f3f2715b8672fe22ce7933655ef2419f34698` — added the portfolio overlap panel to Portfolio Intelligence, including disclosure freshness, ISIN coverage, pairwise overlap and shared security counts.
 - Methodology guardrail: overlap contribution per shared ISIN is the lower of the two positive scheme weights. Non-ISIN and negative-weight rows are excluded. Pairwise percentages are explicitly non-additive; no portfolio-wide duplication percentage is fabricated from pair sums.
 - Remaining: execute API and browser tests in CI; add a fixture with at least two portfolio funds and shared ISINs to assert exact matrix arithmetic; include overlap in immutable report/PDF output; inspect query performance for larger portfolios.
+
+- `111a59f6acedef7da5dbedd788db715d1ab5d6d5` — immutable report snapshots now capture the same portfolio-wide overlap result alongside the valuation and look-through evidence.
+- `d0f8546084c1096677960e5d4f7985151288e820` — PDF report includes the pairwise overlap table and its non-additivity warning.
+- `f64185b148379524765aa8ba072fb762461972bf` and `582f34d3ddad7a8a340e7448e3b0b36a03b24649` — added report snapshot and PDF regression assertions/fixture.
+- `ba504136d58e88835dc0b1d676558fc1f886b3e5` — added frontend contract coverage for the overlap panel.
