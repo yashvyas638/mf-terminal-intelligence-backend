@@ -98,6 +98,14 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         Spacer(1, 8),
     ]
 
+    snapshot_consistency = report.get("snapshot_consistency") or {}
+    story.append(Paragraph(
+        "Snapshot consistency: " + _text(snapshot_consistency.get("status"))
+        + " · Baseline valuation: " + _text(snapshot_consistency.get("baseline_valuation_value_inr"))
+        + " · As of: " + _text(snapshot_consistency.get("baseline_valuation_date")),
+        styles["SmallNote"],
+    ))
+
     valuation = report.get("valuation") or {}
     summary = [
         ["Portfolio metric", "Value"],
