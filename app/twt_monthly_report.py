@@ -237,11 +237,16 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         if not isinstance(policies, list) or not isinstance(snapshots, dict):
             return None
         policy_by_dimension: dict[str, dict[str, Any]] = {}
+        supported_dimensions = {"ASSET_CLASS", "CATEGORY", "SUB_CATEGORY", "AMC", "SCHEME"}
         for policy in policies:
             if not isinstance(policy, dict):
                 return None
             dimension = str(policy.get("dimension") or "").strip()
-            if not dimension or dimension in policy_by_dimension:
+            if not dimension:
+                return None
+            if dimension not in supported_dimensions:
+                continue
+            if dimension in policy_by_dimension:
                 return None
             policy_by_dimension[dimension] = policy
         if set(snapshots) != set(policy_by_dimension):
@@ -277,7 +282,7 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
                 result[f"{dimension}:{key}"] = {
                     "key": f"{dimension}:{key}",
                     "actual_weight_pct": str(actual),
-                    "drift_pct": str(drift_pp),
+                    "drift_percentage_points": str(drift_pp),
                 }
             if abs(weight_total - Decimal("100")) > Decimal("0.05"):
                 return None
@@ -300,11 +305,12 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     else:
         target_comparison = _compare(
             list(old_target_rows.values()), list(new_target_rows.values()),
-            key_field="key", value_fields=("actual_weight_pct", "drift_pct"),
+            key_field="key", value_fields=("actual_weight_pct", "drift_percentage_points"),
         )
         for item in target_comparison.get("items", []):
             metrics = item.get("metrics") or {}
-            metrics["drift_percentage_points"] = metrics.pop("drift_pct", {})
+            drift_metric = metrics.get("drift_percentage_points") or {}
+            drift_metric["change_percentage_points"] = drift_metric.get("change")
         comparisons["target_drift"] = target_comparison
 
     old_value = _decimal((old_report.get("valuation") or {}).get("current_value"))
