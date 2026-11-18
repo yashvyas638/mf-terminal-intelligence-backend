@@ -131,6 +131,151 @@ def portfolio_allocation(schemes: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     }
 
 
+def allocation_drift(
+    targets: Iterable[Mapping[str, Any]],
+    *,
+    portfolio_value_inr: Any,
+) -> dict[str, Any]:
+    """Compare actual values with a complete, mutually exclusive target set."""
+    total = _d(portfolio_value_inr, "portfolio_value_inr")
+    assert total is not None
+    if total <= ZERO:
+        raise ValueError("portfolio_value_inr must be positive")
+    rows = list(targets)
+    if not rows:
+        raise ValueError("at least one target is required")
+    seen: set[str] = set()
+    preferred_total = ZERO
+    normalized = []
+    for row in rows:
+        key = str(row.get("key") or "").strip()
+        if not key or key in seen:
+            raise ValueError("target keys must be present and unique")
+        seen.add(key)
+        minimum = _d(row.get("min_pct"), "min_pct")
+        target = _d(row.get("target_pct"), "target_pct")
+        maximum = _d(row.get("max_pct"), "max_pct")
+        actual = _d(row.get("actual_value_inr"), "actual_value_inr")
+        assert minimum is not None and target is not None and maximum is not None and actual is not None
+        if minimum < ZERO or maximum > HUNDRED or minimum > target or target > maximum:
+            raise ValueError(f"invalid target range for {key}")
+        if actual < ZERO:
+            raise ValueError(f"actual value cannot be negative for {key}")
+        preferred_total += target
+        normalized.append((key, minimum, target, maximum, actual))
+    if abs(preferred_total - HUNDRED) > Decimal("0.01"):
+        raise ValueError("preferred target percentages must reconcile to 100")
+
+    results = []
+    for key, minimum, target, maximum, actual in normalized:
+        actual_pct = actual / total * HUNDRED
+        drift = actual_pct - target
+        target_value = total * target / HUNDRED
+        gap = target_value - actual
+        status = (
+            "UNDERWEIGHT" if actual_pct < minimum
+            else "OVERWEIGHT" if actual_pct > maximum
+            else "WITHIN_BAND" if minimum <= actual_pct <= maximum
+            else "WATCH"
+        )
+        results.append({
+            "key": key,
+            "actual_value_inr": _money(actual),
+            "actual_weight_pct": str(actual_pct.quantize(FOUR_DP, rounding=ROUND_HALF_UP)),
+            "min_pct": str(minimum),
+            "target_pct": str(target),
+            "max_pct": str(maximum),
+            "drift_percentage_points": str(drift.quantize(FOUR_DP, rounding=ROUND_HALF_UP)),
+            "amount_to_preferred_target_inr": _money(gap),
+            "status": status,
+        })
+    return {
+        "methodology_version": METHODOLOGY_VERSION,
+        "portfolio_value_inr": _money(total),
+        "target_count": len(results),
+        "targets": results,
+        "status": "AVAILABLE",
+        "limitation": "Target drift is meaningful only for a complete, mutually exclusive target set with matching actual-value coverage.",
+    }
+
+
+def contribution_plan_preview(
+    targets: Iterable[Mapping[str, Any]],
+    *,
+    portfolio_value_inr: Any,
+    contribution_inr: Any,
+) -> dict[str, Any]:
+    """Allocate a new contribution to target deficits; never proposes sells."""
+    total = _d(portfolio_value_inr, "portfolio_value_inr")
+    contribution = _d(contribution_inr, "contribution_inr")
+    assert total is not None and contribution is not None
+    if total <= ZERO:
+        raise ValueError("portfolio_value_inr must be positive")
+    if contribution <= ZERO or contribution > Decimal("1000000000000"):
+        raise ValueError("contribution_inr must be positive and within the supported limit")
+    rows = list(targets)
+    # Reuse the same complete-target validation and pre-contribution drift.
+    drift = allocation_drift(rows, portfolio_value_inr=total)
+    target_rows = {row["key"]: row for row in drift["targets"]}
+    current_values = {
+        str(row["key"]): _d(row.get("actual_value_inr"), "actual_value_inr")
+        for row in rows
+    }
+    post_total = total + contribution
+    deficits: dict[str, Decimal] = {}
+    for key, target_row in target_rows.items():
+        target_weight = _d(target_row["target_pct"], "target_pct")
+        current = current_values[key]
+        assert target_weight is not None and current is not None
+        # Contribution allocation is calculated against post-contribution target values.
+        deficits[key] = max(post_total * target_weight / HUNDRED - current, ZERO)
+    deficit_total = sum(deficits.values(), ZERO)
+    allocations = []
+    allocated_total = ZERO
+    for key in sorted(deficits):
+        amount = contribution * deficits[key] / deficit_total if deficit_total > ZERO else ZERO
+        allocations.append({
+            "key": key,
+            "current_value_inr": _money(current_values[key] or ZERO),
+            "target_value_after_contribution_inr": _money(post_total * _d(target_rows[key]["target_pct"], "target_pct") / HUNDRED),
+            "contribution_allocation_inr": _money(amount),
+            "reason": "TARGET_GAP" if amount > ZERO else "NO_TARGET_GAP",
+        })
+        allocated_total += amount
+    # Assign any rounding residual deterministically to the largest remaining deficit.
+    residual = contribution - allocated_total
+    if residual != ZERO and allocations and deficit_total > ZERO:
+        chosen = max(allocations, key=lambda row: (deficits[row["key"]], row["key"]))
+        adjusted = _d(chosen["contribution_allocation_inr"], "allocation") + residual
+        chosen["contribution_allocation_inr"] = _money(adjusted)
+        allocated_total += residual
+    after = []
+    for item in allocations:
+        value = current_values[item["key"]] + _d(item["contribution_allocation_inr"], "allocation")
+        after.append({
+            "key": item["key"],
+            "post_contribution_value_inr": _money(value),
+            "post_contribution_weight_pct": _pct(value, post_total),
+        })
+    return {
+        "methodology_version": METHODOLOGY_VERSION,
+        "plan_type": "CONTRIBUTION_ONLY_PREVIEW",
+        "portfolio_value_before_inr": _money(total),
+        "proposed_contribution_inr": _money(contribution),
+        "portfolio_value_after_inr": _money(post_total),
+        "allocated_contribution_inr": _money(allocated_total),
+        "unallocated_contribution_inr": _money(contribution - allocated_total),
+        "allocations": allocations,
+        "post_contribution_allocation": after,
+        "status": "AVAILABLE" if deficit_total > ZERO else "NO_TARGET_GAP",
+        "limitations": [
+            "This is a target-gap allocation preview, not a buy instruction or transaction.",
+            "It does not yet apply AMC, scheme, sector, liquidity, risk-budget or market-regime caps.",
+            "Targets must be configured from a complete, mutually exclusive allocation dimension.",
+        ],
+    }
+
+
 def market_cap_allocation(
     securities: Iterable[Mapping[str, Any]],
     classifications: Iterable[Mapping[str, Any]],
