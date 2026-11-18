@@ -5334,7 +5334,6 @@ def reject_market_cap_classification_batch(
         rejected_at = datetime.now(timezone.utc)
         for row in rows:
             row.verification_status = "REJECTED"
-            row.verified_at = rejected_at
         db.commit()
     return {
         "source_sha256": source_sha256.lower(),
