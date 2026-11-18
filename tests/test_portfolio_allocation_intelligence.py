@@ -439,3 +439,33 @@ def test_contribution_plan_reconciles_unallocated_contribution_as_cash():
     cash = next(row for row in result["post_contribution_allocation"] if row["key"] == "__UNALLOCATED_CASH__")
     assert cash["post_contribution_value_inr"] == "100.00"
     assert sum(Decimal(row["post_contribution_weight_pct"]) for row in result["post_contribution_allocation"]) == Decimal("100.0000")
+
+
+def test_contribution_plan_never_rounds_above_a_sub_paisa_target_deficit():
+    targets = [
+        {"key": "A", "min_pct": "0", "target_pct": "50", "max_pct": "50", "actual_value_inr": "500.495"},
+        {"key": "B", "min_pct": "0", "target_pct": "50", "max_pct": "50", "actual_value_inr": "499.505"},
+    ]
+    result = contribution_plan_preview(
+        targets,
+        portfolio_value_inr="1000",
+        contribution_inr="1.00",
+    )
+    by_key = {row["key"]: row for row in result["allocations"]}
+    assert by_key["A"]["contribution_allocation_inr"] == "0.00"
+    assert by_key["B"]["contribution_allocation_inr"] == "0.99"
+    assert result["allocated_contribution_inr"] == "0.99"
+    assert result["unallocated_contribution_inr"] == "0.01"
+    assert sum(Decimal(row["post_contribution_weight_pct"]) for row in result["post_contribution_allocation"]) == Decimal("100.0000")
+
+
+def test_contribution_plan_rejects_fractional_paisa_amounts():
+    targets = [
+        {"key": "A", "min_pct": "0", "target_pct": "100", "max_pct": "100", "actual_value_inr": "1000"},
+    ]
+    with pytest.raises(ValueError, match="fractions of a paisa"):
+        contribution_plan_preview(
+            targets,
+            portfolio_value_inr="1000",
+            contribution_inr="10.005",
+        )
