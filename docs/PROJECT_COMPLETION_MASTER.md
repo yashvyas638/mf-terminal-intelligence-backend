@@ -434,3 +434,18 @@ This is a fresh recheck against the current branch and linked Render service, no
 - No Render setting, secret, branch, start command or deployment was changed. No Supabase SQL write, migration, backup/restore, Auth-user creation or production data change was performed.
 
 **Disposition: production remains blocked by missing owner-provisioned migration credentials, P0 database ACL migration, backup/restore evidence and two-account isolation.** The failure is now tied to timestamped Render logs and the exact live service configuration.
+
+### TWT overlap-pair identity hardening — 2026-11-18
+
+A month-on-month comparison audit found that pair identity was built from the incoming `scheme_a:scheme_b` order. If an overlap provider returned the same two schemes in reverse order in a later snapshot, the report could falsely mark the pair as exited and new, and directional overlap percentages could be assigned to the wrong scheme.
+
+- Monthly comparison now canonicalises each pair by scheme code before matching.
+- When canonicalisation reverses the source order, the two fund-NAV denominator percentages are swapped with their corresponding schemes.
+- Invalid self-pairs, missing scheme identifiers and duplicate canonical pairs withhold the overlap-pair section rather than silently collapsing rows.
+- Added regression coverage for reversed pair order, continuing-pair identity, INR delta and both directional denominator values.
+
+Commits:
+- `c05cc29` — Normalize fund pair identity in monthly TWT comparisons.
+- `4adef94` — Test order-independent TWT fund overlap comparisons.
+
+Validation: changes are committed on `ui/portfolio-intelligence`; run CI against the latest branch head before treating the regression as passed. PDF pagination/browser rendering review remains open. No merge, deployment or production data changes.
