@@ -499,6 +499,23 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
         _table(amc_metric_rows, [65 * mm, 38 * mm, 38 * mm, 35 * mm]),
     ])
 
+    risk_changes = monthly.get("risk_changes") or {}
+    risk_rows = [["Historical risk metric", "Previous", "Current", "Change", "Status"]]
+    for key, item in risk_changes.items():
+        risk_rows.append([
+            _text(key.replace("_", " ").title()),
+            _text(item.get("previous")),
+            _text(item.get("current")),
+            _text(item.get("change")),
+            _text(item.get("status")),
+        ])
+    if len(risk_rows) == 1:
+        risk_rows.append(["Risk comparison unavailable", "—", "—", "—", "—"])
+    story.extend([
+        Paragraph("Historical risk movement", styles["Heading3"]),
+        _table(risk_rows, [48 * mm, 30 * mm, 30 * mm, 30 * mm, 36 * mm]),
+    ])
+
     coverage = monthly.get("comparisons", {}).get("data_coverage") or {}
     coverage_rows = [["Coverage measure", "Previous %", "Current %", "Change pp", "Status"]]
     for key, item in coverage.items():
