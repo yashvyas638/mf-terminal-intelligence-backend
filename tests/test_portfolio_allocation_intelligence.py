@@ -5,6 +5,7 @@ import pytest
 from app.portfolio_allocation_intelligence import (
     amc_concentration,
     holdings_overlap_matrix,
+    market_cap_allocation,
     portfolio_allocation,
 )
 
@@ -102,3 +103,61 @@ def test_overlap_rejects_invalid_coverage_and_nonfinite_inputs():
         holdings_overlap_matrix([{"scheme_code": "A", "portfolio_value_inr": "1", "disclosure_coverage_pct": "101"}])
     with pytest.raises(ValueError, match="finite"):
         portfolio_allocation([{"scheme_code": "A", "market_value_inr": "NaN"}])
+
+
+
+def test_scheme_weight_inside_segment_is_distinct_from_total_portfolio_weight():
+    result = portfolio_allocation([
+        {"scheme_code": "1", "market_value_inr": "300", "category_group": "Equity", "sub_category": "Large Cap"},
+        {"scheme_code": "2", "market_value_inr": "100", "category_group": "Equity", "sub_category": "Mid Cap"},
+        {"scheme_code": "3", "market_value_inr": "600", "category_group": "Debt", "sub_category": "Corporate Bond"},
+    ])
+    by_code = {row["scheme_code"]: row for row in result["schemes"]}
+    assert by_code["1"]["portfolio_weight_pct"] == "30.0000"
+    assert by_code["1"]["segment_weight_pct"] == "75.0000"
+    assert by_code["2"]["segment_weight_pct"] == "25.0000"
+
+
+def test_market_cap_lookthrough_uses_verified_effective_dated_mapping_and_keeps_unknown_visible():
+    result = market_cap_allocation(
+        [
+            {"security_id": "INE000000001", "is_isin": True, "lookthrough_value": "400"},
+            {"security_id": "INE000000002", "is_isin": True, "lookthrough_value": "300"},
+            {"security_id": "NONISIN:cash", "is_isin": False, "lookthrough_value": "100"},
+        ],
+        [
+            {"security_id": "INE000000001", "market_cap_bucket": "LARGE_CAP", "effective_from": "2026-01-01", "source_as_of_date": "2026-10-31", "source_url": "https://example.com/source-a", "source_sha256": "a" * 64, "verification_status": "VERIFIED"},
+            {"security_id": "INE000000002", "market_cap_bucket": "MID_CAP", "effective_from": "2026-01-01", "source_as_of_date": "2025-01-01", "source_url": "https://example.com/source-b", "source_sha256": "b" * 64, "verification_status": "VERIFIED"},
+            {"security_id": "INE000000002", "market_cap_bucket": "SMALL_CAP", "effective_from": "2026-01-01", "source_as_of_date": "2026-10-31", "source_url": "https://example.com/unverified", "source_sha256": "c" * 64, "verification_status": "PENDING"},
+        ],
+        as_of_date="2026-11-01",
+        portfolio_value_inr="1000",
+        max_classification_age_days=180,
+    )
+    assert result["classified_exposure_inr"] == "400.00"
+    assert result["classified_coverage_of_positive_lookthrough_pct"] == "50.0000"
+    assert result["classified_distribution"][0]["market_cap_bucket"] == "LARGE_CAP"
+    unknown = {row["reason"]: row["exposure_inr"] for row in result["unclassified_exposure"]}
+    assert unknown["UNCLASSIFIED_STALE_MAPPING"] == "300.00"
+    assert unknown["UNCLASSIFIED_NON_ISIN"] == "100.00"
+
+
+def test_market_cap_rejects_conflicting_effective_classifications_and_bad_provenance():
+    base = {
+        "security_id": "INE000000001", "is_isin": True,
+        "effective_from": "2026-01-01", "source_as_of_date": "2026-10-01",
+        "source_url": "https://example.com/source", "source_sha256": "a" * 64,
+        "verification_status": "VERIFIED",
+    }
+    with pytest.raises(ValueError, match="conflicting"):
+        market_cap_allocation(
+            [{"security_id": "INE000000001", "is_isin": True, "lookthrough_value": "100"}],
+            [{**base, "market_cap_bucket": "LARGE_CAP"}, {**base, "market_cap_bucket": "MID_CAP", "source_sha256": "b" * 64}],
+            as_of_date="2026-11-01", portfolio_value_inr="100",
+        )
+    with pytest.raises(ValueError, match="SHA-256"):
+        market_cap_allocation(
+            [{"security_id": "INE000000001", "is_isin": True, "lookthrough_value": "100"}],
+            [{**base, "market_cap_bucket": "LARGE_CAP", "source_sha256": "bad"}],
+            as_of_date="2026-11-01", portfolio_value_inr="100",
+        )
