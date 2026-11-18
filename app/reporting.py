@@ -327,7 +327,7 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
     allocation_intelligence = report.get("allocation_intelligence") or {}
     allocation = allocation_intelligence.get("allocation") or {}
     allocation_rows = [["Scheme / allocation group", "Category", "AMC", "Value INR", "Portfolio %"]]
-    for item in (allocation.get("schemes") or [])[:40]:
+    for item in (allocation.get("schemes") or []):
         allocation_rows.append([
             Paragraph(_text(item.get("scheme_name")), styles["SmallNote"]),
             _text(item.get("category_group")),
