@@ -3333,6 +3333,7 @@ def create_portfolio_report_snapshot(
                 "valuation": "Latest accepted AMFI NAV multiplied by remaining units.",
                 "risk": "Exact common NAV dates; no forward-fill; current weights held constant.",
                 "capital_gains": "FIFO lot matching with recorded charges; pre-tax only.",
+                "fund_overlap": (holdings_overlap.get("methodology") if holdings_overlap else "Unavailable"),
             },
         }
         content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
