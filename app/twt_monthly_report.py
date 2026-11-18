@@ -528,8 +528,11 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
     new_risk = new_report.get("risk") or {}
     old_risk_window = old_report.get("lookback_days")
     new_risk_window = new_report.get("lookback_days")
-    if (old_risk_window != new_risk_window or isinstance(old_risk_window, bool)
-            or not isinstance(old_risk_window, int) or old_risk_window <= 0):
+    invalid_risk_window = any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        for value in (old_risk_window, new_risk_window)
+    )
+    if invalid_risk_window or old_risk_window != new_risk_window:
         risk_withheld_status = "WITHHELD_DIFFERENT_OR_MISSING_LOOKBACK"
     elif old_risk.get("status") != "OK" or new_risk.get("status") != "OK":
         risk_withheld_status = "WITHHELD_RISK_INPUT_STATUS"
