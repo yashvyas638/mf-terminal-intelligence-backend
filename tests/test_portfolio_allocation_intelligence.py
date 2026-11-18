@@ -286,3 +286,28 @@ def test_overlap_freshness_gate_withholds_missing_age_and_rejects_invalid_age():
             [{**funds[0], "disclosure_age_days": 1.5}],
             max_disclosure_age_days=45,
         )
+
+
+
+def test_overlap_labels_partial_isin_coverage_and_withholds_stale_disclosures():
+    partial = holdings_overlap_matrix([
+        {"scheme_code": "A", "portfolio_value_inr": "100", "disclosure_coverage_pct": "75", "disclosure_age_days": 20, "holdings": [
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "20"},
+        ]},
+        {"scheme_code": "B", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100", "disclosure_age_days": 10, "holdings": [
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "20"},
+        ]},
+    ], max_disclosure_age_days=180)
+    assert partial["pairs"][0]["status"] == "PARTIAL_COVERAGE_OBSERVED"
+    assert partial["pairs"][0]["overlap_inr"] == "20.00"
+
+    stale = holdings_overlap_matrix([
+        {"scheme_code": "A", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100", "disclosure_age_days": 181, "holdings": [
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "20"},
+        ]},
+        {"scheme_code": "B", "portfolio_value_inr": "100", "disclosure_coverage_pct": "100", "disclosure_age_days": 10, "holdings": [
+            {"security_id": "INE000000001", "is_isin": True, "weight_pct": "20"},
+        ]},
+    ], max_disclosure_age_days=180)
+    assert stale["pairs"][0]["status"] == "WITHHELD_STALE_OR_UNDATED_DISCLOSURE"
+    assert stale["pairs"][0]["overlap_inr"] is None
