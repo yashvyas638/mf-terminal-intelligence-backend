@@ -165,8 +165,8 @@ def test_monthly_overlap_pdf_rows_include_both_funds_percentage_point_changes():
                         "presence_status": "CONTINUING",
                         "metrics": {
                             "overlap_inr": {"previous": "40", "current": "45", "change_inr": "5", "status": "COMPARABLE"},
-                            "overlap_pct_of_scheme_a_nav": {"change_percentage_points": "0.5"},
-                            "overlap_pct_of_scheme_b_nav": {"change_percentage_points": "1.0"},
+                            "overlap_pct_of_scheme_a_nav": {"change_percentage_points": "0.5", "status": "COMPARABLE"},
+                            "overlap_pct_of_scheme_b_nav": {"change_percentage_points": "1.0", "status": "COMPARABLE"},
                         },
                     }],
                 },
