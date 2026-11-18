@@ -77,7 +77,7 @@ def _compare(
                 "change": str(change) if change is not None else None,
                 "status": "COMPARABLE" if change is not None else "NOT_COMPARABLE_MISSING_SOURCE",
             }
-            if field.endswith("_pct"):
+            if field.endswith("_pct") or "_pct_" in field:
                 metric["change_percentage_points"] = str(change) if change is not None else None
             if field.endswith("_inr") or field in {"market_value", "lookthrough_value"}:
                 metric["change_inr"] = str(change) if change is not None else None
