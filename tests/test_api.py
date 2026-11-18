@@ -1910,6 +1910,108 @@ def test_holdings_disclosures_are_immutable_and_overlap_uses_common_isins(monkey
         assert db.query(FundHoldingDisclosure).filter_by(scheme_code=scheme_a).count() == 2
         assert db.query(FundHolding).count() == 9
 
+def test_portfolio_holdings_overlap_matrix_calculates_exact_shared_isin_weights(monkeypatch):
+    monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
+    monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key")
+    init_db()
+    user_id = "00000000-0000-0000-0000-000000000077"
+
+    class AuthResponse:
+        status_code = 200
+
+        def json(self):
+            return {"id": user_id, "email_confirmed_at": "2026-11-16T00:00:00Z"}
+
+    monkeypatch.setattr(main.requests, "get", lambda url, headers, timeout: AuthResponse())
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer portfolio-overlap-user"}
+    created = client.post("/v1/portfolios", headers=headers, json={"name": "Overlap Matrix Test"})
+    assert created.status_code == 201, created.text
+    portfolio_id = created.json()["id"]
+
+    now = datetime.now(timezone.utc)
+    as_of = date.today()
+    code_a, code_b = 87654326, 87654327
+    with SessionLocal() as db:
+        for code, name in ((code_a, "Overlap Fund A"), (code_b, "Overlap Fund B")):
+            db.add(Scheme(
+                scheme_code=code, scheme_name=name,
+                isin_growth=None, isin_dividend_reinvestment=None,
+                first_seen_at=now, last_seen_at=now, plan_type="Direct", option_type="Growth",
+            ))
+        snapshot = IngestionSnapshot(
+            source_url="https://example.test/overlap-nav", retrieved_at=now,
+            payload_sha256="f" * 64, records_valid=2, unique_scheme_codes=2,
+            min_nav_date=as_of, max_nav_date=as_of, invalid_rows=0,
+            duplicate_rows_skipped=0, quality_status="PASS", report_json="{}",
+        )
+        db.add(snapshot)
+        db.flush()
+        disclosures = []
+        for code, rows in (
+            (code_a, [
+                ("INE002A01018", "Example Bank Ltd", "2.00", True),
+                ("ine002a01018", "Example Bank Ltd", "3.25", True),
+                ("INE009A01021", "Example Technology Ltd", "3.50", True),
+                ("CASH", "Cash and equivalents", "2.00", False),
+            ]),
+            (code_b, [
+                ("INE002A01018", "Example Bank Ltd", "3.00", True),
+                ("INE009A01021", "Example Technology Ltd", "1.00", True),
+                ("INE123A01016", "Other Listed Company", "5.00", True),
+            ]),
+        ):
+            disclosure = FundHoldingDisclosure(
+                scheme_code=code, as_of_date=as_of,
+                source_document_url="https://example.test/verified-disclosure.csv",
+                source_sha256=(str(code) * 64)[:64], retrieved_at=now,
+                row_count=len(rows), total_weight_pct=Decimal("100"),
+                verification_status="VERIFIED", verified_at=now,
+                supersedes_disclosure_id=None,
+            )
+            db.add(disclosure)
+            db.flush()
+            disclosures.append(disclosure)
+            for isin, name, weight, is_isin in rows:
+                db.add(FundHolding(
+                    disclosure_id=disclosure.id, security_id=isin,
+                    security_name=name, is_isin=is_isin, asset_type="Equity",
+                    sector="Financial Services", weight_pct=Decimal(weight),
+                    market_value_inr=None,
+                ))
+            db.add(PortfolioTransaction(
+                portfolio_id=portfolio_id, scheme_code=code,
+                transaction_type="BUY", transaction_date=as_of,
+                units=Decimal("10"), nav=Decimal("100"), amount=Decimal("1000"),
+                charges=Decimal("0"), notes="Overlap test holding",
+                created_at=now, voided_at=None, void_reason=None,
+            ))
+            db.add(NavObservation(
+                scheme_code=code, nav_date=as_of, nav_value=Decimal("100"),
+                source_snapshot_id=snapshot.id,
+            ))
+        db.commit()
+
+    response = client.get(f"/v1/portfolios/{portfolio_id}/holdings-overlap", headers=headers)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["status"] == "OK"
+    assert result["fund_count"] == 2
+    assert result["comparable_pair_count"] == 1
+    pair = result["pairs"][0]
+    assert pair["common_isin_count"] == 2
+    assert Decimal(pair["overlap_pct"]) == Decimal("4.0000")
+    assert Decimal(pair["shared_weight_a_pct"]) == Decimal("8.7500")
+    assert Decimal(pair["shared_weight_b_pct"]) == Decimal("4.0000")
+    fund_a = next(item for item in result["funds"] if item["scheme_code"] == code_a)
+    assert Decimal(fund_a["isin_coverage_pct"]) == Decimal("81.40")
+    assert "not additive" in result["methodology"]
+
+    missing = client.get(f"/v1/portfolios/{portfolio_id}/holdings-overlap", headers={"Authorization": "Bearer portfolio-overlap-other"})
+    assert missing.status_code == 404
+
+
 def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     monkeypatch.setenv("API_KEY", "test-api-key-that-is-at-least-32-characters-long")
     monkeypatch.setenv("SUPABASE_URL", "https://auth.example.test")
