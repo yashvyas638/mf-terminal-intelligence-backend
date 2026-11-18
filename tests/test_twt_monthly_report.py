@@ -21,6 +21,15 @@ def _report(valuation_date, value, scheme_value, scheme_weight, market_cap_statu
             "coverage": {"status": "COMPLETE"},
             "sector_exposure": [{"sector": "Financials", "lookthrough_value": str(scheme_value), "portfolio_weight_pct": str(scheme_weight)}],
         },
+        "overlap_intelligence": {
+            "status": "AVAILABLE",
+            "pairs": [{
+                "scheme_a": "1001", "scheme_b": "1002",
+                "overlap_inr": "40.00", "overlap_pct_of_scheme_a_nav": "4.0000",
+                "overlap_pct_of_scheme_b_nav": "8.0000",
+            }],
+            "portfolio_duplication": {"duplicated_exposure_inr": "50.00"},
+        },
         "market_cap_intelligence": {
             "status": market_cap_status,
             "classified_distribution": [{
@@ -60,6 +69,8 @@ def test_monthly_comparison_reports_rupee_and_percentage_point_changes():
     assert category["portfolio_weight_pct"]["change_percentage_points"] == "7.5"
     market_cap = result["comparisons"]["market_cap"]["items"]
     assert any(row["key"] == "UNCLASSIFIED:UNCLASSIFIED_STALE_MAPPING" for row in market_cap)
+    assert result["comparisons"]["overlap_pairs"]["items"][0]["metrics"]["overlap_inr"]["change_inr"] == "0.00"
+    assert result["comparisons"]["portfolio_duplication"]["change_inr"] == "0.00"
 
 
 def test_monthly_comparison_withholds_market_cap_when_either_period_is_unavailable():
