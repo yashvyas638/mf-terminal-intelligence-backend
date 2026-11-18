@@ -230,10 +230,11 @@ def contribution_plan_preview(
         # Contribution allocation is calculated against post-contribution target values.
         deficits[key] = max(post_total * target_weight / HUNDRED - current, ZERO)
     deficit_total = sum(deficits.values(), ZERO)
+    allocation_budget = min(contribution, deficit_total)
     allocations = []
     allocated_total = ZERO
     for key in sorted(deficits):
-        amount = contribution * deficits[key] / deficit_total if deficit_total > ZERO else ZERO
+        amount = allocation_budget * deficits[key] / deficit_total if deficit_total > ZERO else ZERO
         allocations.append({
             "key": key,
             "current_value_inr": _money(current_values[key] or ZERO),
@@ -243,7 +244,7 @@ def contribution_plan_preview(
         })
         allocated_total += amount
     # Assign any rounding residual deterministically to the largest remaining deficit.
-    residual = contribution - allocated_total
+    residual = allocation_budget - allocated_total
     if residual != ZERO and allocations and deficit_total > ZERO:
         chosen = max(allocations, key=lambda row: (deficits[row["key"]], row["key"]))
         adjusted = _d(chosen["contribution_allocation_inr"], "allocation") + residual
