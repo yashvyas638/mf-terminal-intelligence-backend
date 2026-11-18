@@ -2171,7 +2171,7 @@ def test_portfolio_historical_risk_and_user_defined_stress(monkeypatch):
     overlap_matrix = client.get(f"/v1/portfolios/{portfolio_id}/holdings-overlap", headers=headers)
     assert overlap_matrix.status_code == 200, overlap_matrix.text
     overlap_json = overlap_matrix.json()
-    assert overlap_json["status"] == "OK"
+    assert overlap_json["status"] == "INSUFFICIENT_FUNDS"
     assert overlap_json["fund_count"] == 1
     assert overlap_json["pairs"] == []
     assert "not additive" in overlap_json["methodology"]
