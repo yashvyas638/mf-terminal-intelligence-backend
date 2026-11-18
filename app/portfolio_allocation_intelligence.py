@@ -152,7 +152,28 @@ def portfolio_allocation(schemes: Iterable[Mapping[str, Any]]) -> dict[str, Any]
         "by_amc": group("amc"),
         "data_quality": {
             "classification_basis": "EXPLICIT_SCHEME_METADATA_ONLY",
-            "unclassified_scheme_count": sum(1 for row in normalized if row["category_group"] == "UNCLASSIFIED" or row["asset_class"] == "UNCLASSIFIED"),
+            "unclassified_scheme_count": sum(
+                1 for row in normalized
+                if any(row[field] == "UNCLASSIFIED" for field in ("category_group", "sub_category", "asset_class", "amc"))
+            ),
+            "unclassified_market_value_inr": _money(sum(
+                (row["market_value_inr"] for row in normalized
+                 if any(row[field] == "UNCLASSIFIED" for field in ("category_group", "sub_category", "asset_class", "amc"))),
+                ZERO,
+            )),
+            "unclassified_weight_pct": _pct(sum(
+                (row["market_value_inr"] for row in normalized
+                 if any(row[field] == "UNCLASSIFIED" for field in ("category_group", "sub_category", "asset_class", "amc"))),
+                ZERO,
+            ), total),
+            "unclassified_by_dimension": {
+                field: {
+                    "scheme_count": sum(1 for row in normalized if row[field] == "UNCLASSIFIED"),
+                    "market_value_inr": _money(sum((row["market_value_inr"] for row in normalized if row[field] == "UNCLASSIFIED"), ZERO)),
+                    "portfolio_weight_pct": _pct(sum((row["market_value_inr"] for row in normalized if row[field] == "UNCLASSIFIED"), ZERO), total),
+                }
+                for field in ("category_group", "sub_category", "asset_class", "amc")
+            },
         },
     }
 
