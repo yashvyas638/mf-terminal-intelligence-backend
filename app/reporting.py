@@ -289,7 +289,7 @@ def build_portfolio_report_pdf(report: dict) -> bytes:
     if len(allocation_rows) == 1:
         allocation_rows.append(["Allocation unavailable", "—", "—", "—", "—"])
     story.extend([
-        Paragraph("Scheme allocation and AMC concentration", styles["SectionHeading"]),
+        Paragraph("Allocation and AMC concentration · Scheme breakdown", styles["SectionHeading"]),
         Paragraph(
             "Status: " + _text(allocation_intelligence.get("status"))
             + " · Valuation as of: " + _text(allocation_intelligence.get("valuation_date"))
