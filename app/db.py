@@ -120,8 +120,9 @@ class NavObservation(Base):
     nav_value: Mapped[object] = mapped_column(Numeric(20, 8), nullable=False)
     source_snapshot_id: Mapped[int] = mapped_column(ForeignKey("ingestion_snapshots.id"), nullable=False)
     __table_args__ = (
+        # The unique constraint already creates the (scheme_code, nav_date)
+        # B-tree required by NAV reads. Do not add a duplicate non-unique index.
         UniqueConstraint("scheme_code", "nav_date", name="uq_nav_scheme_date"),
-        Index("ix_nav_code_date", "scheme_code", "nav_date"),
         CheckConstraint("nav_value > 0", name="ck_nav_observation_value_positive"),
     )
 
