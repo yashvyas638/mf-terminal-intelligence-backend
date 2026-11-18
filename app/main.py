@@ -78,6 +78,7 @@ from app.portfolio_allocation_intelligence import (
     market_cap_allocation,
     parse_market_cap_classification_csv,
     portfolio_allocation,
+    allocation_dimension_key,
 )
 from app.reporting import build_portfolio_report_pdf
 from app.smart_sip_regime import assess_smart_sip_regime
