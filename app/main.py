@@ -3572,6 +3572,52 @@ def create_portfolio_report_snapshot(
                 selected_months[0],
             )
 
+        prior_report_rows = db.execute(
+            select(PortfolioReportSnapshot)
+            .where(
+                PortfolioReportSnapshot.portfolio_id == portfolio_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+            .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
+        ).scalars().all()
+        prior_reports = [{
+            "report_id": row.id,
+            "generated_at": row.generated_at.isoformat(),
+            "source_max_nav_date": row.source_max_nav_date.isoformat() if row.source_max_nav_date else None,
+            "report": json.loads(row.content_json),
+        } for row in prior_report_rows]
+        current_candidate = {
+            "report_id": None,
+            "generated_at": generated_at.isoformat(),
+            "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
+            "report": report,
+        }
+        monthly_periods = select_latest_distinct_months([current_candidate, *prior_reports])
+        if len(monthly_periods) >= 2 and monthly_periods[0].get("report_id") is None:
+            report["monthly_comparison"] = compare_monthly_reports(monthly_periods[1], monthly_periods[0])
+            report["monthly_comparison"]["previous_snapshot"] = {
+                "report_id": monthly_periods[1].get("report_id"),
+                "generated_at": monthly_periods[1].get("generated_at"),
+                "source_max_nav_date": monthly_periods[1].get("source_max_nav_date"),
+            }
+            report["monthly_comparison"]["current_snapshot"] = {
+                "generated_at": generated_at.isoformat(),
+                "source_max_nav_date": max_nav_date.isoformat() if max_nav_date else None,
+            }
+        elif not monthly_periods or monthly_periods[0].get("report_id") is not None:
+            report["monthly_comparison"] = {
+                "status": "CURRENT_REPORT_NOT_MONTH_END",
+                "message": "This report's valuation date is outside the configured month-end window; no month-on-month comparison is attached.",
+                "required_month_end_window_days": 7,
+            }
+        else:
+            report["monthly_comparison"] = {
+                "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
+                "required_month_count": 2,
+                "available_month_count": len(monthly_periods),
+                "message": "A prior immutable month-end report is required for comparison.",
+            }
+
         content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
         content_sha256 = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
         snapshot = PortfolioReportSnapshot(
