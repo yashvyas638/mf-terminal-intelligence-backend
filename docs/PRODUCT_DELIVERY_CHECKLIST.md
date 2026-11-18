@@ -181,3 +181,19 @@ This section supersedes the earlier TWT acceptance table above where later commi
 - No production deployment, production data change, production migration, secret change, or Render configuration change was performed.
 - Release remains blocked on actual CI execution, branch reconciliation, verified market-cap source (if that report dimension is required), browser E2E, and production-side Render/Supabase/backup verification.
 
+
+
+### Supabase database storage remediation (2026-11-18)
+
+A read-only live audit of Supabase project `mf-terminal-intelligence` measured the database at **519,689,907 bytes**. The largest relations were `nav_observations` at 380 MB (2,664,820 rows; 2,584,576,00? bytes of indexes) and `fund_research_snapshots` at 94 MB (34,852 rows). The NAV table has 2,664,820 observations across 16,135 schemes, spanning 2012-02-17 through 2026-11-11. No financial rows were deleted or modified during this audit.
+
+The NAV table contains two valid B-tree indexes on the identical key `(scheme_code, nav_date)`: unique constraint index `uq_nav_scheme_date` (86 MB) and non-unique `ix_nav_code_date` (86 MB). Live index statistics show the non-unique index is heavily used while the unique constraint index is also valid and enforces the same key. The duplicate index is avoidable storage and write amplification; the unique constraint must remain.
+
+- Candidate commit removes the duplicate index from ORM metadata.
+- Migration `0030_remove_duplicate_nav_index` first verifies that `uq_nav_scheme_date` exists, then drops only `ix_nav_code_date` using PostgreSQL `DROP INDEX CONCURRENTLY` to minimise blocking.
+- Regression coverage checks the ORM metadata and the post-migration PostgreSQL catalog.
+- Expected gross storage recovery is approximately 90,000,000 bytes (about 86 MiB); actual database quota usage must be re-measured after the approved migration and subsequent vacuum/autovacuum. Do not claim the storage issue closed until the live database measurement confirms it.
+- No NAV observations, revisions, snapshots, research metrics, or user portfolio data are deleted. The 17 MB source-snapshot index and primary/unique indexes remain.
+- The live database also contains 34,852 research snapshots. Their `metrics_json` payloads account for about 36.6 MB; this is not deleted or rewritten in this change because the JSON carries monthly/period-return details consumed by existing APIs.
+
+**Status:** code and migration prepared on `audit/production-foundation`; production migration not run. Before release, require PostgreSQL CI on the exact candidate SHA, a fresh verified backup and restore path, migration-role authority, explicit release approval, and a post-migration size/query-plan audit. The database was read-only during this investigation.
