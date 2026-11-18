@@ -22,11 +22,11 @@
 <main class="main">
 <header class="topbar">
   <div><div class="eyebrow">PRIVATE WEALTH WORKSPACE <span class="eyebrow-dot"></span> INDIA</div><h1>Portfolio intelligence</h1><p class="subtitle">Understand what you own. See what drives risk. Decide where the next rupee belongs.</p></div>
-  <div class="top-actions"><span id="dataStamp" class="stamp">Awaiting data</span><button id="refreshBtn" class="btn btn-quiet">↻ Refresh analysis</button></div>
+  <div class="top-actions"><span id="dataStamp" class="stamp">Awaiting data</span><button id="signOut" class="btn btn-quiet" hidden>Sign out</button><button id="refreshBtn" class="btn btn-quiet">↻ Refresh analysis</button></div>
 </header>
 <section class="auth-panel" id="authPanel">
   <div><strong>Sign in to your private portfolio</strong><p>Portfolio data is account-scoped and never shared with other users.</p></div>
-  <form id="authForm"><input id="authEmail" type="email" autocomplete="username" placeholder="Email address" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" minlength="8" required><button class="btn btn-primary" id="signIn" type="submit">Sign in</button><button class="btn btn-quiet" id="signUp" type="button">Create account</button><button class="btn btn-quiet" id="signOut" type="button" hidden>Sign out</button></form>
+  <form id="authForm"><input id="authEmail" type="email" autocomplete="username" placeholder="Email address" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" minlength="8" required><button class="btn btn-primary" id="signIn" type="submit">Sign in</button><button class="btn btn-quiet" id="signUp" type="button">Create account</button></form>
   <div id="authMessage" class="auth-message" role="status">Sign in to load your portfolios.</div>
 </section>
 <section id="workspace" class="hidden">
