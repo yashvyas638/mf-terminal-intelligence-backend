@@ -532,3 +532,13 @@ Validation remains pending on the exact latest PR head. No merge, deployment or 
 - Commits: `8a162f6` (validation), `9094535` (regression test).
 - The Smart SIP portfolio-need gate also requires a COMPLETE, FRESH valuation and exact date match; stale/incomplete valuation exposes no underweight buckets.
 - **Validation remains pending:** GitHub Actions run #2175 is still queued for its three jobs at last inspection. The latest branch head after this hardening must be rechecked for its own CI run. No tests are marked passed based on the older queued run.
+
+
+### Latest Smart SIP delivery checkpoint — 2026-11-18
+
+- Latest PR #135 head after all current Smart SIP fixes: `4ae6296ad5094e9260740351515b41484d7a191d`.
+- PR state: open, draft, unmerged; GitHub currently reports mergeable=true against `main`.
+- Added paise-precision validation for `additional_contribution_budget_inr` and a regression test rejecting ₹5,000.001 (HTTP 422).
+- Fresh valuation gate and stale-valuation regression remain present.
+- The last inspectable Actions run (#2175 / run ID 44281293794) has all three jobs queued and belongs to the earlier head `550def791b193fe4a0d1da89e980a1d42418315c`, not this latest head. The connector's commit-run lookup returned no exact-head PR runs; therefore current-head CI is unverified. No tests are claimed as passed.
+- No merge, production migration, deployment or production data changes were performed.
