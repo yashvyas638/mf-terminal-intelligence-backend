@@ -238,16 +238,18 @@ def contribution_plan_preview(
     allocated_total = ZERO
     for key in sorted(deficits):
         amount = allocation_budget * deficits[key] / deficit_total if deficit_total > ZERO else ZERO
+        rounded_amount = amount.quantize(CENT, rounding=ROUND_HALF_UP)
         allocations.append({
             "key": key,
             "current_value_inr": _money(current_values[key] or ZERO),
             "target_value_after_contribution_inr": _money(post_total * _d(target_rows[key]["target_pct"], "target_pct") / HUNDRED),
-            "contribution_allocation_inr": _money(amount),
-            "reason": "TARGET_GAP" if amount > ZERO else "NO_TARGET_GAP",
+            "contribution_allocation_inr": _money(rounded_amount),
+            "reason": "TARGET_GAP" if rounded_amount > ZERO else "NO_TARGET_GAP",
         })
-        allocated_total += amount
-    # Assign any rounding residual deterministically to the largest remaining deficit.
-    residual = allocation_budget - allocated_total
+        allocated_total += rounded_amount
+    # Reconcile displayed paise exactly to the contribution budget.
+    budget_rounded = allocation_budget.quantize(CENT, rounding=ROUND_HALF_UP)
+    residual = budget_rounded - allocated_total
     if residual != ZERO and allocations and deficit_total > ZERO:
         chosen = max(allocations, key=lambda row: (deficits[row["key"]], row["key"]))
         adjusted = _d(chosen["contribution_allocation_inr"], "allocation") + residual
