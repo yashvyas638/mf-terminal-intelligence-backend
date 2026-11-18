@@ -3531,6 +3531,47 @@ def create_portfolio_report_snapshot(
                 "snapshot": "portfolio-report-v1; immutable JSON with SHA-256 integrity digest.",
             },
         }
+        # Freeze the prior-period comparison into this report payload. The PDF
+        # renderer must never query current data or derive a comparison later.
+        prior_rows = db.execute(
+            select(PortfolioReportSnapshot)
+            .where(
+                PortfolioReportSnapshot.portfolio_id == portfolio_id,
+                PortfolioReportSnapshot.owner_user_id == owner_id,
+            )
+            .order_by(desc(PortfolioReportSnapshot.generated_at), desc(PortfolioReportSnapshot.id))
+        ).scalars().all()
+        comparison_snapshots = [{
+            "report_id": row.id,
+            "generated_at": row.generated_at.isoformat(),
+            "report": json.loads(row.content_json),
+        } for row in prior_rows]
+        current_snapshot_marker = {
+            "report_id": None,
+            "generated_at": generated_at.isoformat(),
+            "report": report,
+        }
+        selected_months = select_latest_distinct_months(
+            [current_snapshot_marker, *comparison_snapshots]
+        )
+        if len(selected_months) < 2:
+            report["monthly_comparison"] = {
+                "status": "INSUFFICIENT_MONTHLY_SNAPSHOTS",
+                "available_month_count": len(selected_months),
+                "required_month_count": 2,
+                "message": "A prior immutable report from a distinct valuation month is required.",
+            }
+        elif selected_months[0].get("report_id") is not None:
+            report["monthly_comparison"] = {
+                "status": "NOT_LATEST_VALUATION_MONTH",
+                "message": "This valuation month is older than a previously saved report; a forward month comparison is not attached.",
+            }
+        else:
+            report["monthly_comparison"] = compare_monthly_reports(
+                selected_months[1],
+                selected_months[0],
+            )
+
         content_json = json.dumps(report, ensure_ascii=False, allow_nan=False, sort_keys=True)
         content_sha256 = hashlib.sha256(content_json.encode("utf-8")).hexdigest()
         snapshot = PortfolioReportSnapshot(
