@@ -150,8 +150,52 @@ def compare_monthly_reports(previous: dict[str, Any], current: dict[str, Any]) -
         "change_inr": str(new_value - old_value) if old_value is not None and new_value is not None else None,
     }
 
+    old_amc = (old_report.get("allocation_intelligence") or {}).get("amc_concentration") or {}
+    new_amc = (new_report.get("allocation_intelligence") or {}).get("amc_concentration") or {}
+    amc_metrics = {}
+    for metric_name in ("top_1_amc_weight_pct", "top_3_amc_weight_pct", "top_5_amc_weight_pct", "hhi_points", "effective_amc_count"):
+        old_metric = _decimal(old_amc.get(metric_name))
+        new_metric = _decimal(new_amc.get(metric_name))
+        delta = new_metric - old_metric if old_metric is not None and new_metric is not None else None
+        amc_metrics[metric_name] = {
+            "previous": str(old_metric) if old_metric is not None else None,
+            "current": str(new_metric) if new_metric is not None else None,
+            "change": str(delta) if delta is not None else None,
+            "change_percentage_points": str(delta) if delta is not None and metric_name.endswith("_pct") else None,
+            "status": "COMPARABLE" if delta is not None else "WITHHELD_OR_NOT_COMPARABLE",
+        }
+    comparisons["amc_concentration_metrics"] = amc_metrics
+
+    def coverage_delta(name: str, old_value: Any, new_value: Any) -> dict[str, Any]:
+        old_number, new_number = _decimal(old_value), _decimal(new_value)
+        delta = new_number - old_number if old_number is not None and new_number is not None else None
+        return {
+            "previous_pct": str(old_number) if old_number is not None else None,
+            "current_pct": str(new_number) if new_number is not None else None,
+            "change_percentage_points": str(delta) if delta is not None else None,
+            "status": "COMPARABLE" if delta is not None else "COVERAGE_NOT_REPORTED",
+        }
+
+    old_allocation_evidence = (old_report.get("allocation_intelligence") or {}).get("evidence") or {}
+    new_allocation_evidence = (new_report.get("allocation_intelligence") or {}).get("evidence") or {}
+    old_nav_coverage = old_allocation_evidence.get("nav_coverage") or {}
+    new_nav_coverage = new_allocation_evidence.get("nav_coverage") or {}
+    old_lookthrough_coverage = (old_report.get("lookthrough") or {}).get("coverage") or {}
+    new_lookthrough_coverage = (new_report.get("lookthrough") or {}).get("coverage") or {}
+    old_market_cap = old_report.get("market_cap_intelligence") or {}
+    new_market_cap = new_report.get("market_cap_intelligence") or {}
     old_overlap = old_report.get("overlap_intelligence") or {}
     new_overlap = new_report.get("overlap_intelligence") or {}
+    old_disclosure_health = old_overlap.get("disclosure_health") or {}
+    new_disclosure_health = new_overlap.get("disclosure_health") or {}
+    coverage_comparison = {
+        "fresh_nav_weight": coverage_delta("fresh_nav_weight", old_nav_coverage.get("fresh_nav_coverage_pct"), new_nav_coverage.get("fresh_nav_coverage_pct")),
+        "fresh_holdings_weight": coverage_delta("fresh_holdings_weight", old_lookthrough_coverage.get("fresh_covered_weight_pct"), new_lookthrough_coverage.get("fresh_covered_weight_pct")),
+        "market_cap_classification": coverage_delta("market_cap_classification", old_market_cap.get("classified_coverage_of_positive_lookthrough_pct"), new_market_cap.get("classified_coverage_of_positive_lookthrough_pct")),
+        "overlap_scheme_disclosure": coverage_delta("overlap_scheme_disclosure", old_disclosure_health.get("disclosure_scheme_coverage_pct"), new_disclosure_health.get("disclosure_scheme_coverage_pct")),
+    }
+    comparisons["data_coverage"] = coverage_comparison
+
     old_pairs, new_pairs = old_overlap.get("pairs"), new_overlap.get("pairs")
     if old_overlap.get("status") == "AVAILABLE" and new_overlap.get("status") == "AVAILABLE" and isinstance(old_pairs, list) and isinstance(new_pairs, list):
         old_pairs = [{**row, "pair_key": str(row.get("scheme_a")) + ":" + str(row.get("scheme_b"))} for row in old_pairs]
