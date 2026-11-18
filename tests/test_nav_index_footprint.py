@@ -19,6 +19,7 @@ def test_nav_observations_keep_unique_lookup_and_remove_duplicate_index():
             "scheme_code",
             "nav_date",
         ]
-        assert "nav_observations_pkey" in indexes
+        primary_key = inspector.get_pk_constraint("nav_observations")
+        assert primary_key["constrained_columns"] == ["id"]
     finally:
         engine.dispose()
