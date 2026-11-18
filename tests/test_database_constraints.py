@@ -103,6 +103,23 @@ def test_database_enforces_versioned_target_ranges_and_uniqueness():
         db.commit()
 
     with SessionLocal() as db:
+        revised = PortfolioAllocationTarget(
+            portfolio_id=portfolio_id,
+            owner_user_id="target-owner",
+            dimension="ASSET_CLASS",
+            target_key="EQUITY",
+            min_pct="35",
+            target_pct="50",
+            max_pct="65",
+            effective_from=date(2026, 1, 1),
+            version=2,
+            priority=100,
+            created_at=now,
+        )
+        db.add(revised)
+        db.commit()
+
+    with SessionLocal() as db:
         duplicate = PortfolioAllocationTarget(
             portfolio_id=portfolio_id,
             owner_user_id="target-owner",
@@ -112,6 +129,7 @@ def test_database_enforces_versioned_target_ranges_and_uniqueness():
             target_pct="50",
             max_pct="65",
             effective_from=date(2026, 1, 1),
+            version=1,
             priority=100,
             created_at=now,
         )
