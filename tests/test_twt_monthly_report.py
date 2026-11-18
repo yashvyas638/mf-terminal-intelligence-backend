@@ -319,3 +319,45 @@ def test_monthly_coverage_comparison_withholds_out_of_range_percentages():
     assert metric["previous_pct"] is None
     assert metric["current_pct"] is None
     assert metric["change_percentage_points"] is None
+
+
+def test_monthly_amc_metrics_withheld_when_top_n_weights_are_inconsistent():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["amc_concentration"].update({
+        "top_1_amc_weight_pct": "70",
+        "top_3_amc_weight_pct": "60",
+        "top_5_amc_weight_pct": "80",
+    })
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metrics = result["comparisons"]["amc_concentration_metrics"]
+    for name in ("top_1_amc_weight_pct", "top_3_amc_weight_pct", "top_5_amc_weight_pct", "hhi_points", "effective_amc_count"):
+        assert metrics[name]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+        assert metrics[name]["previous"] is None
+        assert metrics[name]["current"] is None
+        assert metrics[name]["change"] is None
+
+
+def test_monthly_amc_metrics_withheld_when_hhi_and_effective_count_disagree():
+    previous_report = _report("2026-09-30", 800, 500, 62.5)
+    current_report = _report("2026-10-30", 900, 600, 66.6667)
+    current_report["allocation_intelligence"]["amc_concentration"].update({
+        "hhi_points": "5000",
+        "effective_amc_count": "3",
+    })
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    metrics = result["comparisons"]["amc_concentration_metrics"]
+    assert metrics["hhi_points"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metrics["effective_amc_count"]["status"] == "WITHHELD_INVALID_SOURCE_VALUE"
+    assert metrics["hhi_points"]["change"] is None
+    assert metrics["effective_amc_count"]["change"] is None
