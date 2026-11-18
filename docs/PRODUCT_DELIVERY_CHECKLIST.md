@@ -63,6 +63,15 @@ The requested `docs/PROJECT_COMPLETION_MASTER.md` is not present on this branch.
 - **Snapshots and PDF:** owner-scoped immutable portfolio report snapshots, SHA-256 integrity verification, report history and server-side PDF export exist. These are general portfolio reports, not yet the complete TWT allocation report.
 - **Responsive baseline:** the Portfolio Intelligence stylesheet has breakpoints at 1100px, 760px and 480px. Static DOM audit found 48 unique IDs, no duplicate IDs and no missing IDs referenced by its JavaScript. This is not a substitute for browser/device E2E.
 
+### Additional TWT allocation delivery (2026-11-18)
+
+- `ac51891cd517f0c5fb79abcd39b00e5e07322489` — extended the owner-scoped portfolio look-through response with market-value-weighted AMC concentration, category, category-group and asset-class allocations. Includes explicit Unclassified buckets, coverage labels, scheme counts, observed-weight concentration, HHI and effective AMC count. Percentages are withheld unless total portfolio valuation is complete.
+- `ce1b8ad9ac8ad8a2ba2fce160230c873ceaadb84` and `6ff9e9853cf560a3b4f18809f9b88f41c41edda5` — added AMC, category and asset-class panels to the Portfolio Intelligence look-through workspace.
+- `820dd45a6157b17f82c76f8bafe09b82c4393ffa` — extended the existing authenticated portfolio integration fixture to assert AMC, category, category-group, asset-class and concentration outputs.
+- `01181a52342fbb070522002104b1a5a09dbdc0fc` — added frontend contract checks for the new panels and API fields.
+
+**Methodology boundary:** AMC/category/asset-class rollups use current scheme market value and existing scheme metadata. Missing metadata is grouped as Unclassified, not guessed. These rollups do not solve the separate underlying-security market-cap classification problem. No verified, effective-dated large/mid/small-cap security classification source is currently present.
+
 ### Fixes committed on `audit/production-foundation`
 
 - `2e73dd962afdc07f8bd63d126c3c522bd86402ac` — corrected look-through concentration percentages. API values are already percentage points; the UI had divided ISIN coverage and top-1/5/10 weights by 100, displaying values 100 times too small. Also corrected the diagnosis panel to read `security_concentration`, the actual API response key.
