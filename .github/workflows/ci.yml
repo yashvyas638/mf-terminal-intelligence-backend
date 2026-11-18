@@ -35,6 +35,7 @@ jobs:
         run: |
           node --check app/static/dashboard.js
           node --check app/static/research.js
+          node --check app/static/portfolio-intelligence.js
           node --check app/static/fund-detail.js
           node --check app/static/password-screening.js
           node --test tests/password-screening.test.cjs tests/frontend-security-urls.test.cjs
