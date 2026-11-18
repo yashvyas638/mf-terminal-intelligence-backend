@@ -62,8 +62,8 @@ def _with_target_drift(report, *, version=3, equity_actual="70", equity_drift="5
             "version": version,
             "effective_from": "2026-01-01",
             "targets": [
-                {"key": "Equity", "target_pct": "65"},
-                {"key": "Debt", "target_pct": "35"},
+                {"key": "Equity", "min_pct": "55", "target_pct": "65", "max_pct": "75"},
+                {"key": "Debt", "min_pct": "25", "target_pct": "35", "max_pct": "45"},
             ],
         }],
     }
@@ -73,8 +73,8 @@ def _with_target_drift(report, *, version=3, equity_actual="70", equity_drift="5
             "target_version": version,
             "effective_from": "2026-01-01",
             "targets": [
-                {"key": "Equity", "actual_weight_pct": equity_actual, "target_pct": "65", "drift_percentage_points": equity_drift},
-                {"key": "Debt", "actual_weight_pct": debt_actual, "target_pct": "35", "drift_percentage_points": debt_drift},
+                {"key": "Equity", "actual_weight_pct": equity_actual, "min_pct": "55", "target_pct": "65", "max_pct": "75", "drift_percentage_points": equity_drift},
+                {"key": "Debt", "actual_weight_pct": debt_actual, "min_pct": "25", "target_pct": "35", "max_pct": "45", "drift_percentage_points": debt_drift},
             ],
         },
     }
@@ -590,3 +590,25 @@ def test_monthly_risk_comparison_supports_direct_metric_payload_compatibility():
     assert result["risk_changes"]["max_drawdown"]["change"] == "-0.05"
     assert result["risk_changes"]["historical_var_95"]["change"] == "0.01"
     assert result["risk_changes"]["historical_cvar_95"]["change"] == "0.02"
+
+
+def test_monthly_target_drift_withholds_when_drift_rows_do_not_match_frozen_policy_bands():
+    previous_report = _with_target_drift(_report("2026-09-30", 800, 500, 62.5))
+    current_report = _with_target_drift(
+        _report("2026-10-30", 900, 600, 66.6667),
+        equity_actual="70", equity_drift="4", debt_actual="30", debt_drift="-4",
+    )
+    # Keep the reported target total at 100% and the drift arithmetic internally
+    # consistent, but deliberately diverge from the immutable policy snapshot.
+    current_drift = current_report["target_drift_snapshot"]["CATEGORY"]["targets"]
+    current_drift[0].update({"min_pct": "56", "target_pct": "66", "max_pct": "76"})
+    current_drift[1].update({"min_pct": "24", "target_pct": "34", "max_pct": "44"})
+
+    result = compare_monthly_reports(
+        {"period": "2026-09", "report": previous_report},
+        {"period": "2026-10", "report": current_report},
+    )
+
+    section = result["comparisons"]["target_drift"]
+    assert section["status"] == "WITHHELD_POLICY_VERSION_OR_SOURCE_MISMATCH"
+    assert section["items"] == []
