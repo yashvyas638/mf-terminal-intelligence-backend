@@ -462,6 +462,13 @@ def market_cap_allocation(
             "source_sha256": chosen["source_sha256"],
         })
 
+    classified_total = sum((totals[bucket] for bucket in allowed), ZERO)
+    unclassified_total = sum((value for bucket, value in totals.items() if bucket not in allowed), ZERO)
+    reconciled_total = classified_total + unclassified_total
+    reconciliation_delta = total_positive - reconciled_total
+    if reconciliation_delta != ZERO:
+        raise ArithmeticError("market-cap classified and unclassified exposure does not reconcile")
+
     ordered = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
     source_summary: dict[str, dict[str, Any]] = {}
     for source in source_rows:
@@ -479,8 +486,15 @@ def market_cap_allocation(
         "basis": "VERIFIED_EFFECTIVE_DATED_ISIN_CLASSIFICATIONS",
         "portfolio_value_inr": _money(portfolio_value),
         "positive_lookthrough_exposure_inr": _money(total_positive),
-        "classified_exposure_inr": _money(classified),
-        "classified_coverage_of_positive_lookthrough_pct": _pct(classified, total_positive),
+        "classified_exposure_inr": _money(classified_total),
+        "unclassified_exposure_inr": _money(unclassified_total),
+        "reconciliation": {
+            "classified_plus_unclassified_inr": _money(reconciled_total),
+            "positive_lookthrough_exposure_inr": _money(total_positive),
+            "difference_inr": _money(reconciliation_delta),
+            "status": "RECONCILED",
+        },
+        "classified_coverage_of_positive_lookthrough_pct": _pct(classified_total, total_positive),
         "classified_distribution": [
             {"market_cap_bucket": bucket, "exposure_inr": _money(value), "weight_of_total_portfolio_pct": _pct(value, portfolio_value), "weight_of_positive_lookthrough_pct": _pct(value, total_positive)}
             for bucket, value in ordered if bucket in allowed
