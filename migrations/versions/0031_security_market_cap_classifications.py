@@ -6,8 +6,8 @@ Revises: 0030_portfolio_allocation_targets
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0031_security_market_cap_classifications"
-down_revision = "0030_portfolio_allocation_targets"
+revision = "0031_security_mcap"
+down_revision = "0030_portfolio_targets"
 branch_labels = None
 depends_on = None
 
