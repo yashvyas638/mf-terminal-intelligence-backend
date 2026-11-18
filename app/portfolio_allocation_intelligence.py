@@ -21,6 +21,28 @@ ZERO = Decimal("0")
 HUNDRED = Decimal("100")
 
 
+def allocation_dimension_key(dimension: str, scheme: Mapping[str, Any]) -> str:
+    """Return the same canonical bucket key used by portfolio allocation analytics."""
+    from app.fund_taxonomy import (
+        canonical_asset_class,
+        canonical_group,
+        canonical_subcategory,
+    )
+
+    group = canonical_group(scheme.get("category_group"))
+    if dimension == "ASSET_CLASS":
+        return canonical_asset_class(group, scheme.get("asset_class")) or "UNCLASSIFIED"
+    if dimension == "CATEGORY":
+        return group or "UNCLASSIFIED"
+    if dimension == "SUB_CATEGORY":
+        return canonical_subcategory(group, scheme.get("category")) or "UNCLASSIFIED"
+    if dimension == "AMC":
+        return str(scheme.get("amc") or "UNCLASSIFIED")
+    if dimension == "SCHEME":
+        return str(scheme.get("scheme_code") or "").strip()
+    raise ValueError(f"unsupported allocation target dimension: {dimension}")
+
+
 def _d(value: Any, field: str, *, allow_none: bool = False) -> Decimal | None:
     if value is None and allow_none:
         return None
